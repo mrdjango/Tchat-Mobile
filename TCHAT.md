@@ -184,6 +184,10 @@ in `design/model-selection-requirements.md`.
   passes `ComposerTrayExtras` through `ChatComposer` into `CommonChatInputCore`. That swaps out
   upstream's tool indicator chips (`AttachmentChipsRow` then carries files only) and
   `PinnedToolsRow`; without the extras, upstream's rows render unchanged.
+- **`ChatViewModel.onPendingNavigationHandled` carries `selection.tchat` over.** The new-chat
+  ViewModel rebuilds its state after the first send hands off to `Chat(id)`, and the delegate's
+  inputs come from flows that don't re-emit, so a rebuilt-empty slice stayed empty: no Image
+  section and no Free tags until the app restarted (`TchatLandingResetTest`).
 
 ## Upstream bugs fixed here first
 
