@@ -46,7 +46,7 @@ import com.garfiec.librechat.feature.chat.components.addToChatSelectionItem
 import com.garfiec.librechat.feature.chat.components.rememberChatAttachmentActions
 import com.garfiec.librechat.feature.chat.components.rememberChatOptionsSheetController
 import com.garfiec.librechat.feature.chat.prompts.components.VariableInputDialog
-import com.garfiec.librechat.feature.chat.tchat.ImageGenComposerChip
+import com.garfiec.librechat.feature.chat.tchat.ComposerTrayExtras
 import com.garfiec.librechat.feature.chat.tchat.imageGenIndicatorLabel
 import com.garfiec.librechat.feature.chat.viewmodel.ChatViewModel
 import com.garfiec.librechat.feature.chat.viewmodel.UpdateBannerViewModel
@@ -333,16 +333,6 @@ fun ChatScreen(
                                 modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp),
                             )
                         }
-                        // TCHAT: Image Gen's chip above the composer (tap: picker on Image Gen; ✕: off).
-                        val imageGenLabel = uiState.imageGenIndicatorLabel
-                        if (askPause == null && imageGenLabel != null) {
-                            ImageGenComposerChip(
-                                imageLabel = imageGenLabel,
-                                onOpen = viewModel::openModelSheetOnImageGen,
-                                onTurnOff = viewModel::turnOffImageGen,
-                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
-                            )
-                        }
                         if (askPause != null) {
                             AskUserQuestionPanel(
                                 pendingAction = askPause,
@@ -422,6 +412,14 @@ fun ChatScreen(
                                 enabledTools = uiState.effectiveEnabledTools,
                                 pinnedToolKeys = uiState.pinnedToolChips,
                                 onToggleTool = viewModel::toggleTool,
+                                // TCHAT: Image Gen and the active tools share one tray above the field.
+                                toolTray = ComposerTrayExtras(
+                                    imageLabel = uiState.imageGenIndicatorLabel,
+                                    onOpenImage = viewModel::openModelSheetOnImageGen,
+                                    onTurnOffImage = viewModel::turnOffImageGen,
+                                    onOpenTools = { optionsController.open() },
+                                    onToggleMcpServer = viewModel::toggleMcpServer,
+                                ),
                                 mcpServers = uiState.mcpServers,
                                 selectedMcpServerNames = uiState.selectedMcpServerNames,
                                 selectedModelDisplay = effectiveSelectedModelDisplay,

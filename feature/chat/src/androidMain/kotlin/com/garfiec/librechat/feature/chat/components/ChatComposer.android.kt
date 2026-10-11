@@ -6,6 +6,7 @@ import com.garfiec.librechat.core.data.datastore.ContextBarPlacement
 import com.garfiec.librechat.core.data.datastore.DuringRunAction
 import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
 import com.garfiec.librechat.feature.chat.model.PromptMentionDisplayData
+import com.garfiec.librechat.feature.chat.tchat.ComposerTrayExtras
 import com.garfiec.librechat.feature.chat.viewmodel.ChatInputGates
 import com.garfiec.librechat.feature.chat.viewmodel.ContextGaugeDetails
 import com.garfiec.librechat.feature.chat.viewmodel.DuringRunSendTarget
@@ -71,6 +72,7 @@ internal actual fun ChatComposer(
     onCancelQueuedMessage: (localId: String) -> Unit,
     onReorderQueuedMessages: (fromIndex: Int, toIndex: Int) -> Unit,
     fontSizeMultiplier: Float,
+    toolTray: ComposerTrayExtras?,
     modifier: Modifier,
 ) {
     ChatInput(
@@ -103,6 +105,7 @@ internal actual fun ChatComposer(
         enabledTools = enabledTools,
         pinnedToolKeys = pinnedToolKeys,
         onToggleTool = onToggleTool,
+        toolTray = toolTray, // TCHAT
         mcpServers = mcpServers,
         selectedMcpServerNames = selectedMcpServerNames,
         selectedModelDisplay = selectedModelDisplay,

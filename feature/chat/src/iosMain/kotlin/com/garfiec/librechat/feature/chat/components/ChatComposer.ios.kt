@@ -11,6 +11,7 @@ import com.garfiec.librechat.core.data.datastore.ContextBarPlacement
 import com.garfiec.librechat.core.data.datastore.DuringRunAction
 import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
 import com.garfiec.librechat.feature.chat.model.PromptMentionDisplayData
+import com.garfiec.librechat.feature.chat.tchat.ComposerTrayExtras
 import com.garfiec.librechat.feature.chat.util.clipboardHasImage
 import com.garfiec.librechat.feature.chat.util.readClipboardImage
 import com.garfiec.librechat.feature.chat.viewmodel.ChatInputGates
@@ -79,6 +80,7 @@ internal actual fun ChatComposer(
     onCancelQueuedMessage: (localId: String) -> Unit,
     onReorderQueuedMessages: (fromIndex: Int, toIndex: Int) -> Unit,
     fontSizeMultiplier: Float,
+    toolTray: ComposerTrayExtras?,
     modifier: Modifier,
 ) {
     var hasClipboardImage by remember { mutableStateOf(false) }
@@ -115,6 +117,7 @@ internal actual fun ChatComposer(
         enabledTools = enabledTools,
         pinnedToolKeys = pinnedToolKeys,
         onToggleTool = onToggleTool,
+        toolTray = toolTray, // TCHAT
         mcpServers = mcpServers,
         selectedMcpServerNames = selectedMcpServerNames,
         selectedModelDisplay = selectedModelDisplay,

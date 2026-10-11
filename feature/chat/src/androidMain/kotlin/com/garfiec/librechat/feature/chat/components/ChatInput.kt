@@ -47,6 +47,7 @@ import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
 import com.garfiec.librechat.feature.chat.model.PromptMentionDisplayData
 import com.garfiec.librechat.feature.chat.resources.*
 import com.garfiec.librechat.feature.chat.resources.Res
+import com.garfiec.librechat.feature.chat.tchat.ComposerTrayExtras
 import com.garfiec.librechat.feature.chat.viewmodel.ChatInputGates
 import com.garfiec.librechat.feature.chat.viewmodel.ContextGaugeDetails
 import com.garfiec.librechat.feature.chat.viewmodel.DuringRunSendTarget
@@ -103,6 +104,8 @@ fun ChatInput(
     onImagePaste: ((Uri) -> Unit)? = null,
     enabledTools: Set<String> = emptySet(),
     onToggleTool: (String) -> Unit = {},
+    /** TCHAT: the tool tray; see ComposerToolTray. */
+    toolTray: ComposerTrayExtras? = null,
     pinnedToolKeys: List<String> = emptyList(),
     mcpServers: List<McpServerDisplayData> = emptyList(),
     selectedMcpServerNames: Set<String> = emptySet(),
@@ -184,6 +187,7 @@ fun ChatInput(
         ),
         onSelectPrompt = onSlashCommandSelect,
         onToggleTool = onToggleTool,
+        toolTray = toolTray, // TCHAT
         onQueue = onQueue,
         onDuringRunSend = onDuringRunSend,
         onSteer = onSteer,

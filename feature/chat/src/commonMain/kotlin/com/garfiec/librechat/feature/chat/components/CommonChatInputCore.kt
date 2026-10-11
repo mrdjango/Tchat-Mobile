@@ -80,6 +80,9 @@ import com.garfiec.librechat.feature.chat.resources.editing_queued_message
 import com.garfiec.librechat.feature.chat.resources.hint_message
 import com.garfiec.librechat.feature.chat.resources.hint_message_model
 import com.garfiec.librechat.feature.chat.resources.recording
+import com.garfiec.librechat.feature.chat.tchat.ComposerToolTray
+import com.garfiec.librechat.feature.chat.tchat.ComposerTrayExtras
+import com.garfiec.librechat.feature.chat.tchat.trayItems
 import com.garfiec.librechat.feature.chat.viewmodel.ChatInputGates
 import com.garfiec.librechat.feature.chat.viewmodel.ContextGaugeDetails
 import com.garfiec.librechat.feature.chat.viewmodel.DuringRunSendTarget
@@ -193,6 +196,8 @@ fun CommonChatInputCore(
      * right-hand action: voice, send or stop). Null leaves the slot as Send.
      */
     voice: ComposerVoice? = null,
+    /** TCHAT: non-null swaps the tool chips and pinned row for one tool tray (ComposerToolTray). */
+    toolTray: ComposerTrayExtras? = null,
     /** Queued follow-ups (ghost rows), pinned just above the composer. Hosted here — rather than
      *  in the scrolling message list — so the list's auto-scroll-to-bottom can't make the ghosts
      *  bounce as the reply streams. Empty list renders nothing. */
@@ -286,11 +291,25 @@ fun CommonChatInputCore(
                 onRemoveFile = onRemoveFile,
                 mcpServers = state.mcpServers,
                 selectedMcpServerNames = state.selectedMcpServerNames,
-                showEphemeralTools = state.gates.showEphemeralTools,
+                // TCHAT: with the tray, this row carries files only.
+                showEphemeralTools = state.gates.showEphemeralTools && toolTray == null,
             )
 
-            // Server-pinned tools (v0.8.7 defaultPinnedTools) as inline quick-toggle chips.
-            if (state.pinnedToolKeys.isNotEmpty()) {
+            // TCHAT: one tray for Image Gen, the tools that are on and the pinned shortcuts.
+            if (toolTray != null) {
+                val trayItems = remember(state, toolTray.imageLabel) {
+                    trayItems(
+                        enabledTools = state.enabledTools,
+                        pinnedToolKeys = state.pinnedToolKeys,
+                        mcpServers = state.mcpServers,
+                        selectedMcpServerNames = state.selectedMcpServerNames,
+                        showEphemeralTools = state.gates.showEphemeralTools,
+                        imageLabel = toolTray.imageLabel,
+                    )
+                }
+                ComposerToolTray(items = trayItems, extras = toolTray, onToggleTool = onToggleTool)
+            } else if (state.pinnedToolKeys.isNotEmpty()) {
+                // Server-pinned tools (v0.8.7 defaultPinnedTools) as inline quick-toggle chips.
                 PinnedToolsRow(
                     pinnedToolKeys = state.pinnedToolKeys,
                     enabledTools = state.enabledTools,

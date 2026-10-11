@@ -137,7 +137,8 @@ fun AttachmentChipsRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                    // TCHAT: no inset, so file chips line up with the composer's edge and the tool tray.
+                    .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
