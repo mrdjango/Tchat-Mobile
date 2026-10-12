@@ -2,6 +2,7 @@ package com.garfiec.librechat.feature.chat.tchat
 
 import androidx.compose.runtime.Immutable
 import com.garfiec.librechat.core.data.datastore.TchatSettingsStore
+import com.garfiec.librechat.core.model.config.ImageChoice
 import com.garfiec.librechat.core.model.config.ImageSpec
 import com.garfiec.librechat.core.model.tchat.TchatModelCatalog
 import kotlinx.serialization.json.JsonPrimitive
@@ -30,6 +31,8 @@ data class TchatModelState(
     val imageToolAvailable: Boolean = false,
     /** Null while Image Gen is off. App-wide and persisted, like the other tool toggles. */
     val imageGen: ImageGenSelection? = null,
+    /** Image parameters pinned per `imageList` entry name, persisted app-wide. */
+    val imageChoices: Map<String, ImageChoice> = emptyMap(),
     /** The default model spec's `(endpoint, model)`, the repair fallback's first choice. */
     val defaultSpec: Pair<String, String>? = null,
     /** `/api/config` has arrived, so [imageSpecs] and [defaultSpec] are final. */
@@ -46,6 +49,16 @@ data class TchatModelState(
 
     /** The entry Image Gen is on with, or null when it's off or unavailable. */
     val activeImage: ImageSpec? get() = if (imageGenAvailable) activeImageSpec(imageGen, imageSpecs) else null
+
+    /** What is pinned for [activeImage], limited to what it still offers; null when nothing is. */
+    val activeImageChoice: ImageChoice?
+        get() {
+            val spec = activeImage ?: return null
+            return imageChoices[spec.name]?.sanitizedFor(spec.options)
+        }
+
+    /** `ephemeralAgent.image_options`: sent only alongside [imageGenRequestValue]. */
+    val imageOptionsRequestValue: ImageChoice? get() = if (imageGenRequestValue != null) activeImageChoice else null
 
     /** `ephemeralAgent.image_gen`: `true` for the default entry, else the entry's name. */
     val imageGenRequestValue: JsonPrimitive?

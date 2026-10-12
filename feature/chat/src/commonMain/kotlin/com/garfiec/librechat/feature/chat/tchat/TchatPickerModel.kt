@@ -3,6 +3,7 @@ package com.garfiec.librechat.feature.chat.tchat
 import androidx.compose.runtime.Immutable
 import com.garfiec.librechat.core.common.EndpointConstants
 import com.garfiec.librechat.core.model.Agent
+import com.garfiec.librechat.core.model.config.ImageChoice
 import com.garfiec.librechat.core.model.config.ImageSpec
 
 /*
@@ -76,6 +77,8 @@ data class TchatPicker(
     val current: PickerCurrent?,
     /** The image entry Image Gen is using, or null while it's off. */
     val activeImage: ImageSpec?,
+    /** What is pinned for [activeImage], limited to what it offers. */
+    val imageChoice: ImageChoice? = null,
 ) {
     val total: Int get() = groups.sumOf { it.rows.size }
 }
@@ -146,6 +149,8 @@ fun buildTchatPicker(
     favoriteAgentIds: Set<String>,
     imageSpecs: List<ImageSpec>,
     imageGen: ImageGenSelection?,
+    /** Pinned image parameters per entry name. */
+    imageChoices: Map<String, ImageChoice> = emptyMap(),
     /** False hides the Image Gen group: no `image_gen_oai` tool, or a picker that can't carry it. */
     showImageGen: Boolean,
     labels: PickerLabels,
@@ -188,7 +193,13 @@ fun buildTchatPicker(
         else -> null
     }
 
-    return TchatPicker(groups = groups, pinned = pinned, current = current, activeImage = activeImage)
+    return TchatPicker(
+        groups = groups,
+        pinned = pinned,
+        current = current,
+        activeImage = activeImage,
+        imageChoice = activeImage?.let { imageChoices[it.name]?.sanitizedFor(it.options) },
+    )
 }
 
 private fun makerGroups(

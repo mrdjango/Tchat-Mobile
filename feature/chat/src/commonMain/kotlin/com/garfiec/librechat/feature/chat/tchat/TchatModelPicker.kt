@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.garfiec.librechat.core.model.Agent
+import com.garfiec.librechat.core.model.config.ImageChoiceField
 import com.garfiec.librechat.core.ui.components.AdaptiveDropdownMenu
 import com.garfiec.librechat.core.ui.components.AdaptiveFilterChip
 import com.garfiec.librechat.core.ui.components.AdaptiveModalBottomSheet
@@ -105,6 +106,8 @@ class TchatPickerActions(
     val onImagePicked: (name: String) -> Unit,
     val onToggleModelPin: (endpoint: String, model: String) -> Unit,
     val onToggleAgentPin: (agentId: String) -> Unit,
+    /** TCHAT: the image options panel pins a parameter, or clears it with null (Auto). */
+    val onImageChoice: (field: ImageChoiceField, value: String?) -> Unit = { _, _ -> },
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -247,6 +250,12 @@ fun TchatModelPickerContent(
                     onTogglePin = togglePin,
                     intro = if (group.kind == PickerGroupKind.IMAGE) Res.string.tchat_image_gen_intro else null,
                 )
+                val activeImage = picker.activeImage
+                if (group.kind == PickerGroupKind.IMAGE && activeImage?.options?.isEmpty == false) {
+                    item(key = "image_options", contentType = "image_options") {
+                        ImageOptionsPanel(activeImage, picker.imageChoice, actions.onImageChoice)
+                    }
+                }
             }
             if (visible.isEmpty()) {
                 item(key = "empty") {
