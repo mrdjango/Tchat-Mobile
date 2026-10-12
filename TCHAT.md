@@ -177,6 +177,13 @@ in `design/model-selection-requirements.md`.
   branch that the Tchat host never takes.
 - **The header defaults to the model** (`ChatHeaderContent.DEFAULT`), and composer and pane labels
   use `formatModelLabel`, so a raw model id shows only in the picker.
+- **One tool tray above the composer** (`tchat/ComposerToolTray.kt`). Image Gen, the tools that
+  are on and the selected MCP servers show as `accent-container` chips with an inline ✕; the
+  server's pinned tools that are off follow as outlined one-tap shortcuts. It's one sideways-scrolling
+  row aligned with the composer's edge, with 36dp chips whose touch targets are 48dp. `ChatScreen`
+  passes `ComposerTrayExtras` through `ChatComposer` into `CommonChatInputCore`. That swaps out
+  upstream's tool indicator chips (`AttachmentChipsRow` then carries files only) and
+  `PinnedToolsRow`; without the extras, upstream's rows render unchanged.
 - **`ChatViewModel.onPendingNavigationHandled` carries `selection.tchat` over.** The new-chat
   ViewModel rebuilds its state after the first send hands off to `Chat(id)`, and the delegate's
   inputs come from flows that don't re-emit, so a rebuilt-empty slice stayed empty: no Image

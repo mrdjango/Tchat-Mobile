@@ -6,6 +6,7 @@ import com.garfiec.librechat.core.data.datastore.ContextBarPlacement
 import com.garfiec.librechat.core.data.datastore.DuringRunAction
 import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
 import com.garfiec.librechat.feature.chat.model.PromptMentionDisplayData
+import com.garfiec.librechat.feature.chat.tchat.ComposerTrayExtras
 import com.garfiec.librechat.feature.chat.viewmodel.ChatInputGates
 import com.garfiec.librechat.feature.chat.viewmodel.ContextGaugeDetails
 import com.garfiec.librechat.feature.chat.viewmodel.DuringRunSendTarget
@@ -77,5 +78,7 @@ internal expect fun ChatComposer(
     onCancelQueuedMessage: (localId: String) -> Unit,
     onReorderQueuedMessages: (fromIndex: Int, toIndex: Int) -> Unit,
     fontSizeMultiplier: Float,
+    /** TCHAT: the tool tray above the field (Image Gen and active tools); see ComposerToolTray. */
+    toolTray: ComposerTrayExtras?,
     modifier: Modifier = Modifier,
 )

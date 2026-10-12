@@ -56,7 +56,7 @@ silent, conflicted with the app, or needed a concrete rule, and what the impleme
 ### Current model and Image Gen indicators
 
 - **R19.** The top bar trigger shows the readable label with a Free tag and a chevron on line one, and the maker on line two. When Image Gen is on, line two adds an image icon and the image entry's label. For an agent, it shows the agent's name with "Agent" as line two. Its accessibility label is "Choose model. Current: {model}. Image Gen: {image}".
-- **R20.** While Image Gen is on (and no agent is selected), an input chip above the composer shows the image entry's label with an image icon. Tapping the chip opens the picker on the Image Gen filter. Its ✕ turns Image Gen off.
+- **R20.** While Image Gen is on (and no agent is selected), an input chip above the composer shows the image entry's label with an image icon. Tapping the chip opens the picker on the Image Gen filter. Its ✕ turns Image Gen off. It leads the composer's tool tray, the one row that also holds the other active tools (see TCHAT.md).
 - **R21.** The composer's tools sheet has an Image Gen switch that writes the same selection: on means the default entry.
 
 ### Repair
