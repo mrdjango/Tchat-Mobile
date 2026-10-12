@@ -7,6 +7,8 @@ import com.garfiec.librechat.core.data.repository.ConfigRepository
 import com.garfiec.librechat.core.data.repository.TchatModelCatalogRepository
 import com.garfiec.librechat.core.model.AgentTool
 import com.garfiec.librechat.core.model.Preset
+import com.garfiec.librechat.core.model.config.ImageChoice
+import com.garfiec.librechat.core.model.config.ImageChoiceField
 import com.garfiec.librechat.core.model.config.ModelSpec
 import com.garfiec.librechat.core.model.config.ModelSpecs
 import com.garfiec.librechat.core.model.config.StartupConfig
@@ -50,9 +52,19 @@ class TchatModelDelegateTest {
         ),
     )
     private val storedImageGen = MutableStateFlow<String?>(null)
+    private val storedChoices = MutableStateFlow<Map<String, ImageChoice>>(emptyMap())
     private val settings = mockk<TchatSettingsStore>(relaxed = true) {
         every { imageGenSelection } returns storedImageGen
         coEvery { setImageGenSelection(any()) } answers { storedImageGen.value = firstArg() }
+        every { imageChoices } returns storedChoices
+        coEvery { setImageChoice(any(), any()) } answers {
+            val choice = secondArg<ImageChoice?>()
+            storedChoices.value = if (choice == null || choice.isEmpty) {
+                storedChoices.value - firstArg<String>()
+            } else {
+                storedChoices.value + (firstArg<String>() to choice)
+            }
+        }
     }
     private val configRepository = mockk<ConfigRepository>(relaxed = true) {
         every { startupConfig } returns this@TchatModelDelegateTest.startupConfig
@@ -172,4 +184,43 @@ class TchatModelDelegateTest {
             state.value = state.value.copy(selection = state.value.selection.copy(selectedEndpoint = "agents"))
             assertNull(builder.buildEphemeralAgent())
         }
+
+    @Test
+    fun `pinned image options ride with their own model only, and Auto clears them`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val (state, delegate) = start(chatOn("gpt-5.6-terra"))
+            val builder = ChatRequestBuilder { state.value }
+
+            // Nothing to pin while Image Gen is off.
+            delegate.setImageChoice(ImageChoiceField.ASPECT_RATIO, "16:9")
+            assertTrue(storedChoices.value.isEmpty())
+
+            delegate.onImageRowPicked("gemini-image")
+            delegate.setImageChoice(ImageChoiceField.ASPECT_RATIO, "16:9")
+            delegate.setImageChoice(ImageChoiceField.IMAGE_SIZE, "4K")
+            assertEquals(ImageChoice(aspectRatio = "16:9", imageSize = "4K"), builder.buildEphemeralAgent()?.imageOptions)
+            assertEquals(mapOf("gemini-image" to ImageChoice(aspectRatio = "16:9", imageSize = "4K")), storedChoices.value)
+
+            // Another model never inherits it, and a model that honours nothing sends nothing.
+            delegate.onImageRowPicked("gpt-image-2-hd")
+            assertNull(builder.buildEphemeralAgent()?.imageOptions)
+            delegate.toggleImageGen()
+            delegate.toggleImageGen()
+            assertEquals(JsonPrimitive(true), builder.buildEphemeralAgent()?.imageGen)
+            assertNull(builder.buildEphemeralAgent()?.imageOptions)
+
+            delegate.onImageRowPicked("gemini-image")
+            delegate.setImageChoice(ImageChoiceField.ASPECT_RATIO, null)
+            delegate.setImageChoice(ImageChoiceField.IMAGE_SIZE, null)
+            assertNull(builder.buildEphemeralAgent()?.imageOptions)
+            assertTrue(storedChoices.value.isEmpty())
+        }
+
+    @Test
+    fun `a stored value the model no longer offers is not sent`() = runTest(UnconfinedTestDispatcher()) {
+        storedChoices.value = mapOf("gpt-image-2-hd" to ImageChoice(size = "3840x2160"))
+        val (state, delegate) = start(chatOn("gpt-5.6-terra"))
+        delegate.onImageRowPicked("gpt-image-2-hd")
+        assertNull(ChatRequestBuilder { state.value }.buildEphemeralAgent()?.imageOptions)
+    }
 }

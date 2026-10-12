@@ -62,6 +62,7 @@ class ChatRequestBuilder(
             // silently drop the tools from a run the user believes is remembering.
             memory = if (ToolConstants.MEMORY in enabledTools && state.isMemoryToolAvailable) true else null,
             imageGen = imageGen,
+            imageOptions = state.tchat.imageOptionsRequestValue, // TCHAT
         )
     }
 
