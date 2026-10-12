@@ -19,4 +19,6 @@ data class ImageSpec(
     val iconURL: String? = null,
     /** Used when the user hasn't chosen one. The first entry wins if none is marked. */
     val default: Boolean? = null,
+    /** The parameters this model honours; null when the server doesn't say. */
+    val options: ImageOptions? = null,
 )

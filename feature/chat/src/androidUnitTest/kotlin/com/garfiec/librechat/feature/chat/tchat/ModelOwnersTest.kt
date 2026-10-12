@@ -1,5 +1,6 @@
 package com.garfiec.librechat.feature.chat.tchat
 
+import com.garfiec.librechat.core.model.config.ImageOptions
 import com.garfiec.librechat.core.model.config.ImageSpec
 import com.garfiec.librechat.core.model.tchat.TchatModelCatalog
 import kotlin.test.Test
@@ -131,9 +132,19 @@ class ModelOwnersTest {
     companion object {
         /** The OpenAI and Gemini entries of deploy/tchat/librechat.yaml's imageList. */
         val IMAGE_SPECS = listOf(
-            ImageSpec(name = "gpt-image", label = "GPT Image", model = "gpt-image-2", default = true),
-            ImageSpec(name = "gemini-image", label = "Gemini Image", model = "gemini-3-pro-image-c"),
-            ImageSpec(name = "gpt-image-2-hd", label = "GPT Image 2 · HD", model = "gpt-image-2-h"),
+            ImageSpec(name = "gpt-image", label = "GPT Image", model = "gpt-image-2", default = true, options = ImageOptions()),
+            ImageSpec(
+                name = "gemini-image",
+                label = "Gemini Image",
+                model = "gemini-3-pro-image-c",
+                options = ImageOptions(aspectRatios = listOf("1:1", "16:9"), imageSizes = listOf("1K", "4K")),
+            ),
+            ImageSpec(
+                name = "gpt-image-2-hd",
+                label = "GPT Image 2 · HD",
+                model = "gpt-image-2-h",
+                options = ImageOptions(sizes = listOf("1024x1024", "1536x1024")),
+            ),
             ImageSpec(name = "gpt-image-2-5", label = "GPT Image 2.5", model = "gpt-image-2.5-c"),
             ImageSpec(name = "gemini-3-1-flash-image", label = "Gemini 3.1 Flash Image", model = "gemini-3.1-flash-image"),
             ImageSpec(

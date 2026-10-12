@@ -1,5 +1,6 @@
 package com.garfiec.librechat.core.model.request
 
+import com.garfiec.librechat.core.model.config.ImageChoice
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonPrimitive
@@ -22,4 +23,6 @@ data class EphemeralAgent(
      * `modelSpecs.imageList` entry; a string names an entry. Only Tchat servers read it.
      */
     @SerialName("image_gen") val imageGen: JsonPrimitive? = null,
+    /** TCHAT: the parameters pinned for that image model; the server drops any it doesn't offer. */
+    @SerialName("image_options") val imageOptions: ImageChoice? = null,
 )

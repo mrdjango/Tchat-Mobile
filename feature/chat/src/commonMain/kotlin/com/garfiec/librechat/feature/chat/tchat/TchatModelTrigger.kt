@@ -82,6 +82,7 @@ fun rememberTchatPicker(
             favoriteAgentIds = uiState.favoriteAgentIds,
             imageSpecs = tchat.imageSpecs,
             imageGen = tchat.imageGen,
+            imageChoices = tchat.imageChoices,
             showImageGen = showImageGen && tchat.imageGenAvailable,
             labels = labels,
         )
@@ -96,6 +97,7 @@ fun tchatPickerActions(
     onImagePicked = viewModel::onImageRowPicked,
     onToggleModelPin = viewModel::toggleModelFavorite,
     onToggleAgentPin = viewModel::toggleAgentFavorite,
+    onImageChoice = viewModel::setImageChoice,
 )
 
 /** Off hides the Pinned section; Grouped and Top both show it (requirements D11). */

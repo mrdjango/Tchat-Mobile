@@ -6,6 +6,8 @@ import com.garfiec.librechat.core.data.datastore.TchatSettingsStore
 import com.garfiec.librechat.core.data.repository.AgentRepository
 import com.garfiec.librechat.core.data.repository.ConfigRepository
 import com.garfiec.librechat.core.data.repository.TchatModelCatalogRepository
+import com.garfiec.librechat.core.model.config.ImageChoice
+import com.garfiec.librechat.core.model.config.ImageChoiceField
 import com.garfiec.librechat.core.model.config.StartupConfig
 import com.garfiec.librechat.feature.chat.viewmodel.ModelSelectionHandle
 import kotlinx.coroutines.Job
@@ -52,6 +54,9 @@ class TchatModelDelegate(
             }
         }
         handle.scope.launch {
+            tchatSettings.imageChoices.collect { choices -> write { copy(imageChoices = choices) } }
+        }
+        handle.scope.launch {
             handle.stateFlow
                 .map { state ->
                     val tchat = state.selection.tchat
@@ -95,6 +100,16 @@ class TchatModelDelegate(
     /** The tools sheet's switch: on means the default entry. */
     fun toggleImageGen() {
         setImageGen(if (handle.state.selection.tchat.imageGen == null) ImageGenSelection() else null)
+    }
+
+    /** The options panel: pins [value] for [field] on the active image model, or unpins it (Auto). */
+    fun setImageChoice(field: ImageChoiceField, value: String?) {
+        val spec = handle.state.selection.tchat.activeImage ?: return
+        val next = (handle.state.selection.tchat.imageChoices[spec.name] ?: ImageChoice()).with(field, value)
+        write {
+            copy(imageChoices = if (next.isEmpty) imageChoices - spec.name else imageChoices + (spec.name to next))
+        }
+        handle.scope.launch { tchatSettings.setImageChoice(spec.name, next) }
     }
 
     fun setImageGen(selection: ImageGenSelection?) {

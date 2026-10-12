@@ -2,6 +2,7 @@ package com.garfiec.librechat.feature.chat.tchat
 
 import com.garfiec.librechat.core.common.EndpointConstants
 import com.garfiec.librechat.core.model.Agent
+import com.garfiec.librechat.core.model.config.ImageChoice
 import com.garfiec.librechat.core.model.tchat.TchatModelCatalog
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -58,6 +59,7 @@ class TchatPickerModelTest {
         favoriteAgentIds: Set<String> = emptySet(),
         agents: List<Agent> = emptyList(),
         imageGen: ImageGenSelection? = null,
+        imageChoices: Map<String, ImageChoice> = emptyMap(),
         showImageGen: Boolean = true,
     ) = buildTchatPicker(
         availableModels = availableModels,
@@ -69,6 +71,7 @@ class TchatPickerModelTest {
         favoriteAgentIds = favoriteAgentIds,
         imageSpecs = ModelOwnersTest.IMAGE_SPECS,
         imageGen = imageGen,
+        imageChoices = imageChoices,
         showImageGen = showImageGen,
         labels = labels,
     )
@@ -148,6 +151,20 @@ class TchatPickerModelTest {
 
         // The default selection marks the default entry.
         assertEquals("gpt-image", build(imageGen = ImageGenSelection()).activeImage?.name)
+    }
+
+    @Test
+    fun `the picker carries the active model's pinned options, limited to what it offers`() {
+        val choices = mapOf(
+            "gemini-image" to ImageChoice(aspectRatio = "16:9", imageSize = "8K"),
+            "gpt-image-2-hd" to ImageChoice(size = "1536x1024"),
+        )
+        assertEquals(
+            ImageChoice(aspectRatio = "16:9"),
+            build(imageGen = ImageGenSelection("gemini-image"), imageChoices = choices).imageChoice,
+        )
+        assertNull(build(imageGen = ImageGenSelection(), imageChoices = choices).imageChoice)
+        assertNull(build(imageChoices = choices).imageChoice)
     }
 
     @Test

@@ -39,6 +39,7 @@ import com.garfiec.librechat.core.logging.Diag
 import com.garfiec.librechat.core.model.Message
 import com.garfiec.librechat.core.model.MinimalFeedback
 import com.garfiec.librechat.core.model.Preset
+import com.garfiec.librechat.core.model.config.ImageChoiceField
 import com.garfiec.librechat.core.model.config.isTraceViewerEnabled
 import com.garfiec.librechat.core.model.error.UserKeyError
 import com.garfiec.librechat.core.model.media.resolveAvatarUrl
@@ -1377,6 +1378,9 @@ class ChatViewModel(
 
     /** TCHAT: a picker's Image Gen row toggles Image Gen with that entry (R16). */
     fun onImageRowPicked(name: String) = tchatModelDelegate.onImageRowPicked(name)
+
+    /** TCHAT: the picker's image options panel pins or clears one parameter. */
+    fun setImageChoice(field: ImageChoiceField, value: String?) = tchatModelDelegate.setImageChoice(field, value)
 
     /** TCHAT: the Image Gen chip's ✕. */
     fun turnOffImageGen() = tchatModelDelegate.setImageGen(null)
