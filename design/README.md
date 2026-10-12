@@ -6,18 +6,17 @@ The Tchat mark: 1606×1606 RGBA, **foreground only** on transparency, no backgro
 mask — same contract `SwitchboardLogo.png` (still present, unused) followed for Switchboard's own
 icon. This is the source of truth for both the Android launcher icon and the iOS AppIcon set.
 
-Generated from `TchatLogo.svg` (the T+dot glyph from `Tchat/deploy/tchat/branding/tchat-mark.svg`,
-with its rounded-square tile dropped and the glyph itself recoloured to the tile's own gradient —
-see the comment at the top of that file for why: a dark-on-transparent glyph would be invisible
-against this project's dark launcher background):
+Generated from `TchatLogo.svg`: the Tchat mark from
+`Tchat/deploy/tchat/branding/source/tchat-mark.svg` (the TensorGrid chip family, amber `#df911a`,
+with its cells arranged as a T), with its rounded die dropped so the launcher background colour
+supplies the ground:
 
 ```sh
 rsvg-convert -w 1606 -h 1606 design/TchatLogo.svg -o design/TchatLogo.png
 ```
 
-`Tchat/deploy/tchat/branding/tchat-mark.svg` is itself explicitly a placeholder ("Replace with the
-real asset"). When a real Tchat mark exists, redo `TchatLogo.svg`/`TchatLogo.png` against it once,
-rather than maintaining two generations of placeholder.
+When the Tchat mark changes, edit it in `Tchat/deploy/tchat/branding/source/` first, then
+mirror the glyph into `TchatLogo.svg` here and re-run both icon scripts below.
 
 ## Regenerating the Android launcher icon
 
