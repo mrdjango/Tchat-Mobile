@@ -1,6 +1,10 @@
 package com.garfiec.librechat.feature.chat.tchat
 
 import com.garfiec.librechat.core.common.ToolConstants
+import com.garfiec.librechat.core.model.config.ImageChoice
+import com.garfiec.librechat.core.model.config.ImageChoiceField
+import com.garfiec.librechat.core.model.config.ImageOptions
+import com.garfiec.librechat.core.model.config.ImageSpec
 import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,6 +23,7 @@ class ComposerToolTrayTest {
         selectedMcp: Set<String> = emptySet(),
         showEphemeralTools: Boolean = true,
         imageLabel: String? = null,
+        imageOptions: List<ImageOptionChip> = emptyList(),
     ) = trayItems(
         enabledTools = enabledTools,
         pinnedToolKeys = pinned,
@@ -26,6 +31,7 @@ class ComposerToolTrayTest {
         selectedMcpServerNames = selectedMcp,
         showEphemeralTools = showEphemeralTools,
         imageLabel = imageLabel,
+        imageOptions = imageOptions,
     )
 
     @Test
@@ -88,5 +94,40 @@ class ComposerToolTrayTest {
             imageLabel = "GPT Image",
         )
         assertEquals(result.size, result.map { it.key }.toSet().size)
+    }
+
+    private val gemini = ImageSpec(
+        name = "gemini",
+        label = "Gemini",
+        model = "gemini-3-pro-image",
+        options = ImageOptions(aspectRatios = listOf("1:1", "16:9"), imageSizes = listOf("1K", "4K")),
+    )
+
+    @Test
+    fun `image parameters follow the Image Gen chip, ratio before resolution`() {
+        val options = imageOptionItems(gemini, ImageChoice(aspectRatio = "16:9"))
+        assertEquals(
+            listOf(
+                ImageOptionChip(ImageChoiceField.ASPECT_RATIO, listOf("1:1", "16:9"), pinned = "16:9"),
+                ImageOptionChip(ImageChoiceField.IMAGE_SIZE, listOf("1K", "4K"), pinned = null),
+            ),
+            options,
+        )
+        val result =
+            items(enabledTools = setOf(ToolConstants.CODE_INTERPRETER), imageLabel = "Gemini", imageOptions = options)
+        assertEquals(
+            listOf("image", "image_option:ASPECT_RATIO", "image_option:IMAGE_SIZE", "tool:${ToolConstants.CODE_INTERPRETER}"),
+            result.map { it.key },
+        )
+    }
+
+    @Test
+    fun `no parameter chips without Image Gen, options, or for a value the model dropped`() {
+        val options = imageOptionItems(gemini, null)
+        assertTrue(items(imageOptions = options).none { it is TrayItem.ImageOption })
+        assertTrue(imageOptionItems(gemini.copy(options = ImageOptions()), null).isEmpty())
+        assertTrue(imageOptionItems(gemini.copy(options = null), null).isEmpty())
+        assertTrue(imageOptionItems(null, null).isEmpty())
+        assertEquals(null, imageOptionItems(gemini, ImageChoice(imageSize = "8K")).last().pinned)
     }
 }
