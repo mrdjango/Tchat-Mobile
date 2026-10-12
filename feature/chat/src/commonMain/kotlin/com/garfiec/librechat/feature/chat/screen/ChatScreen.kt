@@ -48,6 +48,7 @@ import com.garfiec.librechat.feature.chat.components.rememberChatOptionsSheetCon
 import com.garfiec.librechat.feature.chat.prompts.components.VariableInputDialog
 import com.garfiec.librechat.feature.chat.tchat.ComposerTrayExtras
 import com.garfiec.librechat.feature.chat.tchat.imageGenIndicatorLabel
+import com.garfiec.librechat.feature.chat.tchat.imageOptionItems
 import com.garfiec.librechat.feature.chat.viewmodel.ChatViewModel
 import com.garfiec.librechat.feature.chat.viewmodel.UpdateBannerViewModel
 import com.garfiec.librechat.feature.chat.viewmodel.asString
@@ -419,6 +420,11 @@ fun ChatScreen(
                                     onTurnOffImage = viewModel::turnOffImageGen,
                                     onOpenTools = { optionsController.open() },
                                     onToggleMcpServer = viewModel::toggleMcpServer,
+                                    imageOptions = imageOptionItems(
+                                        uiState.tchat.activeImage.takeIf { uiState.imageGenIndicatorLabel != null },
+                                        uiState.tchat.activeImageChoice,
+                                    ),
+                                    onImageChoice = viewModel::setImageChoice,
                                 ),
                                 mcpServers = uiState.mcpServers,
                                 selectedMcpServerNames = uiState.selectedMcpServerNames,

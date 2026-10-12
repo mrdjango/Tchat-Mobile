@@ -21,16 +21,23 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.PhotoSizeSelectLarge
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -43,22 +50,35 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.garfiec.librechat.core.common.ToolConstants
+import com.garfiec.librechat.core.model.config.ImageChoice
+import com.garfiec.librechat.core.model.config.ImageChoiceField
+import com.garfiec.librechat.core.model.config.ImageSpec
+import com.garfiec.librechat.core.model.config.imageSizeLabel
+import com.garfiec.librechat.core.ui.components.AdaptiveDropdownMenu
 import com.garfiec.librechat.core.ui.components.focusRing
 import com.garfiec.librechat.core.ui.theme.LocalReduceMotion
 import com.garfiec.librechat.core.ui.theme.focusRingColor
 import com.garfiec.librechat.feature.chat.components.ephemeralToolMeta
 import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
 import com.garfiec.librechat.feature.chat.resources.Res
+import com.garfiec.librechat.feature.chat.resources.tchat_image_aspect_ratio
+import com.garfiec.librechat.feature.chat.resources.tchat_image_auto
 import com.garfiec.librechat.feature.chat.resources.tchat_image_chip_cd
 import com.garfiec.librechat.feature.chat.resources.tchat_image_chip_remove
+import com.garfiec.librechat.feature.chat.resources.tchat_image_option_cd
+import com.garfiec.librechat.feature.chat.resources.tchat_image_option_reset
+import com.garfiec.librechat.feature.chat.resources.tchat_image_resolution
+import com.garfiec.librechat.feature.chat.resources.tchat_image_size
 import com.garfiec.librechat.feature.chat.resources.tchat_tray_on_cd
 import com.garfiec.librechat.feature.chat.resources.tchat_tray_remove
 import com.garfiec.librechat.feature.chat.resources.tchat_tray_turn_on
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -73,7 +93,28 @@ class ComposerTrayExtras(
     val onTurnOffImage: () -> Unit,
     val onOpenTools: () -> Unit,
     val onToggleMcpServer: (String) -> Unit,
+    /** One chip per parameter the active image model honours, after the Image Gen chip. */
+    val imageOptions: List<ImageOptionChip> = emptyList(),
+    /** Pins a parameter value, or clears it back to Auto with null. */
+    val onImageChoice: (ImageChoiceField, String?) -> Unit = { _, _ -> },
 )
+
+/**
+ * The tray's parameter chips for [spec]: Aspect ratio, Resolution, then Size, each only when the
+ * model lists values for it. [choice] marks the pinned value; one the model no longer lists is Auto.
+ */
+fun imageOptionItems(spec: ImageSpec?, choice: ImageChoice?): List<ImageOptionChip> {
+    val options = spec?.options ?: return emptyList()
+    return listOf(ImageChoiceField.ASPECT_RATIO, ImageChoiceField.IMAGE_SIZE, ImageChoiceField.SIZE)
+        .mapNotNull { field ->
+            val values = options.valuesFor(field).ifEmpty { return@mapNotNull null }
+            ImageOptionChip(field, values, choice?.get(field)?.takeIf { it in values })
+        }
+}
+
+/** A parameter of the active image model; null [pinned] is Auto. ✕ shows only when pinned. */
+@Immutable
+data class ImageOptionChip(val field: ImageChoiceField, val values: List<String>, val pinned: String?)
 
 /** One chip in the tray, in display order. */
 internal sealed interface TrayItem {
@@ -81,6 +122,11 @@ internal sealed interface TrayItem {
 
     data class ImageGen(val label: String) : TrayItem {
         override val key: String get() = "image"
+    }
+
+    /** One of [ComposerTrayExtras.imageOptions], right after the Image Gen chip. */
+    data class ImageOption(val chip: ImageOptionChip) : TrayItem {
+        override val key: String get() = "image_option:${chip.field}"
     }
 
     /** An ephemeral tool that's on; ✕ toggles it off. */
@@ -118,13 +164,17 @@ internal fun trayItems(
     selectedMcpServerNames: Set<String>,
     showEphemeralTools: Boolean,
     imageLabel: String?,
+    imageOptions: List<ImageOptionChip> = emptyList(),
 ): List<TrayItem> {
     if (!showEphemeralTools) return emptyList()
     val active = (ALWAYS_SHOWN_TOOLS + pinnedToolKeys)
         .distinct()
         .filter { it in enabledTools && it != IMAGE_GEN_TOOL_KEY && ephemeralToolMeta(it) != null }
     return buildList {
-        imageLabel?.let { add(TrayItem.ImageGen(it)) }
+        imageLabel?.let {
+            add(TrayItem.ImageGen(it))
+            imageOptions.forEach { add(TrayItem.ImageOption(it)) }
+        }
         active.forEach { add(TrayItem.ActiveTool(it)) }
         mcpServers.filter { it.name in selectedMcpServerNames }
             .forEach { add(TrayItem.Mcp(it.name, it.title ?: it.name)) }
@@ -177,6 +227,7 @@ private fun TrayItemChip(
             onRemove = extras.onTurnOffImage,
             modifier = modifier,
         )
+        is TrayItem.ImageOption -> ImageParameterChip(item.chip, extras.onImageChoice, modifier)
         is TrayItem.ActiveTool -> {
             val meta = ephemeralToolMeta(item.tool) ?: return
             val label = stringResource(meta.titleRes)
@@ -233,7 +284,7 @@ private fun ActiveChip(
     bodyDescription: String,
     removeDescription: String,
     onClick: () -> Unit,
-    onRemove: () -> Unit,
+    onRemove: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -253,10 +304,10 @@ private fun ActiveChip(
         Row(
             modifier = Modifier
                 .fillMaxHeight()
-                .pill(StartShape, container, if (bodyPressed) pressedOverlay else null)
+                .pill(if (onRemove != null) StartShape else ChipShape, container, if (bodyPressed) pressedOverlay else null)
                 .clickable(interactionSource = bodySource, indication = null, role = Role.Button, onClick = onClick)
                 .semantics { contentDescription = bodyDescription }
-                .padding(start = 12.dp),
+                .padding(start = 12.dp, end = if (onRemove != null) 0.dp else 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(16.dp))
@@ -270,6 +321,7 @@ private fun ActiveChip(
                 modifier = Modifier.widthIn(max = MaxLabelWidth),
             )
         }
+        if (onRemove == null) return@Row
         Box(
             modifier = Modifier
                 .fillMaxHeight()
@@ -285,6 +337,63 @@ private fun ActiveChip(
                 tint = content,
                 modifier = Modifier.padding(start = 6.dp).size(16.dp),
             )
+        }
+    }
+}
+
+private val OptionTitles: Map<ImageChoiceField, StringResource> = mapOf(
+    ImageChoiceField.ASPECT_RATIO to Res.string.tchat_image_aspect_ratio,
+    ImageChoiceField.IMAGE_SIZE to Res.string.tchat_image_resolution,
+    ImageChoiceField.SIZE to Res.string.tchat_image_size,
+)
+
+private val OptionIcons: Map<ImageChoiceField, ImageVector> = mapOf(
+    ImageChoiceField.ASPECT_RATIO to Icons.Default.AspectRatio,
+    ImageChoiceField.IMAGE_SIZE to Icons.Default.HighQuality,
+    ImageChoiceField.SIZE to Icons.Default.PhotoSizeSelectLarge,
+)
+
+/**
+ * An image parameter (web's per-parameter chip): the body opens Auto plus the model's values, and
+ * ✕, shown only while a value is pinned, goes back to Auto.
+ */
+@Composable
+private fun ImageParameterChip(
+    item: ImageOptionChip,
+    onChoice: (ImageChoiceField, String?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var open by remember { mutableStateOf(false) }
+    val title = stringResource(OptionTitles.getValue(item.field))
+    val auto = stringResource(Res.string.tchat_image_auto)
+    val format: (String) -> String = { if (item.field == ImageChoiceField.SIZE) imageSizeLabel(it) else it }
+    val value = item.pinned?.let(format) ?: auto
+    Box(modifier) {
+        ActiveChip(
+            icon = OptionIcons.getValue(item.field),
+            label = "$title · $value",
+            bodyDescription = stringResource(Res.string.tchat_image_option_cd, title, value),
+            removeDescription = stringResource(Res.string.tchat_image_option_reset, title),
+            onClick = { open = true },
+            onRemove = item.pinned?.let { { onChoice(item.field, null) } },
+        )
+        AdaptiveDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            (listOf<String?>(null) + item.values).forEach { option ->
+                val selected = option == item.pinned
+                DropdownMenuItem(
+                    text = { Text(option?.let(format) ?: auto) },
+                    trailingIcon = if (selected) {
+                        { Icon(Icons.Default.Check, contentDescription = null) }
+                    } else {
+                        null
+                    },
+                    onClick = {
+                        open = false
+                        onChoice(item.field, option)
+                    },
+                    modifier = Modifier.semantics { this.selected = selected },
+                )
+            }
         }
     }
 }
