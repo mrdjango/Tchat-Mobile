@@ -38,6 +38,11 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.LibreChat">
+        <!-- TCHAT: Sentry starts from LibreChatApplication (CrashReporting.kt), never from its
+             own content provider, so no DSN lives in the manifest. -->
+        <meta-data
+            android:name="io.sentry.auto-init"
+            android:value="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

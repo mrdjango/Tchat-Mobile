@@ -89,6 +89,9 @@ dependencies {
     implementation(libs.coil3.network.ktor)
     implementation(libs.coil3.svg)
     implementation(libs.kermit)
+    // TCHAT: crash reporting to GlitchTip — see CrashReporting.kt
+    implementation(project(":core:brand"))
+    implementation(libs.sentry.android.core)
 
     debugImplementation(libs.leakcanary)
 

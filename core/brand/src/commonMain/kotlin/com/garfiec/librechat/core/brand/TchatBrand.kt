@@ -45,4 +45,12 @@ object TchatBrand {
      * The installed version's release notes are a separate surface and stay.
      */
     const val APP_UPDATE_CHECK: Boolean = false
+
+    /**
+     * Crash reports go to GlitchTip (Sentry-compatible), project `tchat-mobile` at
+     * glitchtip.tensorgrid.space. A DSN only allows sending events to that project, so it is not
+     * a secret. Empty turns reporting off. Read by the Android app's `CrashReporting.kt`.
+     */
+    const val CRASH_REPORTING_DSN: String =
+        "https://2fa383d3b30148e48c89f611cf0229a6@glitchtip.tensorgrid.space/6"
 }
