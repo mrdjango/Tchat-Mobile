@@ -1,4 +1,6 @@
 [versions]
+# TCHAT: crash reporting to GlitchTip (app/CrashReporting.kt)
+sentry-android = "8.61.0"
 # Core Android
 agp = "9.2.1"
 kotlin = "2.4.10"
@@ -88,6 +90,8 @@ kover = "0.9.11"
 desugar = "2.1.5"
 
 [libraries]
+# TCHAT: crash reporting to GlitchTip (app/CrashReporting.kt)
+sentry-android-core = { module = "io.sentry:sentry-android-core", version.ref = "sentry-android" }
 # Compose BOM
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
 compose-ui = { group = "androidx.compose.ui", name = "ui" }

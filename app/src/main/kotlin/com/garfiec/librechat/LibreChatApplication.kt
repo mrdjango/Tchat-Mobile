@@ -32,6 +32,7 @@ class LibreChatApplication : Application(), SingletonImageLoader.Factory {
     @Suppress("TooGenericExceptionCaught") // logs, then rethrows: DI failure is unrecoverable
     override fun onCreate() {
         super.onCreate()
+        initCrashReporting() // TCHAT: GlitchTip, first so a Koin failure is reported too
         try {
             startKoin {
                 if (BuildConfig.DEBUG) {

@@ -234,3 +234,13 @@ account out. Required before any sustained testing against `chat.tensorgrid.spac
 
 Release signing, Play Store, App Store, and Obtainium/SLSA release-provenance updates are all
 deferred. Each needs its own pass — see the plan history for what each entails when the time comes.
+
+## Crash reporting (GlitchTip)
+
+Android crashes and ANRs go to GlitchTip project `tchat-mobile` (glitchtip.tensorgrid.space) through
+`app/.../CrashReporting.kt`, started first in `LibreChatApplication.onCreate`. The DSN lives in
+`TchatBrand.CRASH_REPORTING_DSN`; a DSN only allows sending events, so it is not a secret, and an
+empty string turns reporting off. Sentry's own content-provider auto-init is disabled in the
+manifest. No user id, IP, request data, screenshots, view hierarchy or tracing is sent. iOS is not
+wired. If Tchat is ever listed on F-Droid, decide then whether this needs an opt-in switch: F-Droid
+labels apps that report to a remote service with the "Tracking" anti-feature.
