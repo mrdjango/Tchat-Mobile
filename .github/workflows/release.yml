@@ -53,7 +53,9 @@ jobs:
           # on a personal (non-org) repo, so authenticate as the repo owner via a
           # fine-grained PAT (Contents: write) — already a bypass actor. Set in the
           # 'release' environment. checkout persists it for the later push.
-          token: ${{ secrets.RELEASE_PAT }}
+          # TCHAT: mrdjango/Tchat-Mobile has no ruleset on develop, so the job token can push;
+          # RELEASE_PAT is only needed if a ruleset is added later.
+          token: ${{ secrets.RELEASE_PAT || github.token }}
 
       - name: Set up JDK 21
         uses: actions/setup-java@v6
@@ -75,15 +77,12 @@ jobs:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
         run: |
           missing=""
           [ -z "$SIGNING_KEYSTORE_BASE64" ] && missing="$missing SIGNING_KEYSTORE_BASE64"
           [ -z "$SIGNING_STORE_PASSWORD" ] && missing="$missing SIGNING_STORE_PASSWORD"
           [ -z "$SIGNING_KEY_PASSWORD" ] && missing="$missing SIGNING_KEY_PASSWORD"
           [ -z "$SIGNING_KEY_ALIAS" ] && missing="$missing SIGNING_KEY_ALIAS"
-          # PAT used by checkout to push past the branch ruleset (see Checkout step).
-          [ -z "$RELEASE_PAT" ] && missing="$missing RELEASE_PAT"
           if [ -n "$missing" ]; then
             echo "::error title=Missing signing secrets::Set these in the 'release' environment:$missing"
             exit 1
@@ -172,12 +171,13 @@ jobs:
           git commit -m "chore(release): $TAG"
           git tag -a "$TAG" -m "Release $TAG"
 
-      - name: Build signed release APK
+      # TCHAT: the AAB is what Google Play takes; the APK stays for direct downloads.
+      - name: Build signed release APK + AAB
         env:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-        run: ./gradlew :app:assembleRelease --no-daemon
+        run: ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon
 
       # Android refuses an in-place update across a key change, so an APK signed with
       # anything but the one permanent release key strands every existing install — and
@@ -185,8 +185,8 @@ jobs:
       # all happily describe a wrongly-signed binary. Assert the fingerprint before they run.
       - name: Verify the APK carries the published release certificate
         env:
-          # README's "Verifying the signing key" section — the value users check against.
-          EXPECTED_CERT_SHA256: "66:8A:71:96:6A:07:06:14:D1:44:95:5D:83:E7:23:6A:3C:ED:77:F8:64:08:57:C3:FA:84:B0:3C:CD:E4:0E:59"
+          # TCHAT: Tchat's own upload key (Doppler tchat-mobile/prd), not upstream's — see TCHAT.md § Release signing.
+          EXPECTED_CERT_SHA256: "B9:9A:34:EE:20:0A:63:A0:00:17:32:E0:7D:87:90:E4:E8:87:01:20:0C:50:29:67:34:30:35:B1:02:D8:C0:F3"
         run: |
           set -euo pipefail
           # build-tools is not on PATH on GitHub runners, and which versions ship changes
@@ -207,6 +207,14 @@ jobs:
             exit 1
           fi
           echo "Release certificate matches the published fingerprint."
+          # TCHAT: an AAB is jar-signed, so apksigner can't read it; keytool can.
+          aab="app/build/outputs/bundle/release/app-release.aab"
+          got="$(keytool -printcert -jarfile "$aab" | awk '/SHA256:/ { print $2; exit }' | norm || true)"
+          if [ "$got" != "$want" ]; then
+            echo "::error title=Wrong AAB signing certificate::expected $want, got ${got:-<unsigned>}"
+            exit 1
+          fi
+          echo "AAB certificate matches the published fingerprint."
 
       - name: Prepare artifacts
         id: artifacts
@@ -214,10 +222,15 @@ jobs:
           VERSION: ${{ steps.bump.outputs.version_name }}
         run: |
           src="app/build/outputs/apk/release/app-release.apk"
-          out="switchboard-v${VERSION}.apk"
+          out="tchat-v${VERSION}.apk"
           cp "$src" "$out"
           sha256sum "$out" > "${out}.sha256"
           echo "apk=$out" >> "$GITHUB_OUTPUT"
+          # TCHAT: the Play upload bundle, attached to the same draft release.
+          aab="tchat-v${VERSION}.aab"
+          cp app/build/outputs/bundle/release/app-release.aab "$aab"
+          sha256sum "$aab" > "${aab}.sha256"
+          echo "aab=$aab" >> "$GITHUB_OUTPUT"
 
       # Nothing else builds this path, so it would rot unnoticed — and the rot would be
       # quiet rather than loud: a reproducible-build verifier strips and ignores a signature
@@ -258,7 +271,9 @@ jobs:
         # actions/setup-java@v5; Dependabot tracks it via .github/dependabot.yml.
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: ${{ steps.artifacts.outputs.apk }}
+          subject-path: |
+            ${{ steps.artifacts.outputs.apk }}
+            ${{ steps.artifacts.outputs.aab }}
 
       # Deliberately last: everything that can fail has already run, so a failed build leaves
       # no orphaned tag and burns no version on the branch. The provenance attestation above
@@ -290,7 +305,7 @@ jobs:
 
           # The iOS job uploads this deterministic asset name to the same draft; reference it
           # statically here even though this step runs before that job finishes.
-          IPA="switchboard-v${VERSION}.ipa"
+          IPA="tchat-v${VERSION}.ipa"
 
           # Badge row (rendered side-by-side). The Target Backend badge replaces the old
           # plain-text "Target backend: LibreChat v…" line. The Downloads badges track
@@ -298,9 +313,9 @@ jobs:
           {
             printf '![Target Backend](https://img.shields.io/badge/Target_Backend-LibreChat_v%s-orange)' "$BACKEND"
             printf ' '
-            printf '![APK Downloads](https://img.shields.io/github/downloads/garfiec/Librechat-Mobile/%s/%s?displayAssetName=false&logo=android&label=APK%%20Downloads&color=blue)' "$TAG" "$APK"
+            printf '![APK Downloads](https://img.shields.io/github/downloads/${{ github.repository }}/%s/%s?displayAssetName=false&logo=android&label=APK%%20Downloads&color=blue)' "$TAG" "$APK"
             printf ' '
-            printf '![IPA Downloads](https://img.shields.io/github/downloads/garfiec/Librechat-Mobile/%s/%s?displayAssetName=false&logo=apple&label=IPA%%20Downloads&color=blue)\n' "$TAG" "$IPA"
+            printf '![IPA Downloads](https://img.shields.io/github/downloads/${{ github.repository }}/%s/%s?displayAssetName=false&logo=apple&label=IPA%%20Downloads&color=blue)\n' "$TAG" "$IPA"
             printf '\n'
             cat "$RUNNER_TEMP/changelog.md"
             # Slim provenance footer: discoverability links, not proof. Canonical "how to
@@ -331,6 +346,8 @@ jobs:
           files: |
             ${{ steps.artifacts.outputs.apk }}
             ${{ steps.artifacts.outputs.apk }}.sha256
+            ${{ steps.artifacts.outputs.aab }}
+            ${{ steps.artifacts.outputs.aab }}.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -425,9 +442,9 @@ jobs:
             exit 1
           fi
           mkdir -p Payload && mv "${apps[0]}" Payload/
-          OUT="$RUNNER_TEMP/switchboard-v${VERSION}.ipa"
+          OUT="$RUNNER_TEMP/tchat-v${VERSION}.ipa"
           zip -qry "$OUT" Payload
-          ( cd "$RUNNER_TEMP" && shasum -a 256 "switchboard-v${VERSION}.ipa" > "switchboard-v${VERSION}.ipa.sha256" )
+          ( cd "$RUNNER_TEMP" && shasum -a 256 "tchat-v${VERSION}.ipa" > "tchat-v${VERSION}.ipa.sha256" )
           echo "ipa=$OUT" >> "$GITHUB_OUTPUT"
           echo "sha=$OUT.sha256" >> "$GITHUB_OUTPUT"
 

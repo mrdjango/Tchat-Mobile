@@ -1,1 +1,1 @@
-Native LibreChat client: multi-account, offline reading, dictation
+Chat with leading AI models, generate images and run agents on TensorGrid

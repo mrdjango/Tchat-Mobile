@@ -363,7 +363,8 @@
     <string name="feedback_tag_missing_image">Expected an image</string>
     <string name="feedback_tag_unjustified_refusal">Refused without reason</string>
     <string name="feedback_tag_not_helpful">Lacked useful information</string>
-    <string name="feedback_tag_other">Other issue</string>
+    <!-- TCHAT: names offensive content so the thumbs-down sheet is visibly the in-app flag Play's AI-content policy asks for; key stays "other", which the server accepts. -->
+    <string name="feedback_tag_other">Offensive, harmful or other issue</string>
     <string name="feedback_tag_accurate_reliable">Accurate and reliable</string>
     <string name="feedback_tag_creative_solution">Creative solution</string>
     <string name="feedback_tag_clear_well_written">Clear and well-written</string>
