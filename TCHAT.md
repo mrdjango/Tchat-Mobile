@@ -232,8 +232,25 @@ account out. Required before any sustained testing against `chat.tensorgrid.spac
 
 ## Deferred (internal/debug builds only, for now)
 
-Release signing, Play Store, App Store, and Obtainium/SLSA release-provenance updates are all
-deferred. Each needs its own pass — see the plan history for what each entails when the time comes.
+App Store and Obtainium/F-Droid listing are still deferred. Release signing and the Play bundle are set up:
+
+## Release signing (Google Play)
+
+- **The key is an upload key.** Play App Signing holds the key devices see; ours only proves an
+  upload came from us, so a lost or leaked one is reset through Play Console support rather than
+  stranding installs. RSA 4096, alias `upload`, PKCS12, valid ~27 years, created 2026-10-28.
+- **Certificate SHA-256:** `B9:9A:34:EE:20:0A:63:A0:00:17:32:E0:7D:87:90:E4:E8:87:01:20:0C:50:29:67:34:30:35:B1:02:D8:C0:F3`.
+  `release.yml` fails the release if the APK or AAB carries any other certificate.
+- **Source of truth:** Doppler project `tchat-mobile`, config `prd` — `SIGNING_KEYSTORE_BASE64`,
+  `SIGNING_STORE_PASSWORD`, `SIGNING_KEY_PASSWORD` (same value; PKCS12 has one password),
+  `SIGNING_KEY_ALIAS`. The GitHub `release` environment holds copies; after a rotation re-copy with
+  `doppler secrets get <NAME> -p tchat-mobile -c prd --plain | gh secret set <NAME> -R mrdjango/Tchat-Mobile --env release`.
+- **Never commit** the keystore or a `keystore.properties`.
+- `release.yml` (manual dispatch) now builds `tchat-v<version>.aab` alongside the APK and attaches
+  both to the draft GitHub release; upload the `.aab` to Play Console by hand.
+- The "Other issue" thumbs-down reason is relabelled "Offensive, harmful or other issue": that sheet
+  (with its comment box) is the in-app flag Play's AI-generated-content policy requires. The key
+  stays `other` because the server's feedback route rejects unknown keys.
 
 ## Crash reporting (GlitchTip)
 
