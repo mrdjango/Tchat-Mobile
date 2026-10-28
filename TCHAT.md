@@ -189,6 +189,23 @@ in `design/model-selection-requirements.md`.
   inputs come from flows that don't re-emit, so a rebuilt-empty slice stayed empty: no Image
   section and no Free tags until the app restarted (`TchatLandingResetTest`).
 
+## Web parity: effort, always-on web tools
+
+- **Parameter set from `customParams`.** `/api/endpoints` gives each custom endpoint a
+  `customParams.defaultParamsEndpoint` (Tchat: `TensorGrid` → `openAI`, `TensorGrid-Claude` →
+  `anthropic`). `paramsEndpointFor` (`core/model/EndpointConfig.kt`) resolves it, and the options
+  sheet, the send payload (`ModelParamPayload.paramsEndpoint`) and the composer chip use it in place
+  of the endpoint name. Upstream fell back to the generic set, so no TensorGrid model offered
+  Reasoning effort. `dropParams` still resolves by endpoint name. The agent editor is unchanged.
+- **Effort chip** (`tchat/ComposerEffort.kt`, `EffortChip` in `ComposerToolTray.kt`) — web's
+  composer effort control: first in the tray, Auto plus the levels the parameter set offers, writes
+  the same `ModelParameters` value the options sheet does. Not shown for agents or on comparison
+  tab 1 (parameters are the primary model's only).
+- **`webSearch.alwaysOn`** (`/api/config`, a Tchat server option) turns `webSearchEnabled` off, so
+  no switch or chip offers a tool the server equips on every chat anyway.
+- **`chatMenu: false`** MCP servers (Tchat's always-on `web-fetch`) are left out of the chat's MCP
+  picker, as web does; Settings → MCP still lists them.
+
 ## Upstream bugs fixed here first
 
 - **OAuth was broken** (wrong `/api/oauth` path, and an external browser whose cookie jar the app

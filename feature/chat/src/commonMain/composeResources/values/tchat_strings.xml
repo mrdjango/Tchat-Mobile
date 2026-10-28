@@ -33,6 +33,7 @@
     <string name="tchat_image_aspect_ratio">Aspect ratio</string>
     <string name="tchat_image_resolution">Resolution</string>
     <string name="tchat_image_auto">Auto</string>
+    <string name="tchat_effort">Effort</string>
     <string name="tchat_image_option_cd">%1$s: %2$s. Opens the choices.</string>
     <string name="tchat_image_option_reset">Set %1$s back to Auto</string>
 </resources>

@@ -297,7 +297,7 @@ fun CommonChatInputCore(
 
             // TCHAT: one tray for Image Gen, the tools that are on and the pinned shortcuts.
             if (toolTray != null) {
-                val trayItems = remember(state, toolTray.imageLabel, toolTray.imageOptions) {
+                val trayItems = remember(state, toolTray.imageLabel, toolTray.imageOptions, toolTray.effort) {
                     trayItems(
                         enabledTools = state.enabledTools,
                         pinnedToolKeys = state.pinnedToolKeys,
@@ -306,6 +306,7 @@ fun CommonChatInputCore(
                         showEphemeralTools = state.gates.showEphemeralTools,
                         imageLabel = toolTray.imageLabel,
                         imageOptions = toolTray.imageOptions,
+                        effort = toolTray.effort,
                     )
                 }
                 ComposerToolTray(items = trayItems, extras = toolTray, onToggleTool = onToggleTool)
