@@ -96,6 +96,8 @@ import com.garfiec.librechat.core.data.repository.SubagentRepository
 import com.garfiec.librechat.core.data.repository.SubagentRepositoryImpl
 import com.garfiec.librechat.core.data.repository.TagRepository
 import com.garfiec.librechat.core.data.repository.TagRepositoryImpl
+import com.garfiec.librechat.core.data.repository.TchatCreditRepository
+import com.garfiec.librechat.core.data.repository.TchatCreditRepositoryImpl
 import com.garfiec.librechat.core.data.repository.TchatModelCatalogRepository
 import com.garfiec.librechat.core.data.repository.TchatModelCatalogRepositoryImpl
 import com.garfiec.librechat.core.data.repository.ToolFavoritesRepository
@@ -470,6 +472,7 @@ val dataModule = module {
     // TCHAT: TensorGrid model catalog and Tchat-only preferences for the Tchat model picker.
     single<TchatModelCatalogRepository> { TchatModelCatalogRepositoryImpl(api = get()) }
     single { TchatSettingsStore(dataStore = get()) }
+    single<TchatCreditRepository> { TchatCreditRepositoryImpl(api = get()) } // TCHAT: drawer credit line
     singleOf(::TagRepositoryImpl) bind TagRepository::class
     singleOf(::SearchRepositoryImpl) bind SearchRepository::class
     singleOf(::KeyRepositoryImpl) bind KeyRepository::class

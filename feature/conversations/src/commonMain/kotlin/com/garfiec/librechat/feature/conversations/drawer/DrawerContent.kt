@@ -147,6 +147,7 @@ import com.garfiec.librechat.feature.conversations.resources.settings
 import com.garfiec.librechat.feature.conversations.resources.show_less
 import com.garfiec.librechat.feature.conversations.resources.show_more
 import com.garfiec.librechat.feature.conversations.resources.skills
+import com.garfiec.librechat.feature.conversations.tchat.TchatCreditLine
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -277,6 +278,7 @@ fun DrawerContent(
                     )
                 }
             }
+            TchatCreditLine(accountId = active?.accountId, isOpen = isOpen) // TCHAT: TensorGrid credit
         },
         onSearchQueryChange = viewModel::onSearchQueryChanged,
         onNewChat = onNewChat,

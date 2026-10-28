@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tchat-only strings (drawer credit line). A separate file so upstream's strings.xml never
+     conflicts on a sync. -->
+<resources>
+    <string name="tchat_credit_usd">Credit: $%1$s</string>
+    <string name="tchat_credit_irt">Credit: %1$s Toman</string>
+    <string name="tchat_credit_other">Credit: %1$s %2$s</string>
+</resources>
