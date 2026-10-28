@@ -1,0 +1,9 @@
+- Show TensorGrid credit at the bottom of the drawer
+- Reasoning effort, composer effort chip, always-on web tools
+- Signed Play AAB in releases, Tchat store listing, offensive-content flag label
+- Report Android crashes to GlitchTip
+- Adopt the Tchat mark from the TensorGrid chip family
+- A tray chip per image parameter
+- Pin image parameters per Image Gen model
+- One tool tray above the composer
+- And 2 more; see the release notes on GitHub.
