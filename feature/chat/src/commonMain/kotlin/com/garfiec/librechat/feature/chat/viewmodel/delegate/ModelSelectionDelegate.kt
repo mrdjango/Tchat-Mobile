@@ -879,7 +879,8 @@ class ModelSelectionDelegate(
         handle.scope.launch {
             when (val serversResult = mcpRepository.listServers()) {
                 is Result.Success -> {
-                    val servers = serversResult.data
+                    // TCHAT: `chatMenu: false` servers stay out of the picker, as on web.
+                    val servers = serversResult.data.filter { it.chatMenu != false }
                     // Enrich servers with connection status
                     val statusResult = mcpRepository.getConnectionStatus()
                     val statusMap = (statusResult as? Result.Success)?.data ?: emptyMap()

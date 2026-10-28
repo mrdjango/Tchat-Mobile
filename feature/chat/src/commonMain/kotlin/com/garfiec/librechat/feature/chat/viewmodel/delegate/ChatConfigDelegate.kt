@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 
 /**
  * Loads the server/account configuration that gates the chat UI: the current user's profile
@@ -97,6 +99,8 @@ class ChatConfigDelegate(
                     version,
                     config?.endpointsDropParamsMap,
                     config?.compactionEnabled,
+                    // TCHAT: `webSearch.alwaysOn` (Tchat fork) equips web search on every chat server-side.
+                    (config?.webSearch?.get("alwaysOn") as? JsonPrimitive)?.booleanOrNull == true,
                 )
             }.distinctUntilChanged().collect { inputs ->
                 val role = inputs.role
@@ -124,7 +128,9 @@ class ChatConfigDelegate(
                         mcpServersEnabled = role.hasAccessOrPermissive(PermissionType.MCP_SERVERS, Permission.USE),
                         multiConvoEnabled = gate(PermissionType.MULTI_CONVO, Permission.USE) { it.multiConvo },
                         temporaryChatEnabled = gate(PermissionType.TEMPORARY_CHAT, Permission.USE) { it.temporaryChat },
-                        webSearchEnabled = gate(PermissionType.WEB_SEARCH, Permission.USE) { it.webSearch },
+                        // TCHAT: no toggle for a tool the server always runs (web hides it the same way).
+                        webSearchEnabled = !inputs.webSearchAlwaysOn &&
+                            gate(PermissionType.WEB_SEARCH, Permission.USE) { it.webSearch },
                         runCodeEnabled = gate(PermissionType.RUN_CODE, Permission.USE) { it.runCode },
                         fileSearchEnabled = gate(PermissionType.FILE_SEARCH, Permission.USE) { it.fileSearch },
                         bookmarksEnabled = gate(PermissionType.BOOKMARKS, Permission.USE) { it.bookmarks },
@@ -197,4 +203,5 @@ private data class GateInputs(
     val version: String?,
     val dropParamsMap: Map<String, JsonElement>?,
     val compactionEnabled: Boolean?,
+    val webSearchAlwaysOn: Boolean = false, // TCHAT
 )

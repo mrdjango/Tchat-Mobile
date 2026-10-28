@@ -5,6 +5,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import com.garfiec.librechat.core.common.EndpointConstants
 import com.garfiec.librechat.core.model.config.EndpointDropParams
+import com.garfiec.librechat.core.model.paramsEndpointFor
+import com.garfiec.librechat.core.model.paramsEndpointForOrNull
 import com.garfiec.librechat.feature.chat.components.ChatOptionsBottomSheet
 import com.garfiec.librechat.feature.chat.components.ChatOptionsSheetController
 import com.garfiec.librechat.feature.chat.components.ChatToolsPageParams
@@ -148,10 +150,11 @@ internal fun ChatOptionsSheetHost(
         parameters = ModelParametersPageParams(
             parameters = uiState.modelParameters,
             onParametersChange = viewModel::updateModelParameters,
-            selectedEndpoint = uiState.selectedEndpoint,
+            // TCHAT: the parameter set the endpoint declares (TensorGrid → openAI), not its name.
+            selectedEndpoint = uiState.endpointConfigs.paramsEndpointFor(uiState.selectedEndpoint),
             extendedEffortSupported = uiState.extendedEffortSupported,
             thinkingDisplayUpdatesSupported = uiState.thinkingDisplayUpdatesSupported,
-            selectedProvider = activeAgent?.provider,
+            selectedProvider = uiState.endpointConfigs.paramsEndpointForOrNull(activeAgent?.provider), // TCHAT
             selectedModel = activeAgent?.model ?: uiState.selectedModel,
             // Remembered: `uiState` emits per SSE delta, so an open sheet recomposes once per
             // token and this would walk the map and allocate a fresh list every time, for a value
