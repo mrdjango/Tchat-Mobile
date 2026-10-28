@@ -121,6 +121,7 @@ class McpApi constructor(
                 obo = ((config["obo"] as? JsonObject)?.get("scopes") as? JsonPrimitive)?.contentOrNull
                     ?.takeIf { it.isNotBlank() }
                     ?.let(::McpOboConfig),
+                chatMenu = (config["chatMenu"] as? JsonPrimitive)?.booleanOrNull, // TCHAT
             )
         }
     }

@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PhotoSizeSelectLarge
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -56,17 +57,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.garfiec.librechat.core.common.ToolConstants
+import com.garfiec.librechat.core.model.ParameterDefinition
 import com.garfiec.librechat.core.model.config.ImageChoice
 import com.garfiec.librechat.core.model.config.ImageChoiceField
 import com.garfiec.librechat.core.model.config.ImageSpec
 import com.garfiec.librechat.core.model.config.imageSizeLabel
 import com.garfiec.librechat.core.ui.components.AdaptiveDropdownMenu
+import com.garfiec.librechat.core.ui.components.ModelParameters
 import com.garfiec.librechat.core.ui.components.focusRing
 import com.garfiec.librechat.core.ui.theme.LocalReduceMotion
 import com.garfiec.librechat.core.ui.theme.focusRingColor
 import com.garfiec.librechat.feature.chat.components.ephemeralToolMeta
 import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
 import com.garfiec.librechat.feature.chat.resources.Res
+import com.garfiec.librechat.feature.chat.resources.tchat_effort
 import com.garfiec.librechat.feature.chat.resources.tchat_image_aspect_ratio
 import com.garfiec.librechat.feature.chat.resources.tchat_image_auto
 import com.garfiec.librechat.feature.chat.resources.tchat_image_chip_cd
@@ -97,7 +101,33 @@ class ComposerTrayExtras(
     val imageOptions: List<ImageOptionChip> = emptyList(),
     /** Pins a parameter value, or clears it back to Auto with null. */
     val onImageChoice: (ImageChoiceField, String?) -> Unit = { _, _ -> },
+    /** The reasoning-effort chip, or null when the model's parameter set has no effort. */
+    val effort: EffortChip? = null,
+    /** Pins an effort level, or clears it back to Auto with null. */
+    val onEffort: (String?) -> Unit = {},
 )
+
+/** The effort parameter of the current parameter set; null [pinned] is Auto (the definition's default). */
+@Immutable
+data class EffortChip(val definition: ParameterDefinition, val values: List<String>, val pinned: String?) {
+    fun applyTo(params: ModelParameters, value: String?): ModelParameters =
+        if (value == null) params.resetKeyToDefault(definition) else params.withUpdatedKey(definition.key, value)
+}
+
+/** The effort chip for [definitions] (from `EndpointParameterRegistry`), reading the current value from [params]. */
+fun effortChipFor(definitions: List<ParameterDefinition>, params: ModelParameters): EffortChip? {
+    val definition = definitions.firstOrNull { it.key in EFFORT_KEYS && !it.options.isNullOrEmpty() } ?: return null
+    val values = definition.options.orEmpty().filter { it.isNotEmpty() && it != definition.default }
+    if (values.isEmpty()) return null
+    val current = params.getValueForKey(definition.key)
+    return EffortChip(definition, values, current.takeIf { it in values })
+}
+
+private val EFFORT_KEYS = setOf("reasoning_effort", "effort")
+
+/** `xhigh` → `Extra high`, otherwise the level capitalised. */
+internal fun effortLabel(value: String): String =
+    if (value == "xhigh") "Extra high" else value.replaceFirstChar { it.uppercaseChar() }
 
 /**
  * The tray's parameter chips for [spec]: Aspect ratio, Resolution, then Size, each only when the
@@ -122,6 +152,11 @@ internal sealed interface TrayItem {
 
     data class ImageGen(val label: String) : TrayItem {
         override val key: String get() = "image"
+    }
+
+    /** [ComposerTrayExtras.effort], first in the row. */
+    data class Effort(val chip: EffortChip) : TrayItem {
+        override val key: String get() = "effort"
     }
 
     /** One of [ComposerTrayExtras.imageOptions], right after the Image Gen chip. */
@@ -165,12 +200,14 @@ internal fun trayItems(
     showEphemeralTools: Boolean,
     imageLabel: String?,
     imageOptions: List<ImageOptionChip> = emptyList(),
+    effort: EffortChip? = null,
 ): List<TrayItem> {
     if (!showEphemeralTools) return emptyList()
     val active = (ALWAYS_SHOWN_TOOLS + pinnedToolKeys)
         .distinct()
         .filter { it in enabledTools && it != IMAGE_GEN_TOOL_KEY && ephemeralToolMeta(it) != null }
     return buildList {
+        effort?.let { add(TrayItem.Effort(it)) }
         imageLabel?.let {
             add(TrayItem.ImageGen(it))
             imageOptions.forEach { add(TrayItem.ImageOption(it)) }
@@ -228,6 +265,7 @@ private fun TrayItemChip(
             modifier = modifier,
         )
         is TrayItem.ImageOption -> ImageParameterChip(item.chip, extras.onImageChoice, modifier)
+        is TrayItem.Effort -> EffortParameterChip(item.chip, extras.onEffort, modifier)
         is TrayItem.ActiveTool -> {
             val meta = ephemeralToolMeta(item.tool) ?: return
             val label = stringResource(meta.titleRes)
@@ -363,23 +401,57 @@ private fun ImageParameterChip(
     onChoice: (ImageChoiceField, String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    ChoiceChip(
+        icon = OptionIcons.getValue(item.field),
+        title = stringResource(OptionTitles.getValue(item.field)),
+        values = item.values,
+        pinned = item.pinned,
+        format = { if (item.field == ImageChoiceField.SIZE) imageSizeLabel(it) else it },
+        onChoice = { onChoice(item.field, it) },
+        modifier = modifier,
+    )
+}
+
+/** Web's composer effort control, as a chip: Auto plus the levels the model's parameter set offers. */
+@Composable
+private fun EffortParameterChip(item: EffortChip, onChoice: (String?) -> Unit, modifier: Modifier = Modifier) {
+    ChoiceChip(
+        icon = Icons.Default.Psychology,
+        title = stringResource(Res.string.tchat_effort),
+        values = item.values,
+        pinned = item.pinned,
+        format = ::effortLabel,
+        onChoice = onChoice,
+        modifier = modifier,
+    )
+}
+
+/** A parameter chip: the body opens Auto plus [values]; ✕, shown only while a value is pinned, goes back to Auto. */
+@Composable
+private fun ChoiceChip(
+    icon: ImageVector,
+    title: String,
+    values: List<String>,
+    pinned: String?,
+    format: (String) -> String,
+    onChoice: (String?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var open by remember { mutableStateOf(false) }
-    val title = stringResource(OptionTitles.getValue(item.field))
     val auto = stringResource(Res.string.tchat_image_auto)
-    val format: (String) -> String = { if (item.field == ImageChoiceField.SIZE) imageSizeLabel(it) else it }
-    val value = item.pinned?.let(format) ?: auto
+    val value = pinned?.let(format) ?: auto
     Box(modifier) {
         ActiveChip(
-            icon = OptionIcons.getValue(item.field),
+            icon = icon,
             label = "$title · $value",
             bodyDescription = stringResource(Res.string.tchat_image_option_cd, title, value),
             removeDescription = stringResource(Res.string.tchat_image_option_reset, title),
             onClick = { open = true },
-            onRemove = item.pinned?.let { { onChoice(item.field, null) } },
+            onRemove = pinned?.let { { onChoice(null) } },
         )
         AdaptiveDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            (listOf<String?>(null) + item.values).forEach { option ->
-                val selected = option == item.pinned
+            (listOf<String?>(null) + values).forEach { option ->
+                val selected = option == pinned
                 DropdownMenuItem(
                     text = { Text(option?.let(format) ?: auto) },
                     trailingIcon = if (selected) {
@@ -389,7 +461,7 @@ private fun ImageParameterChip(
                     },
                     onClick = {
                         open = false
-                        onChoice(item.field, option)
+                        onChoice(option)
                     },
                     modifier = Modifier.semantics { this.selected = selected },
                 )

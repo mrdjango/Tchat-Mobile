@@ -44,17 +44,20 @@ object ModelParamPayload {
         extendedEffortSupported: Boolean,
         params: ModelParameters,
         dropParamsMap: Map<String, JsonElement>? = null,
+        // TCHAT: the parameter set a custom endpoint declares (`paramsEndpointFor`); dropParams stays keyed by name.
+        paramsEndpoint: String = endpoint,
+        paramsProvider: String? = provider,
     ): JsonObject {
         val definitions = EndpointParameterRegistry.getDefinitions(
-            endpoint = endpoint,
+            endpoint = paramsEndpoint,
             extendedEffortSupported = extendedEffortSupported,
-            provider = provider,
+            provider = paramsProvider,
             model = model,
             dropParams = EndpointDropParams.resolve(dropParamsMap, endpoint, provider, model),
         )
         val modelRemoved = EndpointParameterRegistry.modelRemovedOptions(
-            endpoint = endpoint,
-            provider = provider,
+            endpoint = paramsEndpoint,
+            provider = paramsProvider,
             model = model,
             dropParams = EndpointDropParams.resolve(dropParamsMap, endpoint, provider, model),
         )

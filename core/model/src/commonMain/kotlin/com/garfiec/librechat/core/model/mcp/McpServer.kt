@@ -23,4 +23,6 @@ data class McpServer(
     val iconPath: String? = null,
     /** On-behalf-of token exchange, configured on the web; resent unchanged on an edit. */
     val obo: McpOboConfig? = null,
+    // TCHAT: `chatMenu: false` keeps a server out of the chat's MCP picker (Tchat's always-on web-fetch).
+    val chatMenu: Boolean? = null,
 )

@@ -47,6 +47,7 @@ import com.garfiec.librechat.feature.chat.components.rememberChatAttachmentActio
 import com.garfiec.librechat.feature.chat.components.rememberChatOptionsSheetController
 import com.garfiec.librechat.feature.chat.prompts.components.VariableInputDialog
 import com.garfiec.librechat.feature.chat.tchat.ComposerTrayExtras
+import com.garfiec.librechat.feature.chat.tchat.composerEffortChip
 import com.garfiec.librechat.feature.chat.tchat.imageGenIndicatorLabel
 import com.garfiec.librechat.feature.chat.tchat.imageOptionItems
 import com.garfiec.librechat.feature.chat.viewmodel.ChatViewModel
@@ -164,6 +165,17 @@ fun ChatScreen(
     } else {
         displayModel
     }
+    // TCHAT: the composer effort chip. Parameters are the primary model's only, so not on tab 1.
+    val effortChip = remember(
+        uiState.selectedEndpoint,
+        uiState.selectedModel,
+        uiState.endpointConfigs,
+        uiState.modelParameters,
+        uiState.parametersEnabled,
+        uiState.extendedEffortSupported,
+        uiState.gates.dropParamsMap,
+        isSecondaryTab,
+    ) { if (isSecondaryTab) null else uiState.composerEffortChip() }
     // One launcher set, registered here and shared by both the composer "+" sheet (ChatInput) and
     // the pull-up sheet: a launcher stays usable from descendant compositions while the one that
     // registered it (this screen) is alive, so a second registration would be redundant.
@@ -425,6 +437,10 @@ fun ChatScreen(
                                         uiState.tchat.activeImageChoice,
                                     ),
                                     onImageChoice = viewModel::setImageChoice,
+                                    effort = effortChip,
+                                    onEffort = { value ->
+                                        effortChip?.let { viewModel.updateModelParameters(it.applyTo(uiState.modelParameters, value)) }
+                                    },
                                 ),
                                 mcpServers = uiState.mcpServers,
                                 selectedMcpServerNames = uiState.selectedMcpServerNames,

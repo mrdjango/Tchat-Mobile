@@ -3,6 +3,8 @@ package com.garfiec.librechat.feature.chat.viewmodel
 import com.garfiec.librechat.core.common.EndpointConstants
 import com.garfiec.librechat.core.common.ToolConstants
 import com.garfiec.librechat.core.data.endpoint.EndpointDispatch
+import com.garfiec.librechat.core.model.paramsEndpointFor
+import com.garfiec.librechat.core.model.paramsEndpointForOrNull
 import com.garfiec.librechat.core.model.request.EphemeralAgent
 import kotlinx.serialization.json.JsonObject
 
@@ -89,6 +91,8 @@ class ChatRequestBuilder(
             extendedEffortSupported = state.extendedEffortSupported,
             params = state.modelParameters,
             dropParamsMap = state.gates.dropParamsMap,
+            paramsEndpoint = state.endpointConfigs.paramsEndpointFor(state.selectedEndpoint), // TCHAT
+            paramsProvider = state.endpointConfigs.paramsEndpointForOrNull(agent?.provider), // TCHAT
         ).takeIf { it.isNotEmpty() }
     }
 }
