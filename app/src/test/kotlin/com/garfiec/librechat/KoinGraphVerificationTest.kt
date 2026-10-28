@@ -56,6 +56,7 @@ import com.garfiec.librechat.core.data.repository.SkillsRepository
 import com.garfiec.librechat.core.data.repository.SpeechRepository
 import com.garfiec.librechat.core.data.repository.SubagentRepository
 import com.garfiec.librechat.core.data.repository.TagRepository
+import com.garfiec.librechat.core.data.repository.TchatCreditRepository
 import com.garfiec.librechat.core.data.repository.TchatModelCatalogRepository
 import com.garfiec.librechat.core.data.repository.ToolFavoritesRepository
 import com.garfiec.librechat.core.data.repository.TraceRepository
@@ -229,6 +230,7 @@ class KoinGraphVerificationTest {
             SubagentRepository::class,
             SpeechRepository::class,
             TagRepository::class,
+            TchatCreditRepository::class, // TCHAT
             TchatModelCatalogRepository::class, // TCHAT
             ToolFavoritesRepository::class,
             TraceRepository::class,

@@ -278,3 +278,12 @@ empty string turns reporting off. Sentry's own content-provider auto-init is dis
 manifest. No user id, IP, request data, screenshots, view hierarchy or tracing is sent. iOS is not
 wired. If Tchat is ever listed on F-Droid, decide then whether this needs an opt-in switch: F-Droid
 labels apps that report to a remote service with the "Tracking" anti-feature.
+
+## Credit line in the drawer
+
+`TchatCreditLine` (`feature/conversations/.../tchat/`) shows the signed-in user's TensorGrid credit
+under the drawer footer, from `GET /api/tchat/credit` (`TchatCreditApi`, `TchatCreditRepository`).
+It refreshes on every drawer open / app resume and renders nothing on any error or 404, so an
+older server shows nothing. `TchatCredit.amountText()` mirrors TensorGrid's per-currency minor
+digits (USD 2, IRT 0, `backend/billing/services.py` `MINOR_DIGITS`); it is not in
+`scripts/mirrors.json`, which only tracks upstream LibreChat files.
