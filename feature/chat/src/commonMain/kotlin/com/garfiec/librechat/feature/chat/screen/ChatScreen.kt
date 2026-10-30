@@ -196,8 +196,7 @@ fun ChatScreen(
         selectedEndpoint = uiState.selectedEndpoint,
         selectedModel = uiState.selectedModel,
         agents = uiState.agents,
-        selectedSpec = uiState.selectedSpec,
-        modelSpecs = uiState.modelSpecs,
+        // TCHAT: name the model, as the header chip does; a spec's label ("TensorGrid") hides it.
     )
 
     val onStartRecordingWithPermission = rememberChatStartRecording(
