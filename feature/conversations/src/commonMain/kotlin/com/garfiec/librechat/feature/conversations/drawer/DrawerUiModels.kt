@@ -1,7 +1,8 @@
 package com.garfiec.librechat.feature.conversations.drawer
 
 import androidx.compose.runtime.Immutable
-import com.garfiec.librechat.core.model.ConversationTag
+import com.garfiec.librechat.core.data.search.MessageSearchHit
+import com.garfiec.librechat.feature.conversations.search.SearchNote
 import kotlin.time.Instant
 
 /**
@@ -25,6 +26,8 @@ data class DrawerConversationDisplayData(
     val chatProjectId: String? = null,
     val tags: List<String>,
     val endpointIconUrl: String? = null,
+    val modelLabel: String? = model,
+    val iconEndpoint: String? = endpoint,
 )
 
 /**
@@ -50,6 +53,8 @@ data class AccountUiModel(
     val serverHost: String,
     val avatarUrl: String?,
     val isActive: Boolean,
+    /** The session expired: the account stays listed, but needs signing in to before it's usable. */
+    val needsSignIn: Boolean = false,
 )
 
 /**
@@ -66,13 +71,24 @@ data class DrawerUiState(
     val hasMore: Boolean = true,
     // Role-permission gates — default permissive.
     val agentsEnabled: Boolean = true,
+    /** MARKETPLACE.USE: browsing agents. Upstream's USER role is denied it by default. */
+    val marketplaceEnabled: Boolean = true,
+    /**
+     * Bookmarks and the favorite star (BOOKMARKS USE and `interface.bookmarks`): the stars,
+     * Favorites, the menu's Favorite and "Bookmarks…".
+     */
     val bookmarksEnabled: Boolean = true,
-    val skillsEnabled: Boolean = true,
+    /** Role SKILLS.USE (permissive) AND the agents `skills` capability (fail-closed). */
+    val skillsEnabled: Boolean = false,
+    /** PROMPTS USE, permissive: the chat menu's Prompts gate. */
+    val promptsEnabled: Boolean = true,
+    /** MCP_SERVERS USE, permissive: Settings › Data's MCP servers row gate. */
+    val mcpServersEnabled: Boolean = true,
+    /** `canReachMemoriesSettings()`: Settings › Data's Memories row gate. */
+    val memoriesEnabled: Boolean = true,
     /** Scheduled chats: the SCHEDULES permission AND the server's `interface.schedules` flag,
      *  which is absent-means-OFF. Default false — the feature is opt-in. */
     val schedulesEnabled: Boolean = false,
-    // User-defined tags (excluding the favorites tag) for the action menu's tag picker.
-    val availableTags: List<ConversationTag> = emptyList(),
     // Config-driven: whether server-side shared links are enabled (gates the menu's Share action).
     val sharedLinksEnabled: Boolean = false,
     // Version-gated (v0.8.7+): whether the pin/unpin action is offered. Older servers lack
@@ -80,4 +96,50 @@ data class DrawerUiState(
     val pinEnabled: Boolean = false,
     // Version-gated (v0.8.7+): whether the move-to-project action is offered.
     val projectsEnabled: Boolean = false,
-)
+    /** Message hits for the current query; [DrawerMessageSearch.Idle] while not searching. */
+    val messageSearch: DrawerMessageSearch = DrawerMessageSearch.Idle,
+) {
+    /**
+     * The Agents entry (phone drawer and tablet sidebar): AGENTS.USE and MARKETPLACE.USE, as the web
+     * app hides its marketplace. It is also the app's only way to the agent editor, so a role without
+     * MARKETPLACE.USE can't create or edit agents here; that was decided, not overlooked.
+     */
+    val agentsEntryVisible: Boolean get() = agentsEnabled && marketplaceEnabled
+
+    /** The Workspace tray's destinations this role and server allow, in tray order. */
+    val visibleWorkspace: List<WorkspaceDestination> get() = WorkspaceDestination.entries.filter { destination ->
+        when (destination) {
+            WorkspaceDestination.AGENTS -> agentsEntryVisible
+            WorkspaceDestination.SKILLS -> skillsEnabled
+            WorkspaceDestination.PROMPTS -> promptsEnabled
+            WorkspaceDestination.MCP_SERVERS -> mcpServersEnabled
+            WorkspaceDestination.SCHEDULES -> schedulesEnabled
+            WorkspaceDestination.MEMORIES -> memoriesEnabled
+            WorkspaceDestination.BOOKMARKS -> bookmarksEnabled
+            WorkspaceDestination.FILES, WorkspaceDestination.SHARED_LINKS, WorkspaceDestination.ARCHIVED -> true
+        }
+    }
+}
+
+/**
+ * The drawer's Messages section: a short preview of the query's message hits, with the full list a
+ * tap away on the Search screen.
+ */
+@Immutable
+data class DrawerMessageSearch(
+    /** The first [PREVIEW_COUNT] hits. */
+    val preview: List<MessageSearchHit> = emptyList(),
+    val totalCount: Int = 0,
+    /** [totalCount] hit the drawer's search limit, so there may be more. */
+    val countCapped: Boolean = false,
+    /** A result has landed for the current query (before it, the section shows nothing). */
+    val searched: Boolean = false,
+    val searchingServer: Boolean = false,
+    /** Why only cached messages were searched, or null when the server answered too. */
+    val note: SearchNote? = null,
+) {
+    companion object {
+        const val PREVIEW_COUNT: Int = 5
+        val Idle = DrawerMessageSearch()
+    }
+}

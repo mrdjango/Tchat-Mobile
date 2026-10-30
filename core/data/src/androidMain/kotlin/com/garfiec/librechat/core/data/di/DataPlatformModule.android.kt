@@ -1,13 +1,15 @@
 package com.garfiec.librechat.core.data.di
 
-import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.preferencesDataStore
+import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.room.Room
 import com.garfiec.librechat.core.brand.TchatBrand
+import com.garfiec.librechat.core.common.ChannelPolicy
 import com.garfiec.librechat.core.common.di.KoinQualifiers
 import com.garfiec.librechat.core.data.datastore.CommonTokenDataStore
+import com.garfiec.librechat.core.data.datastore.PreferenceMigrationRunner
 import com.garfiec.librechat.core.data.datastore.TokenDataStore
 import com.garfiec.librechat.core.data.db.LibreChatDatabase
 import com.garfiec.librechat.core.data.db.migration.MIGRATION_3_4
@@ -26,18 +28,14 @@ import com.garfiec.librechat.core.data.update.AndroidAppInstallSource
 import com.garfiec.librechat.core.data.update.AppInstallSource
 import com.garfiec.librechat.core.data.update.AppUpdateRepository
 import com.garfiec.librechat.core.data.update.AppUpdateRepositoryImpl
-import com.garfiec.librechat.core.network.client.ImageCookieCredentials
+import com.garfiec.librechat.core.data.update.NoopAppInstallSource
+import com.garfiec.librechat.core.network.client.RefreshCookieCredentials
 import com.garfiec.librechat.core.network.client.TokenManager
 import io.ktor.client.HttpClient
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.Module
 import org.koin.dsl.binds
 import org.koin.dsl.module
-
-private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = DATASTORE_FILE_NAME,
-    corruptionHandler = settingsCorruptionHandler(),
-)
 
 actual val dataPlatformModule: Module = module {
 
@@ -46,11 +44,15 @@ actual val dataPlatformModule: Module = module {
     single<AttachmentWarmer> { CoilAttachmentWarmer(androidContext()) }
     single<PrefetchScheduler> { WorkManagerPrefetchScheduler(androidContext()) }
     single<PdfNormalizer> { AndroidPdfNormalizer(androidContext()) }
-    single<AppInstallSource> { AndroidAppInstallSource(androidContext()) }
+    single<AppInstallSource> {
+        if (get<ChannelPolicy>().selfUpdateCheck) AndroidAppInstallSource(androidContext()) else NoopAppInstallSource()
+    }
     single<AppUpdateRepository> {
-        // TCHAT: was isSupported = true. See TchatBrand.APP_UPDATE_CHECK.
+        val policy = get<ChannelPolicy>()
+        // TCHAT: was isSupported = policy.selfUpdateCheck. See TchatBrand.APP_UPDATE_CHECK.
         AppUpdateRepositoryImpl(
             isSupported = TchatBrand.APP_UPDATE_CHECK,
+            releaseNotesSupported = policy.releaseNotes,
             api = get(),
             store = get(),
             appInfo = get(),
@@ -65,7 +67,16 @@ actual val dataPlatformModule: Module = module {
     }
 
     // --- DataStore ---
-    single<DataStore<Preferences>> { androidContext().settingsDataStore }
+    // Built here rather than by the preferencesDataStore delegate, which cannot reach the Koin graph
+    // the migration runner needs. Same file: the delegate resolves to preferencesDataStoreFile(name).
+    single<DataStore<Preferences>> {
+        val context = androidContext()
+        PreferenceDataStoreFactory.create(
+            corruptionHandler = settingsCorruptionHandler(),
+            migrations = listOf(PreferenceMigrationRunner(get())),
+            produceFile = { context.preferencesDataStoreFile(DATASTORE_FILE_NAME) },
+        )
+    }
 
     // --- Token Storage ---
     single {
@@ -78,9 +89,9 @@ actual val dataPlatformModule: Module = module {
         // deliberately not part of the TokenManager contract.
     } binds arrayOf(
         TokenManager::class,
-        // The image-cookie seam (see ImageCookiePlugin): per-account refresh-token reads, kept off
+        // The refresh-cookie seam (ImageCookiePlugin, logout): per-account refresh-token reads, kept off
         // TokenManager so the six fakes that implement it don't gain a second credential.
-        ImageCookieCredentials::class,
+        RefreshCookieCredentials::class,
         CommonTokenDataStore::class,
     )
 

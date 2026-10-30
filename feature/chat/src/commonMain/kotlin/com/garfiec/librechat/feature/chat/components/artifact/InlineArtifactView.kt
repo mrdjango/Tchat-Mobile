@@ -10,10 +10,17 @@ import androidx.compose.ui.Modifier
  *
  * Used when the user has enabled inline rendering for the artifact's type in
  * Settings > Chat > Artifacts.
+ *
+ * [fitContent] sizes the slot to the page's reported height, between
+ * [INLINE_FIT_MIN_HEIGHT] and the inline cap, instead of the fixed cap; it settles once per
+ * card, so it costs one resize as the page lays out. [header] sits above the page inside the
+ * card, where a tap can't land on the WebView, which takes touches for itself.
  */
 @Composable
 expect fun InlineArtifactView(
     artifact: Artifact,
     onTap: () -> Unit,
     modifier: Modifier = Modifier,
+    fitContent: Boolean = false,
+    header: (@Composable () -> Unit)? = null,
 )

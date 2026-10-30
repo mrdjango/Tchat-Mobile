@@ -6,6 +6,7 @@ import com.garfiec.librechat.core.model.PendingSteer
 import com.garfiec.librechat.core.model.StreamEvent
 import com.garfiec.librechat.core.model.request.AddedConversation
 import com.garfiec.librechat.core.model.request.ChatResumeRequest
+import com.garfiec.librechat.core.model.request.EditedContent
 import com.garfiec.librechat.core.model.request.EphemeralAgent
 import com.garfiec.librechat.core.model.request.SteerCancelRequest
 import com.garfiec.librechat.core.model.request.SteerRequest
@@ -43,6 +44,16 @@ interface ChatRepository {
         modelParams: JsonObject? = null,
         /** Quoted excerpts riding this turn (v0.8.7); null/empty sends none. */
         quotes: List<String>? = null,
+        spec: String? = null,
+        /** Project to file a NEW conversation into; pass it on the first turn only. */
+        chatProjectId: String? = null,
+        /** Skill names picked for this turn; see `ChatRequest.manualSkills`. */
+        manualSkills: List<String>? = null,
+        /**
+         * An edited assistant content part the new reply continues from. Must be paired with
+         * [responseMessageId] = the edited message's id; see `EditedContent`.
+         */
+        editedContent: EditedContent? = null,
     ): Flow<StreamEvent>
 
     /**

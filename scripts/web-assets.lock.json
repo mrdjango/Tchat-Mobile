@@ -13,6 +13,19 @@
       },
       "version": "7.28.4"
     },
+    "docx-preview": {
+      "bytes": 85873,
+      "files": {
+        "LICENSE": "8668bf4417d161e4eb4d47d6044526e4914d9eb3c748573d9bb7e87708c1253f",
+        "docx-preview.min.js": "a011a499016a269eb048b8558a3eefc94bc33568ef434235943948ff24a40005"
+      },
+      "license": "Apache-2.0",
+      "source": {
+        "package": "docx-preview",
+        "type": "npm"
+      },
+      "version": "0.3.7"
+    },
     "highlight": {
       "bytes": 133392,
       "files": {
@@ -27,6 +40,19 @@
         "type": "npm"
       },
       "version": "11.12.0"
+    },
+    "jszip": {
+      "bytes": 131383,
+      "files": {
+        "LICENSE.markdown": "566c953c6090b1218ca6217dd7359d45dde46581968586dc607d59a78af6a9c4",
+        "jszip.min.js": "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e"
+      },
+      "license": "MIT",
+      "source": {
+        "package": "jszip",
+        "type": "npm"
+      },
+      "version": "3.10.1"
     },
     "katex": {
       "bytes": 560825,

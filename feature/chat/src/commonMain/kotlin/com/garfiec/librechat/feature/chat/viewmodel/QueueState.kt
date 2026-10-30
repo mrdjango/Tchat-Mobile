@@ -1,10 +1,12 @@
 package com.garfiec.librechat.feature.chat.viewmodel
 
 import androidx.compose.runtime.Immutable
+import com.garfiec.librechat.core.common.EndpointConstants
 import com.garfiec.librechat.core.data.endpoint.EndpointDispatch
 import com.garfiec.librechat.core.model.request.EphemeralAgent
 import com.garfiec.librechat.core.ui.components.ModelParameters
 import com.garfiec.librechat.feature.chat.components.AttachedFile
+import com.garfiec.librechat.feature.chat.util.SpecTools
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -21,6 +23,13 @@ data class QueueState(
     /** True after Stop/stream-error with a non-empty queue: draining is held until the user
      *  explicitly taps "Send queued". A successful Final drains automatically instead. */
     val isQueuePaused: Boolean = false,
+    /**
+     * [QueuedMessage.localId]s of queued messages the server's middleware refused (a steer
+     * re-homed into a held queue), which the composer explains. Ids, not a flag, so cancelling the
+     * refused message retires the explanation while the rest of the queue stays held; cleared
+     * when the user resumes.
+     */
+    val refusedLocalIds: Set<String> = emptySet(),
     /**
      * What the server has told this client about queued turns that have LEFT [messageQueue].
      *
@@ -67,14 +76,20 @@ data class QueuedMessage(
     val localId: String,
     val text: String,
     val attachments: List<AttachedFile> = emptyList(),
-    val endpoint: String,
-    val model: String?,
-    val agentId: String?,
+    val choice: ModelChoice,
     val enabledTools: Set<String> = emptySet(),
     /** Selected ephemeral MCP servers — snapshotted so editing the item restores its tool state. */
     val mcpServerNames: Set<String> = emptySet(),
+    /** Tools added on top of a spec ([ModelSelectionState.specTools]) — restored to the composer on edit. */
+    val specTools: SpecTools? = null,
     /** Full composer parameters (web search, reasoning effort, etc.) — restored to the composer on edit. */
     val modelParameters: ModelParameters = ModelParameters.DEFAULT,
+    /**
+     * The top-level `web_search` sent: whether the provider's built-in search is the one the control
+     * runs ([ChatUiState.webSearchRoute]) when the turn was composed. LibreChat's search rides in
+     * [ephemeralAgent] instead, and the two are never both set.
+     */
+    val webSearch: Boolean = false,
     /**
      * Non-default model params (provider-keyed) serialized for the wire, snapshotted at enqueue time
      * so a queued send carries the params it was composed with. Null when nothing was customized.
@@ -92,6 +107,13 @@ data class QueuedMessage(
      * is recovered from, so `SteeringDelegate` strips it once the chips hold the copy.
      */
     val quotes: List<String> = emptyList(),
+    /**
+     * Skill names taken from the pending skill chips when this spec was minted, sent as the turn's
+     * `manualSkills`. Like [quotes] they ride the spec, so a queued follow-up sends the picks it
+     * was composed with. A steer's spec carries none (the steer route takes no skills); its chips
+     * stay in the composer.
+     */
+    val manualSkills: List<String> = emptyList(),
     val dispatch: EndpointDispatch,
     val isTemporary: Boolean = false,
     /**
@@ -119,7 +141,14 @@ data class QueuedMessage(
     val parentMessageId: String? = null,
     /** The generation epoch observed when this turn became eligible. */
     val expectedPredecessorCreatedAt: Long? = null,
-)
+) {
+    val endpoint: String get() = choice.endpoint
+    val model: String? get() = choice.model
+    val modelSpec: String? get() = choice.spec
+
+    /** The agent this turn goes to: its model on the agents endpoint, so the two can't disagree. */
+    val agentId: String? get() = choice.model.takeIf { choice.endpoint == EndpointConstants.AGENTS }
+}
 
 /**
  * A server-owned queued turn as the client tracks it.
@@ -172,9 +201,11 @@ data class QueuedTurnServerState(
 fun QueuedMessage.toComposerSnapshot(): ComposerSnapshot = ComposerSnapshot(
     text = text,
     attachments = attachments,
-    endpoint = endpoint,
-    model = model,
+    choice = choice,
     enabledTools = enabledTools,
     mcpServerNames = mcpServerNames,
+    specTools = specTools,
     modelParameters = modelParameters,
+    manualSkills = manualSkills,
+    skillsToggle = ephemeralAgent?.skills == true,
 )

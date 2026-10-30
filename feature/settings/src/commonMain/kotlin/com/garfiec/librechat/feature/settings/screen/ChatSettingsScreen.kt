@@ -41,6 +41,7 @@ import com.garfiec.librechat.core.data.datastore.InlineArtifactPrefs
 import com.garfiec.librechat.core.data.datastore.LatexRenderer
 import com.garfiec.librechat.core.data.datastore.StarredModelsDisplay
 import com.garfiec.librechat.core.data.datastore.UploadRoutingMode
+import com.garfiec.librechat.core.data.datastore.WebSearchPreference
 import com.garfiec.librechat.core.ui.components.AdaptiveDivider
 import com.garfiec.librechat.core.ui.components.AdaptiveGroupedPage
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedButton
@@ -144,7 +145,7 @@ fun ChatSettingsContent(
                     ChatSettingsSection(
                         fontSize = uiState.chatFontSize,
                         autoScrollEnabled = uiState.autoScrollEnabled,
-                        showThinkingBlocks = uiState.showThinkingBlocks,
+                        thinkingOpenByDefault = uiState.thinkingOpenByDefault,
                         contextUsageSummary = contextUsageSummary(contextUsage.placement, contextUsage.preset, contextUsage.advanced),
                         onOpenContextUsage = onNavigateToContextUsage,
                         duringRunAction = uiState.duringRunAction,
@@ -156,10 +157,12 @@ fun ChatSettingsContent(
                         onOpenChatLayout = onNavigateToChatLayout,
                         latexRenderer = uiState.latexRenderer,
                         starredModelsDisplay = uiState.starredModelsDisplay,
+                        preferLastUsedModel = uiState.preferLastUsedModel,
+                        webSearchFirst = uiState.webSearchFirst,
                         chatHeaderContent = uiState.chatHeaderContent,
                         chatHeaderAlignment = uiState.chatHeaderAlignment,
                         onAutoScrollChange = viewModel::setAutoScrollEnabled,
-                        onShowThinkingChange = viewModel::setShowThinkingBlocks,
+                        onThinkingOpenByDefaultChange = viewModel::setThinkingOpenByDefault,
                         onShowImageDescriptionsChange = viewModel::setShowImageDescriptions,
                         onShowSiteIconsChange = viewModel::setShowSiteIcons,
                         onDismissKeyboardOnSendChange = viewModel::setDismissKeyboardOnSend,
@@ -324,6 +327,31 @@ fun ChatSettingsContent(
             )
         }
 
+        if (openDialog == ChatSettingDialog.NEW_CHAT_START) {
+            RadioSelectionDialog(
+                title = stringResource(Res.string.new_chat_start_title),
+                description = stringResource(Res.string.new_chat_start_desc),
+                options = listOf(false, true),
+                selected = uiState.preferLastUsedModel,
+                onSave = saveAndClose(viewModel::setPreferLastUsedModel),
+                onDismiss = dismissDialog,
+                optionLabel = { newChatStartLabel(it) },
+            )
+        }
+
+        if (openDialog == ChatSettingDialog.WEB_SEARCH_FIRST) {
+            RadioSelectionDialog(
+                title = stringResource(Res.string.web_search_first_title),
+                description = stringResource(Res.string.web_search_first_desc),
+                options = WebSearchPreference.entries,
+                selected = uiState.webSearchFirst,
+                onSave = saveAndClose(viewModel::setWebSearchFirst),
+                onDismiss = dismissDialog,
+                optionLabel = { webSearchFirstLabel(it) },
+                optionDescription = { webSearchFirstDescription(it) },
+            )
+        }
+
         if (openDialog == ChatSettingDialog.CHAT_HEADER) {
             ChatHeaderSettingsDialog(
                 content = uiState.chatHeaderContent,
@@ -402,9 +430,9 @@ fun ChatSettingsContent(
                 deviceVoiceName = uiState.ttsDeviceVoiceName,
                 cachingEnabled = uiState.ttsCaching,
                 ttsSource = uiState.ttsSource,
-                availableEngines = listOf("Default", "ElevenLabs", "OpenAI"),
+                availableEngines = listOf(TTS_DEFAULT_OPTION, "ElevenLabs", "OpenAI"),
                 availableVoices = uiState.availableVoices.map { it.name }.ifEmpty {
-                    listOf("Default", "Alloy", "Echo", "Fable", "Onyx", "Nova", "Shimmer")
+                    listOf(TTS_DEFAULT_OPTION, "Alloy", "Echo", "Fable", "Onyx", "Nova", "Shimmer")
                 },
                 availableDeviceVoices = uiState.availableDeviceVoices,
                 isPreviewPlaying = uiState.isTtsPreviewPlaying,
@@ -419,7 +447,7 @@ fun ChatSettingsContent(
 }
 
 @Composable
-private fun SpeechDetailButtons(
+internal fun SpeechDetailButtons(
     onSttDetailClick: () -> Unit,
     onTtsDetailClick: () -> Unit,
 ) {
@@ -439,7 +467,7 @@ private fun SpeechDetailButtons(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(stringResource(Res.string.speech_to_text_settings))
+                    Text(stringResource(Res.string.speech_to_text_settings), modifier = Modifier.weight(1f))
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                         contentDescription = null,
@@ -456,7 +484,7 @@ private fun SpeechDetailButtons(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(stringResource(Res.string.text_to_speech_settings))
+                    Text(stringResource(Res.string.text_to_speech_settings), modifier = Modifier.weight(1f))
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                         contentDescription = null,

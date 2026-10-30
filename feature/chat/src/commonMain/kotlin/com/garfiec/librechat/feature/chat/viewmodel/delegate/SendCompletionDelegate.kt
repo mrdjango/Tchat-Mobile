@@ -11,14 +11,18 @@ import com.garfiec.librechat.core.data.repository.MessageRepository
 import com.garfiec.librechat.core.logging.Diag
 import com.garfiec.librechat.core.model.Message
 import com.garfiec.librechat.core.model.StreamEvent
+import com.garfiec.librechat.core.model.content.stripCitations
 import com.garfiec.librechat.feature.chat.util.NEW_CHAT_DRAFT_KEY
 import com.garfiec.librechat.feature.chat.util.resolvedResponseMessage
+import com.garfiec.librechat.feature.chat.viewmodel.ChatNotice
 import com.garfiec.librechat.feature.chat.viewmodel.NewChatSelectionHandoff
 import com.garfiec.librechat.feature.chat.viewmodel.PLACEHOLDER_CONVERSATION_TITLE
 import com.garfiec.librechat.feature.chat.viewmodel.SendCompletionHandle
 import com.garfiec.librechat.feature.chat.viewmodel.shouldRequestTitleGeneration
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Owns what happens when a chat send reaches the server: the `created` and `final`
@@ -42,6 +46,9 @@ class SendCompletionDelegate(
     private val selectionHandoff: NewChatSelectionHandoff,
     /** Reloads the conversation from the server (VM-owned Room observer). */
     private val reloadConversation: (String) -> Unit,
+    private val newChatDraftKey: String = NEW_CHAT_DRAFT_KEY,
+    /** `SkillsToggleDelegate.carryToCreatedConversation`: the new chat's Skills toggle moves to its id. */
+    private val carrySkillsToggle: (conversationId: String, isTemporary: Boolean) -> Unit = { _, _ -> },
 ) {
 
     private var titleGenerationRequested = false
@@ -65,11 +72,15 @@ class SendCompletionDelegate(
         val isTemporary = handle.state.isTemporaryChat
         if (isNewConversation) {
             if (!isTemporary) {
+                // NonCancellable here and in the cache warm below: a project landing leaves the back
+                // stack as soon as its chat opens, clearing this ViewModel while these still run.
                 handle.scope.launch {
-                    val existingDraft = draftRepository.getDraft(NEW_CHAT_DRAFT_KEY)
-                    if (existingDraft != null) {
-                        draftRepository.saveDraft(conversationId, existingDraft)
-                        draftRepository.deleteDraft(NEW_CHAT_DRAFT_KEY)
+                    withContext(NonCancellable) {
+                        val existingDraft = draftRepository.getDraft(newChatDraftKey)
+                        if (existingDraft != null) {
+                            draftRepository.saveDraft(conversationId, existingDraft)
+                            draftRepository.deleteDraft(newChatDraftKey)
+                        }
                     }
                 }
             }
@@ -82,9 +93,22 @@ class SendCompletionDelegate(
             // can keep it on screen during the resumed stream — the server doesn't persist the
             // request message until the reply completes. See NewChatSelectionHandoff.
             val optimisticUserMessage = sent.messages.lastOrNull { it.isCreatedByUser }
-            selectionHandoff.put(conversationId, sent.selectedEndpoint, sent.selectedModel, optimisticUserMessage)
-            val snapshot = handle.state
-            if (snapshot.pendingNavigationConversationId == null && !snapshot.comparisonState.isEnabled) {
+            // Navigating now resets this landing, so chips still staged here move with the chat.
+            // A deferred nav (comparison) keeps the landing, and its chips stay on it.
+            val navigatesNow = sent.pendingNavigationConversationId == null && !sent.comparisonState.isEnabled
+            val staged = if (navigatesNow) sent.pendingManualSkills else emptyList()
+            selectionHandoff.put(
+                conversationId,
+                sent.selection.choice,
+                optimisticUserMessage,
+                skillsToggle = sent.skillsToggle.takeIf { sent.activeSpecSkills == null },
+                stagedManualSkills = staged,
+                skillsNotSentNotice = staged.isNotEmpty() && sent.error == ChatNotice.SKILLS_NOT_SENT.marker(),
+                modelParameters = sent.modelParameters,
+                specTools = sent.selection.specTools,
+            )
+            carrySkillsToggle(conversationId, isTemporary)
+            if (navigatesNow) {
                 handle.update {
                     conversation = conversation.copy(pendingNavigationConversationId = conversationId)
                 }
@@ -94,7 +118,7 @@ class SendCompletionDelegate(
         // conversation list even if the stream fails later — but never for temp chats (see guard).
         if (!isTemporary) {
             handle.scope.launch {
-                conversationRepository.getConversation(conversationId, originAccount)
+                withContext(NonCancellable) { conversationRepository.getConversation(conversationId, originAccount) }
             }
         }
     }
@@ -217,7 +241,7 @@ class SendCompletionDelegate(
             }
         }
         if (shouldAutoRead && completedResponseText.isNotBlank()) {
-            tts.maybeAutoReadResponse(completedResponseText)
+            tts.maybeAutoReadResponse(stripCitations(completedResponseText))
         }
     }
 

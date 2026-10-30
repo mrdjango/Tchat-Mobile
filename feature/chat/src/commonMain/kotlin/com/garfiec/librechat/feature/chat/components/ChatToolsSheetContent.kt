@@ -4,6 +4,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -38,9 +39,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.garfiec.librechat.core.common.ToolConstants
@@ -57,6 +60,8 @@ import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
 import com.garfiec.librechat.feature.chat.resources.*
 import com.garfiec.librechat.feature.chat.resources.Res
 import com.garfiec.librechat.feature.chat.tchat.IMAGE_GEN_TOOL_KEY
+import com.garfiec.librechat.feature.chat.util.WebSearchKind
+import com.garfiec.librechat.feature.chat.util.WebSearchRoute
 import com.garfiec.librechat.feature.chat.viewmodel.ChatInputGates
 import com.garfiec.librechat.feature.chat.viewmodel.ContextGaugeDetails
 import org.jetbrains.compose.resources.stringResource
@@ -84,8 +89,12 @@ fun ChatToolsSheetContent(
     selectedModelDisplay: String?,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Both models while comparing: the Model row then names A and B rather than A alone. */
+    comparisonModels: ComparisonModelLabels? = null,
     isCodeInterpreterAvailable: Boolean = true,
     webSearchEnabled: Boolean = true,
+    /** The search the web-search control runs when on, named on its second line. */
+    webSearchKind: WebSearchKind = WebSearchKind(WebSearchRoute.LIBRECHAT, null),
     /** Whether to offer the Google-only URL Context toggle (active provider is Google/Gemini). */
     urlContextEnabled: Boolean = false,
     runCodeEnabled: Boolean = true,
@@ -99,6 +108,12 @@ fun ChatToolsSheetContent(
     memoryEnabled: Boolean = false,
     /** TCHAT: offer the Image Gen switch; it writes the same selection as the picker's Image Gen group. */
     imageGenEnabled: Boolean = false,
+    /**
+     * Whether to offer the Skills toggle: SKILLS.USE, the agents `skills` capability, and no
+     * active model spec configuring skills. Defaults OFF for the same reason as [memoryEnabled].
+     * Its state is per conversation; the row reads it from [enabledTools] like the others.
+     */
+    skillsEnabled: Boolean = false,
     mcpServersEnabled: Boolean = true,
     /**
      * Server/endpoint feature gates for the sheet: model-select row, parameters row,
@@ -138,49 +153,13 @@ fun ChatToolsSheetContent(
         // endpoint can't accept uploads (mirrors web's AttachFileChat gate). "Server"
         // attaches an already-uploaded file by reference (no re-upload).
         if (gates.fileUploadEnabled) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                AttachmentOptionCard(
-                    icon = Icons.Default.PhotoCamera,
-                    label = stringResource(Res.string.tool_camera),
-                    onClick = {
-                        onTakePhoto()
-                        onDismiss()
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-                AttachmentOptionCard(
-                    icon = Icons.Default.PhotoLibrary,
-                    label = stringResource(Res.string.tool_photos),
-                    onClick = {
-                        onPickPhotos()
-                        onDismiss()
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-                AttachmentOptionCard(
-                    icon = Icons.Default.AttachFile,
-                    label = stringResource(Res.string.tool_files),
-                    onClick = {
-                        onAttachFiles()
-                        onDismiss()
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-                AttachmentOptionCard(
-                    icon = Icons.Default.CloudDownload,
-                    label = stringResource(Res.string.tool_server_files),
-                    onClick = {
-                        onAttachFromServer()
-                        onDismiss()
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            AttachmentOptionCards(
+                onTakePhoto = onTakePhoto,
+                onPickPhotos = onPickPhotos,
+                onAttachFiles = onAttachFiles,
+                onAttachFromServer = onAttachFromServer,
+                onDismiss = onDismiss,
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
             AdaptiveDivider(modifier = Modifier.padding(horizontal = 16.dp))
@@ -207,8 +186,8 @@ fun ChatToolsSheetContent(
             )
         }
 
-        // Model selector row — hidden when the server disables `interface.modelSelect`.
-        if (gates.modelSelectEnabled) {
+        // Model selector row: hidden when the server offers no picker (see ChatUiState.modelPickerShown).
+        if (gates.modelPickerShown) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -225,17 +204,26 @@ fun ChatToolsSheetContent(
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(Res.string.tool_model),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    Text(
-                        text = selectedModelDisplay ?: stringResource(Res.string.select_model),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    if (comparisonModels != null) {
+                        // Comparing: the row names both models, as the A/B pair the selector opens on.
+                        Text(
+                            text = stringResource(Res.string.compare_models),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        ComparisonModelsLine(comparisonModels)
+                    } else {
+                        Text(
+                            text = stringResource(Res.string.tool_model),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = selectedModelDisplay ?: stringResource(Res.string.select_model),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
@@ -295,17 +283,26 @@ fun ChatToolsSheetContent(
                 ToolConstants.FILE_SEARCH to fileSearchEnabled,
                 ToolConstants.MEMORY to memoryEnabled,
                 IMAGE_GEN_TOOL_KEY to imageGenEnabled, // TCHAT
+                ToolConstants.SKILLS to skillsEnabled,
             )
+            val searchName = webSearchName(webSearchKind)
             toolRows.forEach { (toolKey, enabled) ->
                 val meta = ephemeralToolMeta(toolKey)
                 if (enabled && meta != null) {
+                    val locked = toolKey in gates.lockedTools
+                    val name = searchName.takeIf { toolKey == ToolConstants.WEB_SEARCH }
                     ToolToggleRow(
                         icon = meta.icon,
                         title = stringResource(meta.titleRes),
-                        subtitle = stringResource(meta.descriptionRes),
-                        isEnabled = toolKey in enabledTools,
+                        subtitle = when {
+                            name != null && locked -> stringResource(Res.string.web_search_set_by_spec, name)
+                            name != null -> name
+                            else -> stringResource(if (locked) Res.string.tool_set_by_spec else meta.descriptionRes)
+                        },
+                        isEnabled = locked || toolKey in enabledTools,
                         onToggle = { onToggleTool(toolKey) },
                         dragSelection = dragSelection,
+                        locked = locked,
                     )
                 }
             }
@@ -360,11 +357,13 @@ fun ChatToolsSheetContent(
                     modifier = Modifier.padding(start = 40.dp),
                 ) {
                     mcpServers.forEach { server ->
+                        val locked = server.name in gates.lockedMcpServers
                         McpServerToggleRow(
                             server = server,
-                            isSelected = server.name in selectedMcpServerNames,
+                            isSelected = locked || server.name in selectedMcpServerNames,
                             onToggle = { onToggleMcpServer(server.name) },
                             dragSelection = dragSelection,
+                            locked = locked,
                         )
                     }
                 }
@@ -381,20 +380,23 @@ private fun ToolToggleRow(
     isEnabled: Boolean,
     onToggle: () -> Unit,
     dragSelection: ListDragSelection,
+    locked: Boolean = false,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .dragSelectRow(dragSelection, onClick = onToggle)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .semantics {
-                contentDescription = if (isEnabled) {
-                    "$title enabled"
-                } else {
-                    "$title disabled"
+            // The platform reads the on/off state out in the user's language. The title and
+            // subtitle below name the row, so no description is set on top of them.
+            // A locked row has no click to merge its texts, so it merges them itself.
+            .semantics(mergeDescendants = locked) {
+                toggleableState = ToggleableState(isEnabled)
+                if (locked) {
+                    role = Role.Switch
+                    disabled()
                 }
-                role = Role.Switch
-            },
+            }
+            .then(if (locked) Modifier else Modifier.dragSelectRow(dragSelection, role = Role.Switch, onClick = onToggle))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -419,9 +421,12 @@ private fun ToolToggleRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        // The row is the control (it carries the state, and its texts name the tool); a clickable
+        // switch inside it would be a second, unnamed toggle to a screen reader.
         AdaptiveSwitch(
             checked = isEnabled,
-            onCheckedChange = { onToggle() },
+            onCheckedChange = null,
+            enabled = !locked,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = MaterialTheme.colorScheme.primary,
                 checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
@@ -429,6 +434,51 @@ private fun ToolToggleRow(
         )
     }
 }
+
+/**
+ * Camera, Photos, Files and Server: one row of four, or two rows of two below a 360dp sheet, where a
+ * quarter of the width leaves a translated label (Appareil photo, Kamera) only its first letters.
+ */
+@Composable
+private fun AttachmentOptionCards(
+    onTakePhoto: () -> Unit,
+    onPickPhotos: () -> Unit,
+    onAttachFiles: () -> Unit,
+    onAttachFromServer: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val options = listOf(
+        Triple(Icons.Default.PhotoCamera, Res.string.tool_camera, onTakePhoto),
+        Triple(Icons.Default.PhotoLibrary, Res.string.tool_photos, onPickPhotos),
+        Triple(Icons.Default.AttachFile, Res.string.tool_files, onAttachFiles),
+        Triple(Icons.Default.CloudDownload, Res.string.tool_server_files, onAttachFromServer),
+    )
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val perRow = if (maxWidth < ATTACH_CARDS_ONE_ROW_MIN_WIDTH) 2 else options.size
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            options.chunked(perRow).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    row.forEach { (icon, label, action) ->
+                        AttachmentOptionCard(
+                            icon = icon,
+                            label = stringResource(label),
+                            onClick = {
+                                action()
+                                onDismiss()
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private val ATTACH_CARDS_ONE_ROW_MIN_WIDTH = 360.dp
 
 @Composable
 private fun AttachmentOptionCard(
@@ -476,11 +526,18 @@ private fun McpServerToggleRow(
     isSelected: Boolean,
     onToggle: () -> Unit,
     dragSelection: ListDragSelection,
+    locked: Boolean = false,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .dragSelectRow(dragSelection, onClick = onToggle)
+            .then(
+                if (locked) {
+                    Modifier.semantics(mergeDescendants = true) { disabled() }
+                } else {
+                    Modifier.dragSelectRow(dragSelection, onClick = onToggle)
+                },
+            )
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -506,7 +563,7 @@ private fun McpServerToggleRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val description = server.description
+            val description = if (locked) stringResource(Res.string.tool_set_by_spec) else server.description
             if (!description.isNullOrBlank()) {
                 Text(
                     text = description,
@@ -520,6 +577,7 @@ private fun McpServerToggleRow(
         AdaptiveCheckbox(
             checked = isSelected,
             onCheckedChange = { onToggle() },
+            enabled = !locked,
         )
     }
 }

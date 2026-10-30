@@ -4,11 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -21,14 +23,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.platform.LocalAutofillManager
+import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.garfiec.librechat.core.ui.components.AdaptiveButton
 import com.garfiec.librechat.core.ui.components.AdaptiveCircularProgressIndicator
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedTextField
+import com.garfiec.librechat.core.ui.components.IosTextContentType
+import com.garfiec.librechat.core.ui.components.withIosTextContentType
+import com.garfiec.librechat.feature.auth.diagnostics.DiagnosticLogLink
 import com.garfiec.librechat.feature.auth.resources.*
 import com.garfiec.librechat.feature.auth.resources.Res
 import com.garfiec.librechat.feature.auth.viewmodel.RegisterViewModel
@@ -44,9 +54,13 @@ fun RegisterScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val currentOnRegister by rememberUpdatedState(onRegister)
+    val autofillManager = LocalAutofillManager.current
 
     LaunchedEffect(uiState.isRegistered) {
         if (uiState.isRegistered) {
+            // Register returns to Login, whose own fields keep the autofill session open, so the
+            // session would never end on its own and no save prompt would appear.
+            autofillManager?.commit()
             currentOnRegister()
         }
     }
@@ -55,7 +69,8 @@ fun RegisterScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .imePadding()
+            // No scaffold here: the screen keeps itself clear of the system bars and the keyboard.
+            .windowInsetsPadding(WindowInsets.safeDrawing)
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -65,6 +80,7 @@ fun RegisterScreen(
             text = stringResource(Res.string.register_title),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onBackground,
+            textAlign = TextAlign.Center,
             modifier = Modifier.semantics { heading() },
         )
 
@@ -74,7 +90,7 @@ fun RegisterScreen(
             value = uiState.name,
             onValueChange = viewModel::onNameChanged,
             label = { Text(stringResource(Res.string.full_name_label)) },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.PersonFullName },
             singleLine = true,
             enabled = !uiState.isLoading,
         )
@@ -96,12 +112,14 @@ fun RegisterScreen(
             value = uiState.email,
             onValueChange = viewModel::onEmailChanged,
             label = { Text(stringResource(Res.string.email_label)) },
-            modifier = Modifier.fillMaxWidth(),
+            // The email, not the username, is what Login asks for, so it is the one saved as the login.
+            modifier = Modifier.fillMaxWidth()
+                .semantics { contentType = ContentType.NewUsername + ContentType.EmailAddress },
             singleLine = true,
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Email,
                 autoCorrectEnabled = false,
-            ),
+            ).withIosTextContentType(IosTextContentType.Username),
             enabled = !uiState.isLoading,
         )
 
@@ -111,13 +129,13 @@ fun RegisterScreen(
             value = uiState.password,
             onValueChange = viewModel::onPasswordChanged,
             label = { Text(stringResource(Res.string.password_label)) },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.NewPassword },
             singleLine = true,
-            visualTransformation = passwordMaskTransformation(),
+            visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Password,
                 autoCorrectEnabled = false,
-            ),
+            ).withIosTextContentType(IosTextContentType.NewPassword),
             enabled = !uiState.isLoading,
         )
 
@@ -127,13 +145,13 @@ fun RegisterScreen(
             value = uiState.confirmPassword,
             onValueChange = viewModel::onConfirmPasswordChanged,
             label = { Text(stringResource(Res.string.confirm_password_label)) },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.NewPassword },
             singleLine = true,
-            visualTransformation = passwordMaskTransformation(),
+            visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Password,
                 autoCorrectEnabled = false,
-            ),
+            ).withIosTextContentType(IosTextContentType.NewPassword),
             enabled = !uiState.isLoading,
         )
 
@@ -144,6 +162,7 @@ fun RegisterScreen(
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
             )
+            if (uiState.offerDiagnosticLog) DiagnosticLogLink()
         }
 
         Spacer(modifier = Modifier.height(24.dp))

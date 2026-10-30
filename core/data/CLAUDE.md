@@ -35,6 +35,20 @@ All impls take constructor parameters (api, dao, mapper, dispatcher) wired via K
 
 ### Account-keyed token store (`CommonTokenDataStore`)
 
+Sessions now persist as one versioned encrypted/Keychain value per slot
+(`acct:<accountId>:session_credentials`, bare `session_credentials` while staging). It contains the
+access token, refresh token and optional opaque OpenID marker. `SecureSessionRecords` reads legacy
+access/refresh keys only when the record is absent; a successful write verifies the replacement before
+removing legacy keys. A present invalid record never falls back to older credentials.
+
+OpenID refresh snapshots its complete cookie bundle and epoch under `stateMutex`, releases the lock
+for the POST, and commits the full replacement only while that slot's epoch is unchanged. Request
+snapshots read bearer and marker together, from memory for the active slot (`cachedAuth`, updated
+wherever the slot is written): on iOS a storage read is a Keychain IPC. Normal login/2FA replaces
+the session without OpenID markers. All staging, account resolution and teardown paths handle the
+whole record.
+
+
 Tokens are namespaced by account (`acct:<accountId>:access_token`) and several accounts' tokens are
 retained at rest at once (multi-account, issue #179). Concurrency uses four cooperating pieces, not a
 single refresh mutex:
@@ -68,6 +82,19 @@ a dead session logs the user out over a block they cannot clear. The 401 keeps i
 chained status — so a server-rooted `/login` Location is classified terminal in the 3xx arm; an
 absolute portal URL is a gateway's and is not. The 5xx ladder deliberately keeps its older,
 undamped shape.
+
+**A kept session that cannot renew is reported, not just kept.** The unattributed-403 arm also
+publishes `TokenManager.sessionHealth = SessionHealth.RenewalBlocked(accountId)`; the nav shell shows
+a banner for the active account with one action, **Sign in again** → `endSessionForReauth`, which
+drops the slot and bumps its epoch like a hard expiry (roster entry and Room rows stay), latches the
+one-shot expiry report so in-flight 401s can't announce an expiry over a chosen sign-out, and emits
+nothing — the ViewModel routes. The block clears on the next successful commit, a sign-in, a teardown
+or a hard expiry, and deliberately **not** when the 60 s stand-down lapses: that means "we'll POST
+again", not "the server answers". The first field report was a stored base URL carrying the web UI's
+`/login?redirect_to=…` (see `cleanServerUrl` in `core/network/CLAUDE.md`), refused identically for
+ever; the stand-down's "never indefinite" only holds for a block that lifts. The banner is the safety
+net for a genuine blocker; it does not fix the URL (that is `cleanServerUrl`, at entry and at every
+join), and in that incident "sign in again" would have bought fifteen minutes.
 
 Interactive sign-in (`setTokens`) **stages** the pair under the bare keys and drops the active binding;
 `onAccountResolved` re-homes it into the account's keyed slot. This makes a re-login while another
@@ -137,17 +164,54 @@ every write there goes to memory and a test would pass for the wrong reason. It 
 - All DAO read methods that the UI observes should return `Flow`, not suspend functions.
 
 ### New Repositories (Round 2)
-- `MemoryRepository` / `MemoryRepositoryImpl` — wraps `MemoriesApi` for memory CRUD + preferences
+- `MemoryRepository` / `MemoryRepositoryImpl` — wraps `MemoriesApi` for memory CRUD + preferences.
+  `getMemories()` returns the whole `MemoriesResponse` (list + pool usage + charLimit). The user's
+  opt-out lives in `memoriesEnabled: StateFlow<Boolean?>`, account-scoped (null until known, reset
+  on switch/logout), seeded by `refreshMemoriesPreference()` (`GET /api/user`) and updated by a
+  successful `updatePreferences`; every screen that shows or obeys the opt-out reads it there.
+  Failures carry no English of their own: status codes on `ApiException`, or
+  `MemoryContentFilteredException`.
 - `McpRepository` / `McpRepositoryImpl` — wraps `McpApi` for server CRUD, tools, connection status, reinitialize
-- Both bound in `DataModule.kt` via `singleOf`
+- `McpRepository` is bound via `singleOf`; `MemoryRepository` via an explicit `single` (it takes the
+  application scope)
 - Both use `safeApiCall` — no local caching (server is sole source of truth for memories and MCP)
-- **Gotcha**: Memory delete/update use `key` as identifier (not a separate ID field)
+- **Gotcha**: Memory delete/update address the row by `_id` (by-id routes, v0.8.8-rc2) and fall back
+  to `key` + `agentId` only on a 404 without a memory-handler JSON `error` (a missing route). A
+  by-id 404 saying `Memory not found.` or `Agent not found.` is returned as is: falling back would
+  hit a re-created row of the same key. A rename sends the new `key` in the body only when it changed
 - **Gotcha**: MCP server operations use `serverName` as identifier
 
 ### New Repositories (Round 3)
 - `BannerRepository` / `BannerRepositoryImpl` — wraps `BannerApi` for fetching server banners
 - `AgentRepository.getAgentsPaginated()` — server-side paginated agent fetch, maps response to `PaginatedAgents` domain model
 - Both bound in `DataModule.kt` via `singleOf`, both use `safeApiCall`, no local caching
+
+### Preference registry and one-time migrations (`AppPreferences`, `PreferenceMigrations`)
+New device-wide preferences are declared in `AppPreferences` and read and written through
+`PreferenceStore`, not added as members of `SettingsDataStore` (the older settings move over as
+their code is touched; keep each key name exactly, or that setting resets for every user).
+- **A default is applied on read and never written**, so a stored choice always wins and an
+  unchosen preference follows the build's current default. `always(x)` or
+  `perChannel(openSource, playStore, appStore)`; the latter names every channel, so a new channel
+  fails to compile until each default decides. `AppPreferencesTest` pins every default per channel
+  and rejects duplicate keys, but only among the specs listed in `AppPreferences.all`: it cannot
+  see a key that `SettingsDataStore` or another store on the same file still owns, so when a
+  setting moves over, delete its old member in the same change.
+- **One-time changes are `PreferenceMigrations`**, run by `PreferenceMigrationRunner`, a DataStore
+  `DataMigration` on the preferences store: they run before anything can read it, and the change and
+  its ledger entry (`applied_pref_migrations`, a set of ids) land in one atomic write. Ids are
+  `YYYYMMDD-slug`, append-only and immutable once shipped. `reset(spec)` clears a stored choice so
+  the (new) default applies; `force(spec, value)` writes one.
+- **Ledger rules:** only migrations that ran (or were waived) on this channel are recorded, so a
+  channel-scoped one still runs if a different channel's build opens the data (the iOS store and
+  sideload builds share a bundle id). A fresh install (empty store, no ledger) waives this channel's
+  migrations. Unknown ids from a newer build are kept across a downgrade.
+- **A migration body must be total.** A throw fails every read and write of the shared settings
+  store (server URL, account roster, every setting). DataStore retries the initialization on the
+  next access, so a throw that always happens fails them on every launch, and the corruption handler
+  cannot recover it.
+- A corrupt preferences file is replaced with an empty one before migrations run, so it reads as a
+  fresh install and its migrations are waived.
 
 ### Date/time format (`DateTimePrefsStore`)
 Timestamp style, clock and date format, global (not per-account). Its own class on the shared
@@ -224,3 +288,63 @@ sequence number, read-modify-write inside `dataStore.edit` under `NonCancellable
 - **The table is named for the deployment, not for the headers**, because per-server state with
   nowhere else to live (cert pinning, detected backend version, a user-chosen label) belongs here. It
   carries only the headers today; see the natural-primary-key bullet before adding a column.
+
+### Custom project order (`project_order`) — Switchboard-only
+LibreChat stores no project order, so the drawer's drag-to-reorder order lives here, keyed by
+`(accountId, projectId)` and purged with the account by `AccountDataPurger`.
+- `ProjectRepository.listAllProjectsInCustomOrder` fetches every page and applies it
+  (`ProjectOrdering`): saved projects by slot, never-placed ones after, oldest first. With nothing
+  saved the server's order (latest activity) is kept, and that first load is what gets saved.
+- Only an unfiltered, complete list saves back (it is also what prunes projects deleted elsewhere);
+  a search, or a fetch cut off by the page cap (`AllProjects.isComplete`), never does.
+- The read-arrange-write and `saveProjectOrder` share one `Mutex`, so a load can't write the order a
+  drop just replaced. `saveProjectOrder` takes the account captured at the drop, not the active one.
+- `saveProjectOrder` bumps `orderRevision` (the Custom sort reloads on it), not `revision`: nothing
+  changed on the server.
+- If upstream ships ordering, drop the table with an `@DeleteTable` AutoMigrationSpec and read the
+  server's order; nothing else references it.
+
+### Message search index (`message_search` + `messages_fts`)
+Offline full-text search over cached messages. FTS4 + `unicode61` (the only full-text setup both
+drivers have; no FTS5 on Android's framework SQLite), external-content over a narrow side table.
+- **Search data never lives on `messages`.** Its trailing columns sit behind `text`/`content`, so
+  reading them walks overflow pages, and a column there would make the backfill rewrite every wide
+  row. `message_search` holds the filter/sort columns and the flattened text
+  (`searchTextOf`: content parts flattened like the server's Meilisearch plugin, TEXT + THINK +
+  STEER, capped at 128k chars).
+- **Write messages only through `MessageDao.upsertAllIndexed`** (or `replaceAllForConversation` /
+  `updateText` / `upsertReindexed`, which use it or index themselves). It indexes in the same
+  transaction and skips side rows whose `updatedAt` hasn't moved, since any update re-tokenizes the
+  row. `MessageWritePairingTest` fails a raw `upsert`/`upsertAll` outside the DAO package.
+- **That `updatedAt` dedupe is only valid for writes that carry the server's value.** It reads an
+  unchanged `updatedAt` as unchanged text, which holds for a fetch (the server bumps it on every
+  write) and fails for an edit applied locally: a read-modify-write keeps the old value, so the
+  dedupe hits and the index keeps matching the text the user just replaced. Local edits therefore go
+  through `updateText` (flat text) or `upsertReindexed` (one content part), both of which write the
+  side row unconditionally. A future local mutation of message text needs the same treatment.
+- **Deletes need nothing**: the side table's FK (the DB's first) cascades, and the cascade fires the
+  FTS delete trigger. Room turns `foreign_keys` on in its generated `onOpen`.
+- **Unclaimed rows (`accountId IS NULL`) are never indexed.** Side rows copy the parent's stamped
+  account, never the active one.
+- **Never select content from `messages_fts`** (it spans every account), never `VACUUM` without a
+  `'rebuild'`, only add nullable columns to `message_search`, never `REPLACE` either table, never
+  `'optimize'`. The entity KDocs say why.
+- `SearchIndexBackfillSessionTask` indexes rows cached before the index existed, then runs a repair
+  each session. It is gated on `SearchIndexWindow` (in front, idle, unconstrained; not the prefetch
+  opt-in or the network) and steps aside while a local search runs.
+- Typed input goes through `FtsQuery.plan` (quoted tokens only, so no operator reaches the parser);
+  CJK/Thai input and regex go to the bounded `MessageScanEngine` instead.
+- **`searchText` is the visible text, then the reasoning**, with `visibleLength` marking the split
+  (`searchTextOf`). The "in reasoning" marker and "answers only" both compare a match against that
+  offset, so neither reads the wide `messages` rows.
+- **Changing what `searchTextOf` produces means bumping `SearchIndexState.CURRENT_FORMAT`.** The
+  backfill then empties the index once (`SearchIndexMaintenance.resetIndex`: triggers dropped, wipe,
+  `'rebuild'`, triggers recreated) and refills it. Without the bump, old rows keep the old shape.
+- Two operations run with the sync triggers dropped, in one transaction: the reset, and
+  `SearchIndexMaintenance.purgeAccountMessages`'s fast path for an account that holds most of the
+  index (2k+ rows and more than every other account combined), which deletes without per-row
+  tokenizing and rebuilds what remains. Both `AccountDataPurger` and delete-all go through it.
+  `SYNC_TRIGGERS` is compared with the exported schema by `SearchIndexMaintenanceTest`.
+- A prune of 1k+ messages merges the index afterwards, inside the prefetch window.
+- `SearchIndexBenchmark` (androidInstrumentedTest, off unless `searchBench=true`) times the
+  budgets in TRUNCATE and WAL; see its KDoc to run it.

@@ -10,6 +10,7 @@
     <string name="action_insert">挿入</string>
     <string name="action_open">開く</string>
     <string name="action_share">共有</string>
+    <string name="action_share_link_active">共有 · リンク有効</string>
     <string name="action_search">検索</string>
     <string name="action_archive">アーカイブ</string>
     <string name="action_duplicate">複製</string>
@@ -19,7 +20,17 @@
     <string name="new_chat">新しいチャット</string>
     <string name="load_preset">プリセットを読み込む</string>
     <string name="save_as_preset">プリセットとして保存</string>
-    <string name="save_and_submit">保存して送信</string>
+    <string name="saving">保存中…</string>
+    <string name="rerun">再実行</string>
+    <string name="update_and_rerun">更新して再実行</string>
+    <string name="edit_part_response">回答</string>
+    <string name="edit_part_thoughts">思考</string>
+    <string name="edit_status_part_empty">メッセージの一部を空にはできません。</string>
+    <string name="edit_status_save_before_rerun">再実行する前に変更を保存してください。</string>
+    <string name="edit_status_unsaved_changes">未保存の変更があります。</string>
+    <string name="edit_status_rerun_discards_changes">再実行すると この回答が再生成され、変更は破棄されます。</string>
+    <string name="edit_status_rerun_needs_user_turn">再実行には再送するユーザーメッセージが必要です。</string>
+    <string name="notice_message_save_failed">編集を保存できませんでした。</string>
     <string name="preset_name_label">プリセット名</string>
     <string name="code">コード</string>
     <string name="preview">プレビュー</string>
@@ -29,7 +40,24 @@
     <!-- Neutral label for the active agent when its name hasn't resolved yet (never a model string). -->
     <string name="chat_agent_fallback_label">エージェント</string>
     <string name="compare_models">モデルを比較</string>
+    <string name="compare_with">比較する相手</string>
+    <string name="compare_start">開始</string>
+    <string name="compare_setup_hint">各メッセージは両方のモデルに送信されます。AまたはBをタップしてモデルを選択します。</string>
+    <string name="compare_same_model">同じモデルで別の回答</string>
+    <string name="compare_pick_below">下から選択</string>
+    <string name="compare_message_both">両方のモデルにメッセージ</string>
+    <string name="compare_pick_to_send">送信するにはモデルBを選択</string>
+    <string name="compare_not_picked">未選択</string>
+    <string name="compare_empty_lane">メッセージを送ると、ここに回答が表示されます。</string>
+    <string name="compare_empty_pick_right">右側で比較するモデルを選んでください。</string>
+    <string name="compare_empty_ready">「開始」をタップしてからメッセージを送信してください。両方のモデルが並べて回答します。</string>
+    <string name="compare_browse_all">すべてのモデルを見る</string>
+    <string name="compare_pick_second_model">2つ目のモデルを選択</string>
+    <string name="cd_change_compared_models">比較中のモデルを変更</string>
+    <string name="compare_lane_a">A</string>
+    <string name="compare_lane_b">B</string>
     <string name="how_can_i_help">今日は何をお手伝いしましょうか？</string>
+    <string name="chat_in_project">%1$s 内</string>
     <string name="recording">録音中…</string>
     <string name="hint_message_model">%1$s にメッセージ</string>
     <string name="hint_message">メッセージ…</string>
@@ -61,6 +89,9 @@
     <string name="cd_more_options">その他のオプション</string>
     <string name="cd_scroll_to_bottom">一番下までスクロール</string>
     <string name="cd_select_model">モデルを選択</string>
+    <string name="cd_starter_send">送信</string>
+    <string name="cd_starter_edit">送信前に編集</string>
+    <string name="starters_try_asking">質問の例</string>
     <string name="cd_librechat">Switchboard</string>
     <string name="cd_comparison_enabled">比較が有効</string>
 
@@ -100,7 +131,6 @@
     <string name="cd_code_execution_result">コードの実行結果</string>
     <string name="cd_exit_code_success">終了コード 0（成功）</string>
     <string name="cd_exit_code_failure">終了コード %1$d（失敗）</string>
-    <string name="exit_code">終了 %1$d</string>
     <string name="label_code">コード</string>
     <string name="label_output">出力:</string>
     <string name="label_error">エラー:</string>
@@ -179,8 +209,6 @@
     <string name="trace_error_unsupported">このサーバーのトレースサービスはトレースを返せません。</string>
 
     <!-- Office-doc preview attachments (deferred preview, v0.8.6+) -->
-    <string name="office_preview_preparing">%1$s のプレビューを準備中…</string>
-    <string name="office_preview_failed">%1$s をプレビューできませんでした（%2$s）</string>
     <string name="office_preview_unavailable">%1$s — プレビューは利用できません</string>
 
     <!-- Content descriptions - Tool calls -->
@@ -200,8 +228,15 @@
     <string name="tool_model">モデル</string>
     <string name="tool_model_parameters">モデルパラメータ</string>
     <string name="tool_model_parameters_desc">温度やトークンなどを調整</string>
+    <string name="param_set_by_spec">このモデルの設定はサーバーが決めているため、ここでは変更できません。</string>
+    <string name="tool_set_by_spec">このモデルではサーバーが有効にしています</string>
     <string name="tool_web_search">ウェブ検索</string>
     <string name="tool_web_search_desc">ウェブで情報を検索</string>
+    <string name="web_search_librechat">LibreChat 検索</string>
+    <string name="web_search_checking">LibreChat 検索を確認中…</string>
+    <string name="web_search_built_in">%1$s の組み込み検索</string>
+    <string name="web_search_built_in_plain">組み込み検索</string>
+    <string name="web_search_set_by_spec">%1$s(このモデルではサーバーが有効にしています)</string>
     <string name="web_searched">ウェブを検索しました</string>
     <string name="tool_url_context">URL コンテキスト</string>
     <string name="tool_url_context_desc">参照した URL や YouTube 動画をモデルが読めるようにする</string>
@@ -254,8 +289,11 @@
     <string name="audio_decode_failed">音声のデコードに失敗しました</string>
 
     <!-- Citation -->
-    <string name="citation_number">引用 %1$d</string>
-    <string name="cd_open_citation_url">引用URLを開く</string>
+    <string name="citation_sources_title">出典</string>
+    <string name="cd_citation">出典: %1$s</string>
+    <plurals name="cd_citation_more">
+        <item quantity="other">出典: %1$s ほか%2$d件</item>
+    </plurals>
 
     <!-- Fork options -->
     <string name="fork_conversation">会話をフォーク</string>
@@ -286,18 +324,24 @@
     <string name="cd_mcp_resource">MCPリソース: %1$s</string>
 
     <!-- Memory artifact -->
-    <string name="cd_memory_artifact">メモリアーティファクト: %1$s</string>
-    <string name="memory_artifact_untitled">無題</string>
     <string name="label_memory">メモリ</string>
-    <string name="cd_memory_artifacts">メモリの更新: %1$d</string>
+    <string name="memory_manage">管理</string>
+    <string name="cd_memory_manage">メモリを管理</string>
+    <plurals name="cd_memory_artifacts_summary">
+        <item quantity="other">%1$s、%2$s 件の変更</item>
+    </plurals>
     <string name="memory_updated">保存されたメモリを更新しました</string>
     <string name="memory_error">メモリエラー</string>
     <string name="memory_updated_items">更新されたメモリ</string>
     <string name="memory_deleted_items">削除されたメモリ</string>
     <string name="memory_deleted">メモリを削除しました</string>
     <string name="memory_storage_full">メモリの保存容量が上限に達しました</string>
-    <string name="memory_already_exceeded">メモリの保存容量はすでに上限を %1$d トークン超えています。新しいメモリを追加する前に既存のメモリを削除してください。</string>
-    <string name="memory_would_exceed">保存できません — 上限を %1$d トークン超えます。既存のメモリを削除して空きを作ってください。</string>
+    <plurals name="memory_already_exceeded">
+        <item quantity="other">メモリの保存容量はすでに上限を %1$s トークン超えています。新しいメモリを追加する前に既存のメモリを削除してください。</item>
+    </plurals>
+    <plurals name="memory_would_exceed">
+        <item quantity="other">保存できません — 上限を %1$s トークン超えます。既存のメモリを削除して空きを作ってください。</item>
+    </plurals>
     <string name="files_searched">ファイルを検索しました</string>
     <string name="cd_file_search_source">ファイル検索のソース: %1$s</string>
     <string name="file_search_relevance">%1$d%%</string>
@@ -318,10 +362,7 @@
     <!-- Message files -->
     <string name="file_fallback">ファイル</string>
     <string name="attachment_fallback">添付ファイル</string>
-    <string name="pdf_document">PDF ドキュメント</string>
     <string name="pdf_load_failed">PDF を読み込めませんでした</string>
-    <string name="cd_share_pdf">PDF を共有</string>
-    <string name="cd_open_pdf">PDF を開く</string>
     <string name="retry">再試行</string>
     <string name="messages_unavailable_title">メッセージを利用できません</string>
     <string name="messages_unavailable_body">この会話を読み込めず、このデバイスにはオフライン用のコピーも保存されていません。</string>
@@ -333,8 +374,12 @@
     <string name="cd_unpin_favorite">お気に入りのピンを外す</string>
     <string name="cd_collapse_section">%1$s を折りたたむ</string>
     <string name="cd_expand_section">%1$s を展開</string>
-    <string name="set_api_key_action">APIキーを設定</string>
-    <string name="cd_set_api_key">%1$s のAPIキーを設定</string>
+    <string name="set_api_key_action">キーを追加</string>
+    <string name="cd_set_api_key">%1$s のキーを追加</string>
+    <!-- Under an endpoint or spec name in the model picker when its key is missing. -->
+    <string name="model_selector_needs_key">キーが必要です</string>
+    <!-- Same place, in the minute before the server deletes an expired key. -->
+    <string name="model_selector_key_expired">キーの期限切れ</string>
 
     <!-- Preset picker -->
     <string name="select_preset">プリセットを選択</string>
@@ -446,22 +491,31 @@
     <string name="dialog_title_fill_variables">変数を入力</string>
 
     <!-- Comparison mode -->
-    <string name="continue_with_response">この応答で続ける</string>
-    <string name="waiting_for_response">応答を待っています…</string>
+    <string name="keep_this_answer">この回答を残す</string>
+    <string name="reply_stopped">停止しました</string>
+    <string name="action_continue_reply">続ける</string>
+    <string name="action_keep_and_continue">残して続ける</string>
 
     <!-- Provider Keys chat-time errors. -->
     <string name="provider_keys_chat_error_no_key">キーが見つかりません。キーを入力してもう一度お試しください。</string>
-    <!-- {0} = endpoint name, {1} = expiredAt (server-locale string, NOT ISO) -->
+    <!-- {0} = endpoint name, {1} = expiry date and time, already formatted in the user's locale -->
     <string name="provider_keys_chat_error_expired">%1$s に提供されたキーは %2$s に期限切れになりました。新しいキーを入力してもう一度お試しください。</string>
     <string name="provider_keys_chat_error_invalid">無効なキーが提供されました。有効なキーを入力してもう一度お試しください。</string>
-    <!-- Snackbar action label that deep-links to Settings → Provider Keys -->
-    <string name="provider_keys_chat_error_cta">キー設定を開く</string>
+    <string name="provider_keys_chat_error_no_key_for">%1$s のキーが見つかりません。キーを入力してもう一度お試しください。</string>
+    <string name="provider_keys_chat_error_invalid_for">%1$s に無効なキーが提供されました。有効なキーを入力してもう一度お試しください。</string>
+    <string name="provider_keys_chat_error_expired_no_label">提供されたキーは %1$s に期限切れになりました。新しいキーを入力してもう一度お試しください。</string>
+    <string name="provider_keys_chat_error_no_base_url">ベースURLが見つかりません。ベースURLを入力してもう一度お試しください。</string>
+    <string name="provider_keys_chat_error_no_base_url_for">%1$s のベースURLが見つかりません。ベースURLを入力してもう一度お試しください。</string>
+    <string name="provider_keys_chat_error_invalid_base_url">入力されたベースURLは制限されたアドレスを対象としています。有効な外部URLを使用してもう一度お試しください。</string>
+    <string name="provider_keys_chat_error_invalid_base_url_for">%1$s に入力されたベースURLは制限されたアドレスを対象としています。有効な外部URLを使用してもう一度お試しください。</string>
     <string name="queued_messages_dropped_account_switch">アカウントの切り替えにより、キュー内のメッセージは破棄されました</string>
 
     <!-- Send block reasons (shown in error snackbar when send can't proceed) -->
     <string name="send_block_select_agent">メッセージを送信する前にエージェントを選択してください。</string>
     <string name="send_block_select_model">メッセージを送信する前にモデルを選択してください。</string>
+    <string name="send_block_select_second_model">送信する前に、リストからモデルBを選択してください。</string>
     <string name="send_block_agents_unavailable">このサーバーではエージェントを利用できません。別のモデルを選択してください。</string>
+    <string name="send_block_api_key_required">メッセージを送信するには、%1$s の API キーを追加してください。</string>
     <string name="send_block_agent_not_available">選択したエージェントはこのサーバーで利用できません。別のエージェントを選択してください。</string>
     <string name="send_block_model_not_available">選択したモデルはこのサーバーで利用できません。別のモデルを選択してください。</string>
     <string name="send_block_model_load_failed">選択したモデルをまだ読み込めませんでした。もう一度お試しいただくか、別のモデルを選択してください。</string>
@@ -544,6 +598,9 @@
     <string name="error_auth_banned">このアカウントまたはネットワークはサインインをブロックされています。管理者に連絡してください。</string>
     <string name="error_auth_cross_origin">別のサイトからのサインインとしてサーバーに拒否されました。これはパスワードの問題ではなくアプリのバグです。報告してください。</string>
     <string name="error_share_limit">共有リンクのリクエストが多すぎます。しばらく待ってからもう一度お試しください。</string>
+    <string name="error_message_limit">このサーバーのメッセージ上限に達しました。しばらく待ってからもう一度お試しください。</string>
+    <string name="error_ban">このアカウントはこのサーバーで一時的に制限されています。後でもう一度試すか、サーバーの管理者に連絡してください。</string>
+    <string name="error_convo_access">この会話は別のアカウントのものであるため、ここから続けることはできません。</string>
     <string name="ask_user_question_record_asked">質問済み</string>
     <string name="ask_user_question_record_asking">質問中</string>
     <string name="ask_user_question_record_answer_label">あなたの回答:</string>
@@ -557,6 +614,21 @@
     <string name="cd_collapse_ask_user_question">質問の詳細を折りたたむ</string>
     <string name="tool_memory">メモリ</string>
     <string name="tool_memory_desc">このチャットの詳細をアシスタントが記憶できるようにする</string>
+    <string name="tool_skills">スキル</string>
+    <string name="tool_skills_desc">このチャットでアシスタントがあなたのスキルを使えるようにする</string>
+    <string name="cd_skills_enabled">スキルが有効</string>
+    <string name="picker_type_prompt">プロンプト</string>
+    <string name="picker_type_skill">スキル</string>
+    <string name="picker_no_matches">一致するものはありません</string>
+    <string name="picker_loading_skills">スキルを読み込み中…</string>
+    <string name="picker_skills_failed">スキルを読み込めませんでした</string>
+    <string name="cd_pending_skills">次のメッセージで使うスキル</string>
+    <string name="cd_remove_skill">スキル %1$s を削除</string>
+    <string name="cd_skill_always_applied">常に適用されるスキル: %1$s</string>
+    <string name="cd_skill_used">使用したスキル: %1$s</string>
+    <string name="skill_call_running">%1$s を実行中</string>
+    <string name="skill_call_finished">%1$s を実行しました</string>
+    <string name="skill_call_fallback_name">スキル</string>
     <string name="cd_steer_message">この応答を軌道修正</string>
     <string name="cd_cancel_steer">軌道修正をキャンセル</string>
     <string name="cd_during_run_options">送信時の動作を選択</string>
@@ -564,6 +636,8 @@
     <string name="during_run_queue">キューに追加</string>
     <string name="during_run_always_steer">生成中は常に軌道修正</string>
     <string name="during_run_always_queue">生成中は常にキューに追加</string>
+    <string name="steer_pending_hint">次のツールステップで応答に反映されます。先に応答が終わった場合は、その後に送信されます。</string>
+    <string name="steer_queued_as_follow_up">メッセージをこの応答に反映できなかったため、応答の後に送信するようキューに追加しました。</string>
     <string name="system_event_label">システム</string>
     <string name="wakeup_explainer">この永続的な結果によりエージェントが再開し、会話を続けました。</string>
     <string name="wakeup_subagent_completed">サブエージェントのタスクが完了しました</string>
@@ -636,21 +710,173 @@
     <string name="compact_confirm_not_now">後で</string>
     <string name="compact_confirm_action">圧縮</string>
     <string name="cd_temporary_chat">一時チャット</string>
+    <string name="temporary_chat_title">一時チャット</string>
+    <string name="temporary_chat_subtitle">この会話は履歴に保存されません</string>
     <string name="notice_rename_failed">会話の名前を変更できませんでした</string>
     <string name="notice_delete_failed">会話を削除できませんでした</string>
     <string name="notice_archive_failed">会話をアーカイブできませんでした</string>
     <string name="notice_duplicate_failed">会話を複製できませんでした</string>
-    <string name="notice_share_link_failed">共有リンクを作成できませんでした</string>
     <string name="notice_preset_save_failed">プリセットを保存できませんでした</string>
     <string name="notice_preset_delete_failed">プリセットを削除できませんでした</string>
     <string name="notice_preset_update_failed">プリセットを更新できませんでした</string>
     <string name="notice_continue_response_failed">選択した応答で続行できませんでした</string>
     <string name="notice_favorites_limit">お気に入りは最大%1$d件までピン留めできます。</string>
     <string name="notice_favorites_update_failed">お気に入りを更新できませんでした。</string>
+    <string name="notice_bookmark_update_failed">ブックマークを更新できませんでした。もう一度お試しください。</string>
+    <string name="notice_bookmark_create_failed">ブックマークを作成できませんでした。もう一度お試しください。</string>
+    <string name="notice_bookmarks_load_failed">このチャットのブックマークを読み込めませんでした</string>
     <string name="notice_upload_failed">%1$s をアップロードできませんでした: %2$s</string>
     <string name="notice_upload_failed_unknown">%1$s をアップロードできませんでした: 不明なエラー</string>
     <string name="notice_upload_unreadable">%1$s をアップロードできませんでした: ファイルを読み取れませんでした</string>
     <string name="notice_upload_too_large">%1$s はサーバーの上限 %2$s を超えています。</string>
     <string name="notice_speech_permission_denied">音声認識へのアクセスが許可されていません</string>
     <string name="notice_speech_unavailable">音声認識を利用できません。設定 &gt; プライバシー &gt; 音声認識 を確認してください。</string>
+    <string name="notice_send_refused">サーバーがこのメッセージを拒否しました。</string>
+    <string name="notice_skills_not_sent">このチャットでは使用できないスキルがあるため、送信されませんでした。</string>
+    <string name="notice_skills_removed_from_queued">このチャットでは使用できないスキルがあるため、キュー内のメッセージから削除しました。</string>
+    <plurals name="notice_message_limit_retry_minutes">
+        <item quantity="other">このサーバーのメッセージ上限に達しました。%1$d分後にもう一度お試しください。</item>
+    </plurals>
+    <plurals name="notice_message_limit_retry_hours">
+        <item quantity="other">このサーバーのメッセージ上限に達しました。%1$d時間後にもう一度お試しください。</item>
+    </plurals>
+    <plurals name="notice_message_limit_retry_days">
+        <item quantity="other">このサーバーのメッセージ上限に達しました。%1$d日後にもう一度お試しください。</item>
+    </plurals>
+    <string name="queue_held_after_refusal">サーバーがメッセージを拒否しました。メッセージはキューで待機しており、自動では送信されません。準備ができたら「キューを送信」をタップしてください。</string>
+    <string name="jump_message_not_found">そのメッセージはこのチャットにもうありません。</string>
+    <string name="jump_branch_switched">このメッセージを含むブランチ（応答 %1$d / %2$d）に切り替えました。</string>
+    <string name="load_image_from_host">%1$s から画像を読み込む</string>
+    <string name="workspace_changes">ワークスペースの変更</string>
+    <plurals name="n_files_changed">
+        <item quantity="other">%1$d 個のファイルを変更</item>
+    </plurals>
+    <string name="file_created">新規</string>
+    <string name="file_updated">編集済み</string>
+    <string name="show_all_n">%1$d 件をすべて表示</string>
+    <string name="cd_download_file">%1$s をダウンロード</string>
+    <string name="cd_open_file">%1$s を開く</string>
+    <string name="preview_preparing">プレビューを準備中…</string>
+    <string name="preview_failed_download">プレビューを表示できません · ダウンロードして表示</string>
+    <plurals name="text_n_lines">
+        <item quantity="other">%1$d 行</item>
+    </plurals>
+    <string name="sandbox_starting">サンドボックス環境を起動中</string>
+    <string name="analyzing">分析中</string>
+    <string name="analyzing_finished">分析終了</string>
+    <plurals name="show_all_n_lines">
+        <item quantity="other">%1$d 行をすべて表示</item>
+    </plurals>
+    <string name="cd_copy_output">出力をコピー</string>
+    <string name="expired">期限切れ</string>
+    <string name="expired_explainer">コードサンドボックスのファイルは24時間保持されます。このファイルは期限切れのため、ダウンロードできません。</string>
+    <string name="file_download_failed">%1$s をダウンロードできませんでした</string>
+    <plurals name="files_count_summary">
+        <item quantity="other">%1$d 個のファイル</item>
+    </plurals>
+    <plurals name="plus_n_more">
+        <item quantity="other">他 %1$d 件</item>
+    </plurals>
+    <string name="greeting_late_night">夜更かしですね</string>
+    <string name="greeting_early_morning">早起きですね</string>
+    <string name="greeting_morning">おはようございます</string>
+    <string name="greeting_afternoon">こんにちは</string>
+    <string name="greeting_evening">こんばんは</string>
+    <string name="greeting_weekend_morning">素敵な週末の朝を</string>
+    <string name="greeting_weekend_afternoon">素敵な週末の午後を</string>
+    <string name="greeting_weekend_evening">素敵な週末の夜を</string>
+    <string name="diagram_error_prefix">図のエラー：</string>
+    <string name="stt_mic_permission_required">音声入力にはマイクの権限が必要です</string>
+    <string name="stt_speak_now">お話しください…</string>
+    <string name="stt_recognition_unavailable">このデバイスでは音声認識を使用できません</string>
+    <string name="artifact_preview_failed">プレビューを読み込めませんでした</string>
+    <string name="cd_mcp_server_enabled">MCP サーバー %1$s 有効</string>
+    <string name="cd_code_block">コードブロック</string>
+    <string name="cd_code_block_language">%1$s のコードブロック</string>
+    <string name="log_output_title">ログ出力</string>
+    <string name="cd_attached_image">添付画像</string>
+    <string name="model_selector_search">モデルを検索…</string>
+    <string name="model_selector_my_agents">マイエージェント</string>
+    <string name="model_selector_spec_only_note">このサーバーでは上に表示されたオプションのみ使用できます。</string>
+    <string name="agent_handoff_to">エージェント %1$s</string>
+    <string name="agent_handoff_run">実行：%1$s</string>
+    <string name="sibling_position">回答 %1$d / %2$d</string>
+    <string name="cd_assistant_responding">アシスタントが応答中：%1$s</string>
+    <string name="tool_call_fallback">ツール呼び出し</string>
+    <string name="prompt_filter_title">絞り込みと並べ替え</string>
+    <string name="prompt_sort_recent">新しい順</string>
+    <string name="prompt_sort_popular">人気順</string>
+    <string name="prompt_sort_alphabetical">名前順</string>
+    <string name="prompt_editor_create_title">プロンプトを作成</string>
+    <string name="prompt_editor_edit_title">プロンプトを編集</string>
+    <string name="prompt_command_placeholder">my-command</string>
+    <string name="prompt_variables_hint">{{variable_name}} で変数を追加できます</string>
+    <string name="prompt_editor_create">作成</string>
+    <string name="prompts_load_failed">プロンプトを読み込めませんでした</string>
+    <string name="prompts_empty_category">このカテゴリにプロンプトはありません</string>
+    <string name="prompts_empty">プロンプトはまだありません</string>
+    <string name="prompts_empty_category_hint">別のカテゴリを選ぶか、絞り込みを解除してください</string>
+    <string name="prompts_empty_hint">＋ をタップして作成</string>
+    <string name="prompt_shared">共有中</string>
+    <string name="prompt_private">非公開</string>
+    <string name="prompt_permission_view_only">閲覧のみ</string>
+    <string name="prompt_permission_can_edit">編集可能</string>
+    <string name="prompt_preview_placeholder">変数の値を入力するとプレビューが表示されます</string>
+    <string name="cd_sync_scroll_on">ペインは連動してスクロールします。連動を解除</string>
+    <string name="cd_sync_scroll_off">ペインは個別にスクロールします。連動させる</string>
+    <!-- Shared chat viewer -->
+    <string name="shared_chat_title_fallback">共有チャット</string>
+    <string name="shared_chat_subtitle">共有チャット · %1$s</string>
+    <string name="shared_chat_continue">このチャットを続ける</string>
+    <string name="shared_chat_open_in_browser">ブラウザで開く</string>
+    <string name="shared_chat_langfuse">Langfuse でセッションを表示</string>
+    <string name="shared_chat_link_updated">このリンクは更新されました。最新版を表示しています。</string>
+    <string name="shared_chat_continue_rate_limited">チャットを続けるリクエストが多すぎます。しばらくしてからもう一度お試しください。</string>
+    <string name="shared_chat_continue_failed">このチャットを続けられませんでした</string>
+    <string name="shared_chat_continue_unsupported">このサーバーでは共有チャットを続けられません</string>
+    <string name="shared_chat_refresh_failed">この共有チャットを更新できませんでした</string>
+    <string name="shared_chat_continue_blocked">サーバーがこのチャットのコピーをブロックしました</string>
+    <string name="shared_chat_continue_blocked_reason">サーバーがこのチャットのコピーをブロックしました: %1$s</string>
+    <string name="shared_chat_not_found">共有リンクが見つかりません</string>
+    <string name="shared_chat_not_found_description">削除されたか、リンクが間違っている可能性があります。</string>
+    <string name="shared_chat_no_access">この共有チャットを開けません</string>
+    <string name="shared_chat_no_access_description">このアカウントには共有されていません。</string>
+    <string name="shared_chat_rate_limited">共有リンクへのリクエストが多すぎます</string>
+    <string name="shared_chat_rate_limited_description">少し待ってからもう一度お試しください。</string>
+    <string name="shared_chat_blocked">サーバーがこの共有チャットをブロックしました</string>
+    <string name="shared_chat_load_failed">この共有チャットを読み込めませんでした</string>
+    <string name="shared_chat_user">ユーザー</string>
+    <string name="shared_chat_file_failed">このファイルを開けませんでした</string>
+
+    <!-- Web and file search sources -->
+    <string name="web_searching">ウェブ検索</string>
+    <string name="web_searching_again">もう一度ウェブを検索します</string>
+    <string name="web_search_processing">処理結果</string>
+    <string name="web_search_reading">読み取り結果</string>
+    <string name="web_search_details">検索の詳細</string>
+    <string name="web_search_query">クエリ</string>
+    <string name="web_search_images">画像の結果</string>
+    <string name="web_search_shopping">ショッピングの結果</string>
+    <string name="web_search_places">場所</string>
+    <string name="files_searching">ファイルの検索</string>
+    <string name="searching_web_and_files">ウェブとファイルを検索中</string>
+    <string name="searched_web_and_files">ウェブとファイルを検索しました</string>
+    <string name="search_cancelled">キャンセル</string>
+    <string name="sources_tab_all">全て</string>
+    <string name="sources_tab_news">ニュース</string>
+    <string name="sources_tab_images">画像</string>
+    <string name="sources_tab_files">ファイル</string>
+    <string name="sources_agent_files">エージェント・ファイル</string>
+    <string name="sources_agent_file">ソース・ドキュメント</string>
+    <string name="web_search_load_images">画像を読み込む</string>
+    <string name="cd_open_cited_file">%1$s を開く</string>
+    <plurals name="web_search_sources">
+        <item quantity="other">%1$d ソース</item>
+    </plurals>
+    <plurals name="sources_more">
+        <item quantity="other">+%1$d ソース</item>
+    </plurals>
+    <plurals name="files_more">
+        <item quantity="other">+%1$d ファイル</item>
+    </plurals>
 </resources>

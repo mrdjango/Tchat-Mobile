@@ -1,10 +1,13 @@
 package com.garfiec.librechat.feature.settings.viewmodel
 
 import com.garfiec.librechat.core.common.result.Result
+import com.garfiec.librechat.core.data.datastore.AppPreferences
 import com.garfiec.librechat.core.data.datastore.ChatFontSize
 import com.garfiec.librechat.core.data.datastore.LatexRenderer
+import com.garfiec.librechat.core.data.datastore.PreferenceStore
 import com.garfiec.librechat.core.data.datastore.SettingsDataStore
 import com.garfiec.librechat.core.data.datastore.UploadRoutingMode
+import com.garfiec.librechat.core.data.datastore.WebSearchPreference
 import com.garfiec.librechat.core.data.repository.SpeechRepository
 import com.garfiec.librechat.core.model.speech.SpeechConfig
 import com.garfiec.librechat.feature.settings.viewmodel.delegate.SpeechSettingsContract
@@ -33,8 +36,11 @@ class ChatSettingsViewModelTest {
 
     private val speechSettingsContract = mockk<SpeechSettingsContract>(relaxed = true)
     private val settingsDataStore = mockk<SettingsDataStore>(relaxed = true)
+    private val preferenceStore = mockk<PreferenceStore>(relaxed = true)
     private val uploadRoutingModeFlow = MutableStateFlow(UploadRoutingMode.AUTO)
     private val siteIconsChoiceFlow = MutableStateFlow<Boolean?>(null)
+    private val preferLastUsedFlow = MutableStateFlow(false)
+    private val webSearchFirstFlow = MutableStateFlow(WebSearchPreference.LIBRECHAT_FIRST)
     private val speechRepository = mockk<SpeechRepository>(relaxed = true)
 
     private lateinit var viewModel: ChatSettingsViewModel
@@ -46,7 +52,7 @@ class ChatSettingsViewModelTest {
         // Setup DataStore flows
         every { settingsDataStore.chatFontSize } returns MutableStateFlow(ChatFontSize.MEDIUM)
         every { settingsDataStore.autoScrollEnabled } returns MutableStateFlow(true)
-        every { settingsDataStore.showThinkingBlocks } returns MutableStateFlow(true)
+        every { settingsDataStore.thinkingOpenByDefault } returns MutableStateFlow(false)
         every { settingsDataStore.autoReadEnabled } returns MutableStateFlow(false)
         every { settingsDataStore.selectedVoiceId } returns MutableStateFlow(null)
         every { settingsDataStore.showImageDescriptions } returns MutableStateFlow(false)
@@ -65,8 +71,13 @@ class ChatSettingsViewModelTest {
         every { settingsDataStore.sttEndOfSpeech } returns MutableStateFlow(false)
         // The preferences state is one combine chain, so a source that never emits stalls all of it —
         // an unstubbed flow here shows up as an unrelated setting silently keeping its default.
-        every { settingsDataStore.siteIconsChoice } returns siteIconsChoiceFlow
-        coEvery { settingsDataStore.setShowSiteIcons(any()) } answers { siteIconsChoiceFlow.value = firstArg() }
+        every { preferenceStore.observe(AppPreferences.SiteIcons) } returns siteIconsChoiceFlow
+        every { preferenceStore.observe(AppPreferences.PreferLastUsedModel) } returns preferLastUsedFlow
+        coEvery { preferenceStore.set(AppPreferences.PreferLastUsedModel, any()) } answers { preferLastUsedFlow.value = secondArg() }
+        every { preferenceStore.observe(AppPreferences.WebSearchFirst) } returns webSearchFirstFlow
+        coEvery { preferenceStore.set(AppPreferences.WebSearchFirst, any()) } answers { webSearchFirstFlow.value = secondArg() }
+        every { preferenceStore.initial(AppPreferences.SiteIcons) } returns null
+        coEvery { preferenceStore.set(AppPreferences.SiteIcons, any()) } answers { siteIconsChoiceFlow.value = secondArg() }
         every { settingsDataStore.latexRenderer } returns MutableStateFlow(LatexRenderer.KATEX)
         every { settingsDataStore.uploadRoutingMode } returns uploadRoutingModeFlow
         coEvery { settingsDataStore.setUploadRoutingMode(any()) } answers { uploadRoutingModeFlow.value = firstArg() }
@@ -83,6 +94,7 @@ class ChatSettingsViewModelTest {
 
     private fun createViewModel() = ChatSettingsViewModel(
         settingsDataStore = settingsDataStore,
+        preferenceStore = preferenceStore,
         speechSettingsFactory = SpeechSettingsFactory { speechSettingsContract },
     )
 
@@ -95,8 +107,34 @@ class ChatSettingsViewModelTest {
         viewModel.setShowSiteIcons(true)
         advanceUntilIdle()
 
-        coVerify { settingsDataStore.setShowSiteIcons(true) }
+        coVerify { preferenceStore.set(AppPreferences.SiteIcons, true) }
         assertThat(viewModel.uiState.value.showSiteIcons).isTrue()
+    }
+
+    @Test
+    fun `new chats start on the server's choice until the user prefers last-used`() = runTest {
+        viewModel = createViewModel()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.preferLastUsedModel).isFalse()
+
+        viewModel.setPreferLastUsedModel(true)
+        advanceUntilIdle()
+
+        coVerify { preferenceStore.set(AppPreferences.PreferLastUsedModel, true) }
+        assertThat(viewModel.uiState.value.preferLastUsedModel).isTrue()
+    }
+
+    @Test
+    fun `web search tries LibreChat search first until the user prefers the built-in one`() = runTest {
+        viewModel = createViewModel()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.webSearchFirst).isEqualTo(WebSearchPreference.LIBRECHAT_FIRST)
+
+        viewModel.setWebSearchFirst(WebSearchPreference.BUILT_IN_FIRST)
+        advanceUntilIdle()
+
+        coVerify { preferenceStore.set(AppPreferences.WebSearchFirst, WebSearchPreference.BUILT_IN_FIRST) }
+        assertThat(viewModel.uiState.value.webSearchFirst).isEqualTo(WebSearchPreference.BUILT_IN_FIRST)
     }
 
     @Test

@@ -8,6 +8,30 @@ Ktor HttpClient, API service classes, SSE streaming client, auth interceptor. Al
 - **AuthInterceptorPlugin** (`client/AuthInterceptor.kt`): Custom Ktor plugin that injects `Authorization: Bearer` on outgoing requests and retries on 401 after refreshing tokens. Skips auth endpoints (`auth/login`, `auth/register`, `auth/refresh`, etc.).
 - **TokenManager interface** (`client/TokenManager.kt`): `getAccessToken()`, `setTokens()`, `refreshAccessToken()` (single-flighted, epoch-guarded), `clearTokens()`, `sessionExpiredFlow`, plus the account-keyed `getAccessTokenFor()` / `selectAccount()` / `removeAccount()` / `refreshAccessTokenFor()`. Implemented in `:core:data`.
 - **ServerUrlProvider interface** (`client/ServerUrlProvider.kt`): Resolves the user-configured base URL. Implemented in `:core:data`.
+  **One rule for every URL: the cleaned base path is the deployment root, and every request path is
+  appended to it.** `https://host/librechat` + `api/config` (or `/api/auth/refresh`) is
+  `https://host/librechat/api/…`; a host-root base lands where it always did.
+  - Ktor requests resolve through `resolveAgainstDeploymentRoot` (`client/DeploymentRoot.kt`), called
+    by `SwitchBarrierPlugin` (main + streaming clients, against the snapshot's base) and by
+    `ServerUrlReadyPlugin` (the refresh client, and the main client when no `SwitchGate` is wired).
+    Never install both on one client. **No `defaultRequest` carries a URL**: Ktor's own merge follows
+    RFC 3986, so a base without a trailing slash loses its last segment and an absolute child path
+    replaces the base path — every API call on a subpath deployment went to the host root.
+  - Every URL built by hand joins onto `cleanServerUrl(baseUrl)` (`:core:common`) — the refresh pin,
+    `ImageUrlResolver`, the legacy image-gen output, file, share and SSO URLs, the iOS SSE transport —
+    which is the same root the resolver uses. `isSecuredImagePath` matches against
+    `deploymentRootSegments`, also the same root.
+  - The cleaner exists because the stored string can carry a pasted web-UI page
+    (`https://host/login?redirect_to=…`): appended to raw, the refresh went to
+    `/login?redirect_to=…/api/auth/refresh` — a 403 nobody could attribute, and a session that could
+    never renew. It strips the query, the fragment and one recognised web route, and keeps any other
+    path (`AvatarUrlResolverTest` pins that a subpath deployment keeps its prefix).
+  - The raw string is still what `deriveServerId` hashes, what `RequestIdentity.baseUrl` and
+    `PinnedServerBaseUrlKey` carry, and what `ServerHeadersPlugin` keys gateway headers on, so pass it
+    through unchanged wherever identity is derived (`pinnedBaseUrl`).
+  - A stored base with an unrecognised junk segment (`https://host/chat` on a host-root deployment)
+    used to work by accident of the last-segment drop and now 404s; re-entering the address on the
+    server screen repairs it (its origin fallback, `feature/auth/CLAUDE.md`).
 - **API services** (`api/`): One class per domain -- `AuthApi`, `ConversationsApi`, `MessagesApi`, `ChatStreamApi`, `FilesApi`, `AgentsApi`, `PresetsApi`, `PromptsApi`, `TagsApi`, `ShareApi`, `ConfigApi`, `EndpointsApi`, `BalanceApi`, `UserApi`. Each takes `HttpClient` as a constructor parameter, wired via Koin.
 - **SSE client** (`sse/`): `SseClient`, `SseEvent`, `SseEventParser`, `SseConnectionManager`.
 - **DTO mappers** (`mapper/`): Convert network DTOs to domain models from `:core:model`.
@@ -146,7 +170,21 @@ is long-lived and never rotates, so an `http://` downgrade or an unknown base UR
   those three letters, so a CrowdSec or WAF interstitial emitted `SessionEndReason.BANNED` and tore
   down a live session — leaving the user logged out *and* unable to sign back in until the network
   block lifted. An unrecognised 403 now fails the request without ending the session. The refresh
-  client's half of this rule lives in `core/data/CLAUDE.md`.
+  client's half of this rule lives in `core/data/CLAUDE.md` — including the exit: a refresh refused
+  that way publishes `SessionHealth.RenewalBlocked`, and the shell offers "sign in again". And a 401
+  the `AuthInterceptorPlugin` could not clear is tagged (`SessionRenewalFailedKey`) so the validator
+  replaces the server's `jwt expired` with `SESSION_RENEWAL_FAILED_MESSAGE`; the tag goes on the
+  call's request attributes, not the builder's (the two differ), and `SessionRenewalMessageTest`
+  pins that the plugins meet on one request.
+- **A genuine ban does not end the session from the client either.** Upstream's `checkBan` guards
+  only some routes (auth, agents — which includes chat sends under `/api/agents/chat` — files,
+  assistants, permissions; not convos, messages, user or config), so `BANNED` raises a
+  once-per-account "Account restricted" dialog and leaves the user where they are. The server decides
+  how long that lasts: `banViolation()` deletes a violating user's sessions, so the access token keeps
+  working until it lapses and then the refresh is rejected and the normal `EXPIRED` sign-out follows;
+  an IP ban of an account that did nothing keeps its session. So
+  `BANNED` must not set the store's one-shot `sessionExpiryReported` latch, or that later expiry would
+  be swallowed.
 - **A gateway block is not an expired session.** The refresh path maps it to
   `RefreshAttempt.GatewayBlocked` → `Transient`, and deliberately not through `settle()`: the request
   never reached LibreChat, so it is no evidence the session is dead, and logging out over it costs the
@@ -205,7 +243,7 @@ Four rules that are load-bearing and easy to undo by accident:
   every refresh overwrites, so a value snapshotted before a rotation is already rejected — with a
   **403**, not a 401. Read it at attach time, keyed to the snapshot's `accountId`, and let the
   one-shot 403 retry (re-read, resend only if it *changed*) absorb the race. It is deliberately not
-  on `RequestIdentity` and not on `TokenManager`: `ImageCookieCredentials` is a one-method seam bound
+  on `RequestIdentity` and not on `TokenManager`: `RefreshCookieCredentials` is a one-method seam bound
   to the token store, so the six `TokenManager` fakes never gain a second credential.
 
 Gating is `isSameServerAuthority` (scheme + host + port, fail-closed) plus a **base-path-aware** path
@@ -224,6 +262,21 @@ deployment's mount at all. A null or pending account attaches nothing.
 - `HttpResponseValidator` in the client converts non-2xx to exceptions.
 - API services throw on error. Repositories in `:core:data` catch via `safeApiCall` from `:core:common`.
 - Respect `429 Too Many Requests` and parse `Retry-After` header on auth endpoints.
+- A certificate failure (`FailureKind.Tls`) is terminal like a gateway block: `configureRetryPolicy`
+  and `SseClient` both stop on it, since the same certificate fails every attempt. Android only, and
+  only from the certificate exception *beneath* the TLS failure: an `SSLHandshakeException` alone is
+  also a reset mid-handshake or `https://` against a plain-HTTP port, which must stay retryable / read
+  as unreachable. iOS never classifies it: Darwin reports an untyped `DarwinHttpRequestException`,
+  and the iOS SSE transport maps `nw_error_domain_tls` to a plain `Exception`, which `SseClient`
+  retries like any other failure.
+- **User-installed CAs are trusted on Android** (`app/src/main/res/xml/network_security_config.xml`),
+  so a server behind a private CA works once its CA is on the device. `CertificateTrustListener`
+  (an OkHttp `EventListener` on every client, via `CertificateTrustOkHttp`) checks the trust anchor
+  of each new TLS connection with `X509TrustManagerExtensions.isUserAddedCertificate` and records
+  it in `CertificateTrustRegistry`, keyed by host and port. Sign-in and Settings → General → About
+  show a notice when the active server's anchor is user-installed. It is informational: nothing is
+  blocked, and a change of anchor between connections isn't flagged (that belongs with #36). iOS
+  records nothing.
 
 ## Rules
 
@@ -231,3 +284,23 @@ deployment's mount at all. A null or pending account attaches nothing.
 - Convention plugins: `librechat.mobile.library` + `librechat.mobile.koin` + `librechat.kotlin.serialization`.
 - API services must not contain business logic -- they are thin HTTP wrappers.
 - All `arg`-wrapped endpoints must match the backend pattern `{ "arg": { ... } }`. Build it as a `@Serializable` wrapper class (see `ConvoUpdateBody`) or with `buildJsonObject`, **never as a `Map<String, Any>`**. Ktor picks a map's serializer from its values, so a map that nests an object beside a string throws "Serializing collections of different element types" before the request is sent, and `safeApiCall` turns that into a generic error rather than a crash. A map is safe only when every value has one type (e.g. `mapOf("refreshToken" to token)`).
+
+## OpenID token reuse (issue #653)
+
+`OpenIdCookiePlugin` runs on the main, streaming and refresh clients, before `ServerHeadersPlugin`.
+It attaches `token_provider=openid` and the opaque `openid_user_id` from the request's own identity;
+it never reads an active account in place of a pending or captured identity. Explicit refresh,
+logout and image requests use `attachAuthCookies` to send the complete cookie bundle. Only those
+paths send a refresh token. Redirect sends strip app cookies outside the captured authority or
+deployment root. Gateway cookies merge into one header; app-owned cookie values win.
+
+`CookieHelper.update` preserves omitted cookies, handles explicit expiry/provider changes, and
+rejects an OpenID refresh rotation without its replacement user marker. The marker is a
+server-signed user-id JWT, not derived from the refresh token. The server reissues it whenever it
+rotates the refresh token (`setOpenIDAuthTokens`); its session-reuse branch answers 200 with no
+auth cookies, so a refresh that rotates nothing keeps the previous marker. Treat it as opaque: do
+not reconstruct, decode or independently persist it. Parse response cookies through Ktor's
+`HttpMessage.setCookie()`: Foundation combines repeated fields, and `Expires` contains commas that
+cannot be split blindly. `refreshBearerFor` updates both bearer and marker on retry. The raw iOS
+SSE path bypasses these plugins and uses the shared `sseCustomHeaderLines` renderer, including
+after renewal. Never add a process-wide cookie jar.

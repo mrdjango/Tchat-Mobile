@@ -1,5 +1,9 @@
 package com.garfiec.librechat.feature.chat.viewmodel
 
+import com.garfiec.librechat.core.common.result.ApiException
+import com.garfiec.librechat.core.model.error.StreamErrorType
+import com.garfiec.librechat.core.network.api.chatRefusalText
+
 /**
  * App-authored messages for the shared error channel (`ChatUiState.error`), carried as a marker and
  * localized where the channel is rendered (`localizedStreamError`), like
@@ -15,15 +19,24 @@ enum class ChatNotice(val wire: String) {
     DELETE_FAILED("delete_failed"),
     ARCHIVE_FAILED("archive_failed"),
     DUPLICATE_FAILED("duplicate_failed"),
-    SHARE_LINK_FAILED("share_link_failed"),
     PRESET_SAVE_FAILED("preset_save_failed"),
     PRESET_DELETE_FAILED("preset_delete_failed"),
     PRESET_UPDATE_FAILED("preset_update_failed"),
     CONTINUE_RESPONSE_FAILED("continue_response_failed"),
 
+    /** A message edit the server refused, when it gave no reason of its own. */
+    MESSAGE_SAVE_FAILED("message_save_failed"),
+
     /** Arg: the favorites limit. */
     FAVORITES_LIMIT("favorites_limit"),
     FAVORITES_UPDATE_FAILED("favorites_update_failed"),
+
+    /** The chat's bookmarks couldn't be read, so the checklist closed. */
+    BOOKMARKS_LOAD_FAILED("bookmarks_load_failed"),
+
+    /** A checklist tick didn't save and was put back. */
+    BOOKMARK_UPDATE_FAILED("bookmark_update_failed"),
+    BOOKMARK_CREATE_FAILED("bookmark_create_failed"),
 
     /** Args: the filename, then the reason (server or exception text, shown as is). */
     UPLOAD_FAILED("upload_failed"),
@@ -38,6 +51,21 @@ enum class ChatNotice(val wire: String) {
     UPLOAD_TOO_LARGE("upload_too_large"),
     SPEECH_PERMISSION_DENIED("speech_permission_denied"),
     SPEECH_UNAVAILABLE("speech_unavailable"),
+
+    /** The server's middleware refused a send with a code this build does not recognize. */
+    SEND_REFUSED("send_refused"),
+
+    /** A send or queue left skill chips this chat can't run staged in the composer. */
+    SKILLS_NOT_SENT("skills_not_sent"),
+
+    /** Saving a queued edit removed skill chips this chat can't run from the queued message. */
+    SKILLS_REMOVED_FROM_QUEUED("skills_removed_from_queued"),
+
+    /**
+     * Arg: whole seconds until the server's message limit lets a send through again. Rendered as a
+     * plural in the largest unit that fits (see `localizedStreamError`).
+     */
+    MESSAGE_LIMIT_RETRY("message_limit_retry"),
     ;
 
     fun marker(vararg args: Any): String =
@@ -63,4 +91,19 @@ enum class ChatNotice(val wire: String) {
         fun uploadFailed(filename: String, reason: String?): String =
             if (reason.isNullOrBlank()) UPLOAD_FAILED_UNKNOWN.marker(filename) else UPLOAD_FAILED.marker(filename, reason)
     }
+}
+
+/**
+ * What the error channel shows for a send the server's middleware refused (`ChatRefusal`), or null
+ * when [e] is not one. A message limit that says how long to wait is [ChatNotice.MESSAGE_LIMIT_RETRY];
+ * any other recognized code is its stream-error marker; an unrecognized one is
+ * [ChatNotice.SEND_REFUSED]. A prose refusal is also null: it is the server's own sentence, and the
+ * caller's screened message already carries it.
+ */
+internal fun refusalErrorMarker(e: Throwable?): String? {
+    val api = e as? ApiException ?: return null
+    val text = api.chatRefusalText ?: return null
+    StreamErrorType.messageLimitRetryAfterSeconds(text)?.let { return ChatNotice.MESSAGE_LIMIT_RETRY.marker(it) }
+    return StreamErrorType.refusalMarker(text)
+        ?: ChatNotice.SEND_REFUSED.marker().takeUnless { api.serverAuthored }
 }

@@ -82,6 +82,9 @@ private fun CollapsibleDisclosureCard(
     // explicit key stops two blocks in one message from sharing a slot (the generated key is
     // positional, and grouping shifts positions).
     stateKey: String = "",
+    // The fold the card starts in. Read once, when the saveable state is first created: a later
+    // change to the preference applies to cards composed from then on, not to this one.
+    initiallyExpanded: Boolean = false,
     // Flips the card open when it becomes true (find-in-page expands folded regions);
     // the user can still collapse it manually afterwards.
     autoExpand: Boolean = false,
@@ -90,7 +93,7 @@ private fun CollapsibleDisclosureCard(
     autoExpandKey: Any? = null,
     body: @Composable () -> Unit,
 ) {
-    var isExpanded by rememberSaveable(key = "collapsible:$stateKey") { mutableStateOf(false) }
+    var isExpanded by rememberSaveable(key = "collapsible:$stateKey") { mutableStateOf(initiallyExpanded) }
     LaunchedEffect(autoExpand, autoExpandKey) {
         if (autoExpand) isExpanded = true
     }
@@ -178,6 +181,7 @@ internal fun ThinkingContentPart(
         collapseActionContentDescription = Res.string.cd_collapse_thinking,
         modifier = modifier,
         stateKey = "think:$stateKey",
+        initiallyExpanded = LocalThinkingOpenByDefault.current,
         autoExpand = containsFocusedMatch,
         // Re-arm on every navigation: LocalSearchFocusNonce changes per focus request, so both
         // moving to a different occurrence in this block AND returning to the same one (after a

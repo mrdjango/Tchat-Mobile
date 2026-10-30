@@ -65,7 +65,7 @@ class AuthInterceptorPlugin private constructor(
             fun isSkipPath(url: URLBuilder): Boolean = isAuthSkipPath(url)
 
             // Attach token to outgoing requests. Runs at State, which is after
-            // the SwitchBarrier/defaultRequest phases have applied the base URL —
+            // the SwitchBarrier/ServerUrlReady phase has applied the base URL —
             // so for the common relative-path call `context.url.host` is already
             // the base host, and for an absolute cross-host URL (e.g. a presigned
             // CDN download) it is that foreign host.
@@ -147,6 +147,9 @@ class AuthInterceptorPlugin private constructor(
                 Logger.d("Auth") { "401 received, attempting token refresh" }
                 when (val refresh = plugin.tokenManager.refreshBearerFor(snapshot)) {
                     is BearerResult.Refreshed -> {
+                        snapshot?.let {
+                            request.attributes.put(RequestIdentityKey, it.copy(bearer = refresh.token, openId = refresh.openId))
+                        }
                         request.headers {
                             remove(HttpHeaders.Authorization)
                             append(HttpHeaders.Authorization, "Bearer ${refresh.token}")
@@ -158,6 +161,8 @@ class AuthInterceptorPlugin private constructor(
                         // Hard failure: the session is gone. Route the (snapshot's) account to re-auth.
                         Logger.w("Auth") { "Token refresh failed - session expired" }
                         plugin.tokenManager.emitSessionExpired(snapshot?.accountId)
+                        // On the CALL's attributes, not the request builder's — see [SessionRenewalFailedKey].
+                        originalCall.attributes.put(SessionRenewalFailedKey, true)
                         originalCall
                     }
                     BearerResult.Transient -> {
@@ -165,6 +170,7 @@ class AuthInterceptorPlugin private constructor(
                         // emit session-expired — fail just this request and keep the user signed in so
                         // a later request (or relaunch) recovers instead of a spurious logout.
                         Logger.w("Auth") { "Token refresh transient failure - keeping session" }
+                        originalCall.attributes.put(SessionRenewalFailedKey, true)
                         originalCall
                     }
                 }

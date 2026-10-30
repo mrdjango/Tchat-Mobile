@@ -13,6 +13,7 @@ import com.garfiec.librechat.core.model.response.Category
 import com.garfiec.librechat.core.network.api.FavoritesApi
 import com.garfiec.librechat.core.network.api.FilesApi
 import com.garfiec.librechat.core.network.api.FilesExtApi
+import com.garfiec.librechat.core.network.client.ServerUrlProvider
 import com.garfiec.librechat.core.network.di.librechatJson
 import com.google.common.truth.Truth.assertThat
 import io.ktor.client.HttpClient
@@ -130,6 +131,9 @@ class GateProbeDeviceTest {
             FakeConfig(detected),
             object : PdfNormalizer {
                 override fun normalize(bytes: ByteArray, password: String?) = PdfNormalizeResult.Unchanged
+            },
+            object : ServerUrlProvider {
+                override fun getBaseUrl() = BASE_URL
             },
         )
     }
@@ -261,10 +265,11 @@ class GateProbeDeviceTest {
         override val startupConfig = MutableStateFlow<StartupConfig?>(null)
         override val endpointConfigs = MutableStateFlow<Map<String, EndpointConfig>>(emptyMap())
         override val availableModels = MutableStateFlow<Map<String, List<String>>>(emptyMap())
+        override val serverUrl = MutableStateFlow("")
         override val detectedBackendVersion: StateFlow<String?> = MutableStateFlow(detected?.version)
         override val detectedBackend: StateFlow<DetectedBackend?> = MutableStateFlow(detected)
-        override suspend fun validateServerUrl(url: String) = error("unused")
-        override suspend fun probeServerUrl() = error("unused")
+        override suspend fun resolveServer(candidates: List<String>, headers: Map<String, String>) = error("unused")
+        override suspend fun publishStartupConfig(config: StartupConfig) = Unit
         override suspend fun reloadForActiveServer() = Unit
         override suspend fun fetchStartupConfig() = error("unused")
         override suspend fun fetchEndpoints() = error("unused")

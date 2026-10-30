@@ -5,11 +5,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -25,10 +27,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -39,6 +44,9 @@ import com.garfiec.librechat.core.ui.components.AdaptiveCircularProgressIndicato
 import com.garfiec.librechat.core.ui.components.AdaptiveDivider
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedButton
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedTextField
+import com.garfiec.librechat.core.ui.components.IosTextContentType
+import com.garfiec.librechat.core.ui.components.withIosTextContentType
+import com.garfiec.librechat.feature.auth.diagnostics.DiagnosticLogLink
 import com.garfiec.librechat.feature.auth.resources.*
 import com.garfiec.librechat.feature.auth.resources.Res
 import com.garfiec.librechat.feature.auth.viewmodel.LoginViewModel
@@ -110,7 +118,9 @@ fun LoginScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .imePadding()
+                // No scaffold here: the screen keeps itself clear of the system bars and the keyboard.
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .then(if (onBack != null) Modifier.padding(top = BackAffordanceClearance) else Modifier)
                 .verticalScroll(rememberScrollState())
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -120,8 +130,20 @@ fun LoginScreen(
                 text = stringResource(Res.string.login_title),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center,
                 modifier = Modifier.semantics { heading() },
             )
+
+            if (uiState.trustedViaUserCa) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = stringResource(Res.string.user_ca_notice),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.testTag("login_user_ca_notice"),
+                )
+            }
 
             Spacer(modifier = Modifier.height(32.dp))
 
@@ -133,12 +155,13 @@ fun LoginScreen(
                     value = uiState.email,
                     onValueChange = viewModel::onEmailChanged,
                     label = { Text(stringResource(Res.string.email_label)) },
-                    modifier = Modifier.fillMaxWidth().testTag("login_email"),
+                    modifier = Modifier.fillMaxWidth().testTag("login_email")
+                        .semantics { contentType = ContentType.Username + ContentType.EmailAddress },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Email,
                         autoCorrectEnabled = false,
-                    ),
+                    ).withIosTextContentType(IosTextContentType.Username),
                     enabled = !uiState.isLoading,
                 )
 
@@ -150,7 +173,7 @@ fun LoginScreen(
                     label = { Text(stringResource(Res.string.password_label)) },
                     modifier = Modifier.fillMaxWidth().testTag("login_password"),
                     singleLine = true,
-                    visualTransformation = passwordMaskTransformation(),
+                    visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
                         autoCorrectEnabled = false,
@@ -167,6 +190,7 @@ fun LoginScreen(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag("login_error"),
                 )
+                if (uiState.offerDiagnosticLog) DiagnosticLogLink()
             }
 
             if (uiState.emailLoginEnabled) {
@@ -262,12 +286,18 @@ fun LoginScreen(
  * TensorGrid", so that's what renders. [TchatBrand.OIDC_FALLBACK_LABEL] only covers a server that
  * enables OIDC without setting a label.
  */
-private fun oAuthProviderLabel(provider: String, openidLabel: String?): String = when (provider.lowercase()) {
-    "google" -> "Continue with Google"
-    "github" -> "Continue with GitHub"
-    "discord" -> "Continue with Discord"
-    "facebook" -> "Continue with Facebook"
-    "apple" -> "Continue with Apple"
-    "openid" -> openidLabel?.takeIf { it.isNotBlank() } ?: TchatBrand.OIDC_FALLBACK_LABEL
-    else -> "Continue with ${provider.replaceFirstChar { it.uppercase() }}"
+@Composable
+internal fun oAuthProviderLabel(provider: String, openidLabel: String? = null): String {
+    if (provider.equals("openid", ignoreCase = true)) {
+        return openidLabel?.takeIf { it.isNotBlank() } ?: TchatBrand.OIDC_FALLBACK_LABEL
+    }
+    val name = when (provider.lowercase()) {
+        "google" -> "Google"
+        "github" -> "GitHub"
+        "discord" -> "Discord"
+        "facebook" -> "Facebook"
+        "apple" -> "Apple"
+        else -> provider.replaceFirstChar { it.uppercase() }
+    }
+    return stringResource(Res.string.continue_with_provider, name)
 }

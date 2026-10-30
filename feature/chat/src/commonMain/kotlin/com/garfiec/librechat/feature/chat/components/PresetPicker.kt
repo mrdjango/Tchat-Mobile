@@ -1,15 +1,17 @@
 package com.garfiec.librechat.feature.chat.components
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -79,7 +81,11 @@ fun PresetPicker(
                 LazyColumn(
                     modifier = Modifier.weight(1f, fill = false),
                 ) {
-                    items(presets, key = { it.presetId ?: it.title }, contentType = { "preset" }) { preset ->
+                    itemsIndexed(
+                        presets,
+                        key = { index, preset -> preset.presetId?.let { "id:$it" } ?: "idx:$index" },
+                        contentType = { _, _ -> "preset" },
+                    ) { _, preset ->
                         PresetItem(
                             preset = preset,
                             onClick = { onPresetSelect(preset) },
@@ -100,6 +106,7 @@ fun PresetPicker(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PresetItem(
     preset: PresetDisplayData,
@@ -123,20 +130,19 @@ private fun PresetItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Row {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val endpointLabel = preset.endpointLabel
                 if (endpointLabel != null) {
                     Text(
                         text = endpointLabel,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 val model = preset.model
                 if (model != null) {
-                    if (endpointLabel != null) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                    }
                     Text(
                         text = model,
                         style = MaterialTheme.typography.bodySmall,

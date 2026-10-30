@@ -10,6 +10,7 @@
     <string name="action_insert">插入</string>
     <string name="action_open">打开</string>
     <string name="action_share">分享</string>
+    <string name="action_share_link_active">分享 · 链接有效</string>
     <string name="action_search">搜索</string>
     <string name="action_archive">归档</string>
     <string name="action_duplicate">复制副本</string>
@@ -19,7 +20,17 @@
     <string name="new_chat">新建聊天</string>
     <string name="load_preset">加载预设</string>
     <string name="save_as_preset">另存为预设</string>
-    <string name="save_and_submit">保存并提交</string>
+    <string name="saving">正在保存…</string>
+    <string name="rerun">重新运行</string>
+    <string name="update_and_rerun">更新并重新运行</string>
+    <string name="edit_part_response">回复</string>
+    <string name="edit_part_thoughts">思考</string>
+    <string name="edit_status_part_empty">消息的某个部分不能为空。</string>
+    <string name="edit_status_save_before_rerun">重新运行前请先保存更改。</string>
+    <string name="edit_status_unsaved_changes">有未保存的更改。</string>
+    <string name="edit_status_rerun_discards_changes">重新运行会重新生成这条回复并放弃你的更改。</string>
+    <string name="edit_status_rerun_needs_user_turn">重新运行需要一条可重放的用户消息。</string>
+    <string name="notice_message_save_failed">无法保存你的编辑。</string>
     <string name="preset_name_label">预设名称</string>
     <string name="code">代码</string>
     <string name="preview">预览</string>
@@ -29,7 +40,24 @@
     <!-- Neutral label for the active agent when its name hasn't resolved yet (never a model string). -->
     <string name="chat_agent_fallback_label">智能体</string>
     <string name="compare_models">对比模型</string>
+    <string name="compare_with">对比对象</string>
+    <string name="compare_start">开始</string>
+    <string name="compare_setup_hint">每条消息都会发送给两个模型。点按 A 或 B 选择对应的模型。</string>
+    <string name="compare_same_model">同一模型，再答一次</string>
+    <string name="compare_pick_below">在下方选择</string>
+    <string name="compare_message_both">给两个模型发消息</string>
+    <string name="compare_pick_to_send">选择模型 B 后即可发送</string>
+    <string name="compare_not_picked">尚未选择</string>
+    <string name="compare_empty_lane">发送一条消息，即可在这里看到它的回答。</string>
+    <string name="compare_empty_pick_right">在右侧选择一个用于比较的模型。</string>
+    <string name="compare_empty_ready">点按“开始”，然后发送消息。两个模型会并排回答。</string>
+    <string name="compare_browse_all">浏览所有模型</string>
+    <string name="compare_pick_second_model">选择第二个模型</string>
+    <string name="cd_change_compared_models">更换对比的模型</string>
+    <string name="compare_lane_a">A</string>
+    <string name="compare_lane_b">B</string>
     <string name="how_can_i_help">今天我能帮你做些什么？</string>
+    <string name="chat_in_project">在%1$s中</string>
     <string name="recording">录音中…</string>
     <string name="hint_message_model">向 %1$s 发送消息</string>
     <string name="hint_message">发送消息…</string>
@@ -61,6 +89,9 @@
     <string name="cd_more_options">更多选项</string>
     <string name="cd_scroll_to_bottom">滚动到底部</string>
     <string name="cd_select_model">选择模型</string>
+    <string name="cd_starter_send">发送</string>
+    <string name="cd_starter_edit">发送前编辑</string>
+    <string name="starters_try_asking">试着问问</string>
     <string name="cd_librechat">Switchboard</string>
     <string name="cd_comparison_enabled">已启用对比</string>
 
@@ -100,7 +131,6 @@
     <string name="cd_code_execution_result">代码执行结果</string>
     <string name="cd_exit_code_success">退出码 0（成功）</string>
     <string name="cd_exit_code_failure">退出码 %1$d（失败）</string>
-    <string name="exit_code">退出码 %1$d</string>
     <string name="label_code">代码</string>
     <string name="label_output">输出：</string>
     <string name="label_error">错误：</string>
@@ -179,8 +209,6 @@
     <string name="trace_error_unsupported">此服务器的追踪服务无法返回追踪记录。</string>
 
     <!-- Office-doc preview attachments (deferred preview, v0.8.6+) -->
-    <string name="office_preview_preparing">正在准备 %1$s 的预览…</string>
-    <string name="office_preview_failed">无法预览 %1$s（%2$s）</string>
     <string name="office_preview_unavailable">%1$s — 预览不可用</string>
 
     <!-- Content descriptions - Tool calls -->
@@ -200,8 +228,15 @@
     <string name="tool_model">模型</string>
     <string name="tool_model_parameters">模型参数</string>
     <string name="tool_model_parameters_desc">调整温度、token 等参数</string>
+    <string name="param_set_by_spec">此模型的设置由服务器决定，无法在此更改。</string>
+    <string name="tool_set_by_spec">服务器已为此模型开启</string>
     <string name="tool_web_search">网络搜索</string>
     <string name="tool_web_search_desc">在网络上搜索信息</string>
+    <string name="web_search_librechat">LibreChat 搜索</string>
+    <string name="web_search_checking">正在检查 LibreChat 搜索…</string>
+    <string name="web_search_built_in">%1$s 内置搜索</string>
+    <string name="web_search_built_in_plain">内置搜索</string>
+    <string name="web_search_set_by_spec">%1$s,服务器已为此模型开启</string>
     <string name="web_searched">已搜索网络</string>
     <string name="tool_url_context">URL 上下文</string>
     <string name="tool_url_context_desc">让模型读取你引用的 URL 和 YouTube 视频</string>
@@ -254,8 +289,11 @@
     <string name="audio_decode_failed">音频解码失败</string>
 
     <!-- Citation -->
-    <string name="citation_number">引用 %1$d</string>
-    <string name="cd_open_citation_url">打开引用 URL</string>
+    <string name="citation_sources_title">来源</string>
+    <string name="cd_citation">来源：%1$s</string>
+    <plurals name="cd_citation_more">
+        <item quantity="other">来源：%1$s 等 %2$d 个</item>
+    </plurals>
 
     <!-- Fork options -->
     <string name="fork_conversation">分叉对话</string>
@@ -286,18 +324,24 @@
     <string name="cd_mcp_resource">MCP 资源：%1$s</string>
 
     <!-- Memory artifact -->
-    <string name="cd_memory_artifact">记忆 artifact：%1$s</string>
-    <string name="memory_artifact_untitled">无标题</string>
     <string name="label_memory">记忆</string>
-    <string name="cd_memory_artifacts">记忆更新：%1$d</string>
+    <string name="memory_manage">管理</string>
+    <string name="cd_memory_manage">管理记忆</string>
+    <plurals name="cd_memory_artifacts_summary">
+        <item quantity="other">%1$s，%2$s 项更改</item>
+    </plurals>
     <string name="memory_updated">已更新保存的记忆</string>
     <string name="memory_error">记忆错误</string>
     <string name="memory_updated_items">已更新的记忆</string>
     <string name="memory_deleted_items">已删除的记忆</string>
     <string name="memory_deleted">记忆已删除</string>
     <string name="memory_storage_full">记忆存储已满</string>
-    <string name="memory_already_exceeded">记忆存储已满——已超出 %1$d 个 token。请先删除现有记忆再添加新记忆。</string>
-    <string name="memory_would_exceed">无法保存——将超出限制 %1$d 个 token。请删除现有记忆以腾出空间。</string>
+    <plurals name="memory_already_exceeded">
+        <item quantity="other">记忆存储已满——已超出 %1$s 个令牌。请先删除现有记忆再添加新记忆。</item>
+    </plurals>
+    <plurals name="memory_would_exceed">
+        <item quantity="other">无法保存——将超出限制 %1$s 个令牌。请删除现有记忆以腾出空间。</item>
+    </plurals>
     <string name="files_searched">已搜索你的文件</string>
     <string name="cd_file_search_source">文件搜索来源：%1$s</string>
     <string name="file_search_relevance">%1$d%%</string>
@@ -318,10 +362,7 @@
     <!-- Message files -->
     <string name="file_fallback">文件</string>
     <string name="attachment_fallback">附件</string>
-    <string name="pdf_document">PDF 文档</string>
     <string name="pdf_load_failed">无法加载 PDF</string>
-    <string name="cd_share_pdf">分享 PDF</string>
-    <string name="cd_open_pdf">打开 PDF</string>
     <string name="retry">重试</string>
     <string name="messages_unavailable_title">消息不可用</string>
     <string name="messages_unavailable_body">无法加载此对话，且此设备上没有保存离线副本。</string>
@@ -333,8 +374,12 @@
     <string name="cd_unpin_favorite">取消固定收藏</string>
     <string name="cd_collapse_section">收起 %1$s</string>
     <string name="cd_expand_section">展开 %1$s</string>
-    <string name="set_api_key_action">设置 API 密钥</string>
-    <string name="cd_set_api_key">为 %1$s 配置 API 密钥</string>
+    <string name="set_api_key_action">添加密钥</string>
+    <string name="cd_set_api_key">为 %1$s 添加密钥</string>
+    <!-- Under an endpoint or spec name in the model picker when its key is missing. -->
+    <string name="model_selector_needs_key">需要你的密钥</string>
+    <!-- Same place, in the minute before the server deletes an expired key. -->
+    <string name="model_selector_key_expired">密钥已过期</string>
 
     <!-- Preset picker -->
     <string name="select_preset">选择预设</string>
@@ -446,22 +491,31 @@
     <string name="dialog_title_fill_variables">填写变量</string>
 
     <!-- Comparison mode -->
-    <string name="continue_with_response">使用此回复继续</string>
-    <string name="waiting_for_response">等待回复…</string>
+    <string name="keep_this_answer">保留此回答</string>
+    <string name="reply_stopped">已停止</string>
+    <string name="action_continue_reply">继续</string>
+    <string name="action_keep_and_continue">保留并继续</string>
 
     <!-- Provider Keys chat-time errors. -->
     <string name="provider_keys_chat_error_no_key">未找到密钥。请提供密钥后重试。</string>
-    <!-- {0} = endpoint name, {1} = expiredAt (server-locale string, NOT ISO) -->
+    <!-- {0} = endpoint name, {1} = expiry date and time, already formatted in the user's locale -->
     <string name="provider_keys_chat_error_expired">为 %1$s 提供的密钥已于 %2$s 过期。请提供新密钥后重试。</string>
     <string name="provider_keys_chat_error_invalid">提供的密钥无效。请提供有效的密钥后重试。</string>
-    <!-- Snackbar action label that deep-links to Settings → Provider Keys -->
-    <string name="provider_keys_chat_error_cta">打开密钥设置</string>
+    <string name="provider_keys_chat_error_no_key_for">未找到 %1$s 的密钥。请提供密钥后重试。</string>
+    <string name="provider_keys_chat_error_invalid_for">为 %1$s 提供的密钥无效。请提供有效的密钥后重试。</string>
+    <string name="provider_keys_chat_error_expired_no_label">提供的密钥已于 %1$s 过期。请提供新密钥后重试。</string>
+    <string name="provider_keys_chat_error_no_base_url">未找到基础 URL。请提供一个后重试。</string>
+    <string name="provider_keys_chat_error_no_base_url_for">未找到 %1$s 的基础 URL。请提供一个后重试。</string>
+    <string name="provider_keys_chat_error_invalid_base_url">你提供的基础 URL 指向受限地址。请使用有效的外部 URL 后重试。</string>
+    <string name="provider_keys_chat_error_invalid_base_url_for">你为 %1$s 提供的基础 URL 指向受限地址。请使用有效的外部 URL 后重试。</string>
     <string name="queued_messages_dropped_account_switch">切换账号后，排队的消息已被丢弃</string>
 
     <!-- Send block reasons (shown in error snackbar when send can't proceed) -->
     <string name="send_block_select_agent">发送消息前请先选择一个智能体。</string>
     <string name="send_block_select_model">发送消息前请先选择一个模型。</string>
+    <string name="send_block_select_second_model">发送前请从列表中选择模型 B。</string>
     <string name="send_block_agents_unavailable">此服务器不支持智能体。请选择其他模型。</string>
+    <string name="send_block_api_key_required">请先添加 %1$s 的 API 密钥再发送消息。</string>
     <string name="send_block_agent_not_available">所选智能体在此服务器上不可用。请选择其他智能体。</string>
     <string name="send_block_model_not_available">所选模型在此服务器上不可用。请选择其他模型。</string>
     <string name="send_block_model_load_failed">尚无法加载所选模型。请重试或选择其他模型。</string>
@@ -544,6 +598,9 @@
     <string name="error_auth_banned">此账号或网络已被禁止登录。请联系管理员。</string>
     <string name="error_auth_cross_origin">服务器认为此登录请求来自其他站点并予以拒绝。请报告此问题——这是应用的 bug，而非密码问题。</string>
     <string name="error_share_limit">共享链接请求过多。请稍后再试。</string>
+    <string name="error_message_limit">你已达到此服务器的消息上限。请稍候再试。</string>
+    <string name="error_ban">此账号在该服务器上暂时受到限制。请稍后再试，或联系服务器管理员。</string>
+    <string name="error_convo_access">此对话属于另一个账号，因此无法在此继续。</string>
     <string name="ask_user_question_record_asked">已提问</string>
     <string name="ask_user_question_record_asking">正在提问</string>
     <string name="ask_user_question_record_answer_label">你的回答：</string>
@@ -557,6 +614,21 @@
     <string name="cd_collapse_ask_user_question">收起问题详情</string>
     <string name="tool_memory">记忆</string>
     <string name="tool_memory_desc">让助手记住此对话中的细节</string>
+    <string name="tool_skills">技能</string>
+    <string name="tool_skills_desc">允许助手在此对话中使用你的技能</string>
+    <string name="cd_skills_enabled">已启用技能</string>
+    <string name="picker_type_prompt">提示词</string>
+    <string name="picker_type_skill">技能</string>
+    <string name="picker_no_matches">没有匹配项</string>
+    <string name="picker_loading_skills">正在加载技能…</string>
+    <string name="picker_skills_failed">无法加载技能</string>
+    <string name="cd_pending_skills">下一条消息使用的技能</string>
+    <string name="cd_remove_skill">移除技能 %1$s</string>
+    <string name="cd_skill_always_applied">始终应用的技能：%1$s</string>
+    <string name="cd_skill_used">已使用的技能：%1$s</string>
+    <string name="skill_call_running">正在运行 %1$s</string>
+    <string name="skill_call_finished">已运行 %1$s</string>
+    <string name="skill_call_fallback_name">技能</string>
     <string name="cd_steer_message">引导此回复</string>
     <string name="cd_cancel_steer">取消引导</string>
     <string name="cd_during_run_options">选择现在发送的方式</string>
@@ -564,6 +636,8 @@
     <string name="during_run_queue">加入队列</string>
     <string name="during_run_always_steer">生成时始终引导</string>
     <string name="during_run_always_queue">生成时始终加入队列</string>
+    <string name="steer_pending_hint">将在下一个工具步骤加入回复。如果回复先结束，则会在回复之后发送。</string>
+    <string name="steer_queued_as_follow_up">你的消息未能加入这条回复，已加入队列，将在回复之后发送。</string>
     <string name="system_event_label">系统</string>
     <string name="wakeup_explainer">此持久结果唤醒了智能体以继续对话。</string>
     <string name="wakeup_subagent_completed">子智能体任务已完成</string>
@@ -636,21 +710,173 @@
     <string name="compact_confirm_not_now">暂不</string>
     <string name="compact_confirm_action">压缩</string>
     <string name="cd_temporary_chat">临时聊天</string>
+    <string name="temporary_chat_title">临时聊天</string>
+    <string name="temporary_chat_subtitle">此对话不会保存到你的历史记录</string>
     <string name="notice_rename_failed">无法重命名对话</string>
     <string name="notice_delete_failed">无法删除对话</string>
     <string name="notice_archive_failed">无法归档对话</string>
     <string name="notice_duplicate_failed">无法复制对话</string>
-    <string name="notice_share_link_failed">无法创建分享链接</string>
     <string name="notice_preset_save_failed">无法保存预设</string>
     <string name="notice_preset_delete_failed">无法删除预设</string>
     <string name="notice_preset_update_failed">无法更新预设</string>
     <string name="notice_continue_response_failed">无法使用所选回复继续</string>
     <string name="notice_favorites_limit">最多可固定 %1$d 个收藏。</string>
     <string name="notice_favorites_update_failed">无法更新收藏。</string>
+    <string name="notice_bookmark_update_failed">无法更新书签，请重试。</string>
+    <string name="notice_bookmark_create_failed">无法创建书签，请重试。</string>
+    <string name="notice_bookmarks_load_failed">无法加载此对话的书签</string>
     <string name="notice_upload_failed">无法上传 %1$s：%2$s</string>
     <string name="notice_upload_failed_unknown">无法上传 %1$s：未知错误</string>
     <string name="notice_upload_unreadable">无法上传 %1$s：无法读取文件</string>
     <string name="notice_upload_too_large">%1$s 超过了服务器的 %2$s 上限。</string>
     <string name="notice_speech_permission_denied">语音识别权限被拒绝</string>
     <string name="notice_speech_unavailable">语音识别不可用。请检查“设置”&gt;“隐私”&gt;“语音识别”。</string>
+    <string name="notice_send_refused">服务器拒绝了此消息。</string>
+    <string name="notice_skills_not_sent">部分技能无法在此聊天中使用，未被发送。</string>
+    <string name="notice_skills_removed_from_queued">部分技能无法在此聊天中使用，已从排队的消息中移除。</string>
+    <plurals name="notice_message_limit_retry_minutes">
+        <item quantity="other">你已达到此服务器的消息上限。请在 %1$d 分钟后重试。</item>
+    </plurals>
+    <plurals name="notice_message_limit_retry_hours">
+        <item quantity="other">你已达到此服务器的消息上限。请在 %1$d 小时后重试。</item>
+    </plurals>
+    <plurals name="notice_message_limit_retry_days">
+        <item quantity="other">你已达到此服务器的消息上限。请在 %1$d 天后重试。</item>
+    </plurals>
+    <string name="queue_held_after_refusal">服务器拒绝了你的消息。它正在队列中等待，不会自动发送。准备好后请点按“发送排队消息”。</string>
+    <string name="jump_message_not_found">该消息已不在此聊天中。</string>
+    <string name="jump_branch_switched">已切换到第 %1$d 个回复（共 %2$d 个），即包含此消息的分支。</string>
+    <string name="load_image_from_host">从 %1$s 加载图片</string>
+    <string name="workspace_changes">工作区更改</string>
+    <plurals name="n_files_changed">
+        <item quantity="other">已更改 %1$d 个文件</item>
+    </plurals>
+    <string name="file_created">新建</string>
+    <string name="file_updated">已编辑</string>
+    <string name="show_all_n">显示全部 %1$d 个</string>
+    <string name="cd_download_file">下载 %1$s</string>
+    <string name="cd_open_file">打开 %1$s</string>
+    <string name="preview_preparing">正在准备预览…</string>
+    <string name="preview_failed_download">无法预览 · 下载后查看</string>
+    <plurals name="text_n_lines">
+        <item quantity="other">%1$d 行</item>
+    </plurals>
+    <string name="sandbox_starting">正在启动沙盒环境</string>
+    <string name="analyzing">正在分析</string>
+    <string name="analyzing_finished">完成分析</string>
+    <plurals name="show_all_n_lines">
+        <item quantity="other">显示全部 %1$d 行</item>
+    </plurals>
+    <string name="cd_copy_output">复制输出</string>
+    <string name="expired">已过期</string>
+    <string name="expired_explainer">代码沙盒中的文件保留 24 小时。此文件已过期，无法再下载。</string>
+    <string name="file_download_failed">无法下载 %1$s</string>
+    <plurals name="files_count_summary">
+        <item quantity="other">%1$d 个文件</item>
+    </plurals>
+    <plurals name="plus_n_more">
+        <item quantity="other">另外 %1$d 个</item>
+    </plurals>
+    <string name="greeting_late_night">夜深了</string>
+    <string name="greeting_early_morning">早上好</string>
+    <string name="greeting_morning">上午好</string>
+    <string name="greeting_afternoon">下午好</string>
+    <string name="greeting_evening">晚上好</string>
+    <string name="greeting_weekend_morning">周末上午好</string>
+    <string name="greeting_weekend_afternoon">周末下午好</string>
+    <string name="greeting_weekend_evening">周末晚上好</string>
+    <string name="diagram_error_prefix">图表错误：</string>
+    <string name="stt_mic_permission_required">语音输入需要麦克风权限</string>
+    <string name="stt_speak_now">请说话…</string>
+    <string name="stt_recognition_unavailable">此设备不支持语音识别</string>
+    <string name="artifact_preview_failed">无法加载预览</string>
+    <string name="cd_mcp_server_enabled">已启用 MCP 服务器 %1$s</string>
+    <string name="cd_code_block">代码块</string>
+    <string name="cd_code_block_language">%1$s 代码块</string>
+    <string name="log_output_title">日志输出</string>
+    <string name="cd_attached_image">附加的图片</string>
+    <string name="model_selector_search">搜索模型…</string>
+    <string name="model_selector_my_agents">我的智能体</string>
+    <string name="model_selector_spec_only_note">此服务器仅接受上方列出的选项。</string>
+    <string name="agent_handoff_to">智能体 %1$s</string>
+    <string name="agent_handoff_run">运行：%1$s</string>
+    <string name="sibling_position">第 %1$d 个回复，共 %2$d 个</string>
+    <string name="cd_assistant_responding">助手正在回复：%1$s</string>
+    <string name="tool_call_fallback">工具调用</string>
+    <string name="prompt_filter_title">筛选和排序</string>
+    <string name="prompt_sort_recent">最近</string>
+    <string name="prompt_sort_popular">热门</string>
+    <string name="prompt_sort_alphabetical">按字母</string>
+    <string name="prompt_editor_create_title">创建提示词</string>
+    <string name="prompt_editor_edit_title">编辑提示词</string>
+    <string name="prompt_command_placeholder">my-command</string>
+    <string name="prompt_variables_hint">使用 {{variable_name}} 添加变量</string>
+    <string name="prompt_editor_create">创建</string>
+    <string name="prompts_load_failed">无法加载提示词</string>
+    <string name="prompts_empty_category">此类别中没有提示词</string>
+    <string name="prompts_empty">还没有提示词</string>
+    <string name="prompts_empty_category_hint">尝试其他类别或清除筛选</string>
+    <string name="prompts_empty_hint">点按 + 创建</string>
+    <string name="prompt_shared">已共享</string>
+    <string name="prompt_private">私有</string>
+    <string name="prompt_permission_view_only">仅查看</string>
+    <string name="prompt_permission_can_edit">可编辑</string>
+    <string name="prompt_preview_placeholder">输入变量值以查看预览</string>
+    <string name="cd_sync_scroll_on">窗格同步滚动。取消关联</string>
+    <string name="cd_sync_scroll_off">窗格各自滚动。关联</string>
+    <!-- Shared chat viewer -->
+    <string name="shared_chat_title_fallback">共享的聊天</string>
+    <string name="shared_chat_subtitle">共享的聊天 · %1$s</string>
+    <string name="shared_chat_continue">继续此聊天</string>
+    <string name="shared_chat_open_in_browser">在浏览器中打开</string>
+    <string name="shared_chat_langfuse">在 Langfuse 中查看会话</string>
+    <string name="shared_chat_link_updated">此链接已更新，现在显示的是最新版本。</string>
+    <string name="shared_chat_continue_rate_limited">继续聊天的请求过多，请稍后再试。</string>
+    <string name="shared_chat_continue_failed">无法继续此聊天</string>
+    <string name="shared_chat_continue_unsupported">此服务器不支持继续共享的聊天</string>
+    <string name="shared_chat_refresh_failed">无法刷新此共享的聊天</string>
+    <string name="shared_chat_continue_blocked">你的服务器阻止了复制此聊天</string>
+    <string name="shared_chat_continue_blocked_reason">你的服务器阻止了复制此聊天：%1$s</string>
+    <string name="shared_chat_not_found">未找到共享链接</string>
+    <string name="shared_chat_not_found_description">它可能已被删除，或链接有误。</string>
+    <string name="shared_chat_no_access">你无法打开此共享聊天</string>
+    <string name="shared_chat_no_access_description">它未与此账号共享。</string>
+    <string name="shared_chat_rate_limited">共享链接请求过多</string>
+    <string name="shared_chat_rate_limited_description">请稍后再试。</string>
+    <string name="shared_chat_blocked">你的服务器屏蔽了此共享聊天</string>
+    <string name="shared_chat_load_failed">无法加载此共享聊天</string>
+    <string name="shared_chat_user">用户</string>
+    <string name="shared_chat_file_failed">无法打开此文件</string>
+
+    <!-- Web and file search sources -->
+    <string name="web_searching">正在搜索网络</string>
+    <string name="web_searching_again">正在重新搜索网络</string>
+    <string name="web_search_processing">正在处理结果</string>
+    <string name="web_search_reading">正在读取结果</string>
+    <string name="web_search_details">搜索详情</string>
+    <string name="web_search_query">查询</string>
+    <string name="web_search_images">图片结果</string>
+    <string name="web_search_shopping">购物结果</string>
+    <string name="web_search_places">地点</string>
+    <string name="files_searching">正在搜索你的文件</string>
+    <string name="searching_web_and_files">正在搜索网络和文件</string>
+    <string name="searched_web_and_files">已搜索网络和文件</string>
+    <string name="search_cancelled">已取消</string>
+    <string name="sources_tab_all">全部</string>
+    <string name="sources_tab_news">新闻</string>
+    <string name="sources_tab_images">图片</string>
+    <string name="sources_tab_files">文件</string>
+    <string name="sources_agent_files">智能体文件</string>
+    <string name="sources_agent_file">源文件</string>
+    <string name="web_search_load_images">加载图片</string>
+    <string name="cd_open_cited_file">打开 %1$s</string>
+    <plurals name="web_search_sources">
+        <item quantity="other">%1$d 个来源</item>
+    </plurals>
+    <plurals name="sources_more">
+        <item quantity="other">+%1$d 个来源</item>
+    </plurals>
+    <plurals name="files_more">
+        <item quantity="other">+%1$d 个文件</item>
+    </plurals>
 </resources>

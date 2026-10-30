@@ -1,7 +1,7 @@
 # feature:conversations
 
-## Screen
-`ConversationListScreen` -- the drawer content showing all conversations. Sealed interface: `ConversationsRoute : NavKey` with routes `Conversations` and `ArchivedConversations` (both `@Serializable` data objects).
+## Screens
+The conversation list lives in the drawer (`drawer/DrawerContent.kt`, `DrawerViewModel`); there is no full-screen list route. `ConversationsRoute : NavKey` covers the screens the drawer opens: `ArchivedConversations`, `Projects`, `Bookmarks`, `BookmarkChats`, `Search`, `ProjectChats`.
 
 ## Pagination
 - Cursor-based via `ConversationRepository.loadNextPage(cursor, tags)`
@@ -33,7 +33,7 @@
 | Delete | `DELETE /api/convos` | Confirmation dialog required |
 | Duplicate | `POST /api/convos/duplicate` | Navigates to new conversation |
 | Fork | `POST /api/convos/fork` | From message context menu in chat, not here |
-| Share | `POST /api/share` | Only if `sharedLinksEnabled` in server config |
+| Share | Opens the share sheet (`ShareLinkController`, `ShareLinkSheetHost`) | `sharedLinksEnabled` AND SHARED_LINKS CREATE; no target (shares the newest branch) |
 
 ## Export / Import
 - `ConversationExporter` supports `ExportFormat.JSON` and `ExportFormat.MARKDOWN`
@@ -43,4 +43,10 @@
 - File I/O uses SAF (Storage Access Framework)
 
 ## Events
-`ConversationListEvent` sealed interface for one-shot UI events: `ShareLinkCopied`, `NavigateToConversation`, `NavigateToNewChat` (emitted when the currently-open conversation is deleted, so the host moves off the now-gone thread), `ShowError`, `ExportReady`, `ImportSuccess`
+`ConversationListEvent` sealed interface for one-shot UI events: `NavigateToConversation`, `NavigateToNewChat` (emitted when the currently-open conversation is deleted, so the host moves off the now-gone thread), `ShowError`, `ExportReady`, `ImportSuccess`
+
+## Project folder order (Switchboard-only)
+- The drawer's Projects tab lists **every** project in the user's custom order (`ProjectRepository.listAllProjectsInCustomOrder`), never one page of them. Long-press a folder row to drag it (`components/LazyReorder.kt`, shared with the Bookmarks index); TalkBack/VoiceOver get Move up / Move down actions instead.
+- The gesture lives on the LazyColumn, not the rows, and consumes in the Initial pass once a folder is held, so the row's click, the list scroll and the drawer swipe never see the drag. Only the folder row picks up; a long-press on an open folder's chat is that chat's menu.
+- `DrawerViewModel.reorderProjects` applies the drop at once and saves it; a load in flight is restarted behind the save so it can't land the old order over the drop.
+- The Projects index offers the same order as `ProjectSort.CUSTOM` (read-only).

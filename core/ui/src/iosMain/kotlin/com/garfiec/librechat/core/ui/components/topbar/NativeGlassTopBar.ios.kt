@@ -30,7 +30,11 @@ import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGSizeMake
 import platform.Foundation.NSClassFromString
 import platform.UIKit.NSDirectionalRectEdgeTrailing
+import platform.UIKit.NSFontAttributeName
+import platform.UIKit.NSLineBreakByTruncatingTail
 import platform.UIKit.UIAction
+import platform.UIKit.UIActivityIndicatorView
+import platform.UIKit.UIActivityIndicatorViewStyleMedium
 import platform.UIKit.UIAlertAction
 import platform.UIKit.UIAlertActionStyleCancel
 import platform.UIKit.UIAlertActionStyleDefault
@@ -41,9 +45,14 @@ import platform.UIKit.UIBarButtonItemStyle
 import platform.UIKit.UIButton
 import platform.UIKit.UIButtonConfiguration
 import platform.UIKit.UIColor
+import platform.UIKit.UIContentSizeCategoryLarge
 import platform.UIKit.UIControlEventTouchUpInside
 import platform.UIKit.UIDeferredMenuElement
+import platform.UIKit.UIFont
+import platform.UIKit.UIFontWeightSemibold
 import platform.UIKit.UIImage
+import platform.UIKit.UIImageSymbolConfiguration
+import platform.UIKit.UILargeContentViewerInteraction
 import platform.UIKit.UIMenu
 import platform.UIKit.UIMenuElementAttributesDestructive
 import platform.UIKit.UIMenuElementAttributesDisabled
@@ -59,12 +68,23 @@ import platform.UIKit.UIViewAutoresizingFlexibleHeight
 import platform.UIKit.UIViewAutoresizingFlexibleWidth
 import platform.UIKit.UIViewController
 import platform.UIKit.accessibilityLabel
+import platform.UIKit.addInteraction
 import platform.UIKit.labelColor
+import platform.UIKit.largeContentTitle
+import platform.UIKit.showsLargeContentViewer
 import platform.UIKit.systemRedColor
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
 import kotlin.math.abs
 
 /** Until the bar reports its own height (it can differ by device and iOS release). */
 private const val INITIAL_BAR_HEIGHT = 52f
+
+/** Differs from every real height, so the next layout pass reports whatever it measures. */
+private const val UNREPORTED_HEIGHT = -1.0
+
+/** The system navigation title's size, which it keeps at every Dynamic Type setting. */
+private const val TITLE_POINT_SIZE = 17.0
 
 /** ObjC superclass of CMP's `InteropWrappingView`, the view that owns an interop view's touches. */
 private const val INTEROP_WRAPPER_CLASS = "CMPInteropWrappingView"
@@ -97,7 +117,7 @@ internal actual fun NativeGlassTopBar(spec: AdaptiveTopBarSpec, modifier: Modifi
  * menu, so they are rebuilt only when this changes. Menu *contents* are left out on purpose — menus
  * are built from the latest spec each time they open.
  */
-private data class BarSnapshot(
+internal data class BarSnapshot(
     val navSymbol: String?,
     val navLabel: String?,
     val titleText: String?,
@@ -107,7 +127,7 @@ private data class BarSnapshot(
     val actions: List<ActionSnapshot>,
 )
 
-private data class ActionSnapshot(
+internal data class ActionSnapshot(
     val id: String,
     val kind: String,
     val symbol: String,
@@ -115,9 +135,11 @@ private data class ActionSnapshot(
     val checked: Boolean,
     val tint: BarTint,
     val enabled: Boolean,
+    val busy: Boolean = false,
+    val checkedTint: Color? = null,
 )
 
-private fun AdaptiveTopBarSpec.snapshot() = BarSnapshot(
+internal fun AdaptiveTopBarSpec.snapshot() = BarSnapshot(
     navSymbol = navigation?.icon?.sfSymbol,
     navLabel = navigation?.contentDescription,
     titleText = title.text,
@@ -128,12 +150,14 @@ private fun AdaptiveTopBarSpec.snapshot() = BarSnapshot(
         when (action) {
             is BarAction.Icon -> ActionSnapshot(
                 action.id, "icon", action.icon.sfSymbol, action.label, false, action.tint, action.enabled && !action.busy,
+                busy = action.busy,
             )
             is BarAction.Text -> ActionSnapshot(action.id, "text", "", action.label, false, BarTint.DEFAULT, action.enabled)
             is BarAction.Toggle -> ActionSnapshot(
                 action.id, "toggle",
                 if (action.checked) action.iconOn.sfSymbol else action.iconOff.sfSymbol,
                 action.label, action.checked, BarTint.DEFAULT, true,
+                checkedTint = action.checkedTint,
             )
             is BarAction.Menu -> ActionSnapshot(action.id, "menu", action.icon.sfSymbol, action.label, false, BarTint.DEFAULT, true)
         }
@@ -169,7 +193,17 @@ private class NativeBarContainer(
         val fitted = bar.sizeThatFits(CGSizeMake(width, 1000.0)).useContents { height }
         if (fitted > 0 && abs(fitted - reportedHeight) > 0.5) {
             reportedHeight = fitted
-            onHeight(fitted.toFloat())
+            // Not inline: this runs inside UIKit's layout pass, and writing Compose state here can
+            // start a Compose layout while nodes are being detached (#533). The next main-queue turn
+            // is outside both passes.
+            dispatch_async(dispatch_get_main_queue()) {
+                if (window != null) {
+                    onHeight(fitted.toFloat())
+                } else if (reportedHeight == fitted) {
+                    // Dropped: forget it so the next layout pass after reattaching reports again.
+                    reportedHeight = UNREPORTED_HEIGHT
+                }
+            }
         }
     }
 
@@ -245,16 +279,30 @@ private class NativeBarContainer(
     }
 
     private fun titleButton(text: String, chevron: Boolean): UIButton {
+        // Pinned the way the system title is: a button follows Dynamic Type and outgrows the fixed bar,
+        // so the size stays at 17pt and the large content viewer (long press) shows it bigger.
+        val font = UIFont.systemFontOfSize(TITLE_POINT_SIZE, weight = UIFontWeightSemibold)
         val configuration = UIButtonConfiguration.plainButtonConfiguration().apply {
             title = text
+            // A configuration title wraps by default, and the bar clips the extra lines.
+            titleLineBreakMode = NSLineBreakByTruncatingTail
+            titleTextAttributesTransformer = { attributes ->
+                HashMap<Any?, Any?>(attributes ?: emptyMap<Any?, Any?>()).apply { put(NSFontAttributeName, font) }
+            }
             baseForegroundColor = UIColor.labelColor
             if (chevron) {
                 image = UIImage.systemImageNamed("chevron.down")
+                preferredSymbolConfigurationForImage = UIImageSymbolConfiguration.configurationWithFont(font)
                 imagePlacement = NSDirectionalRectEdgeTrailing
                 imagePadding = 4.0
             }
         }
         val button = UIButton.buttonWithConfiguration(configuration, primaryAction = null)
+        // Caps the trait the configuration reads too, in case it scales the given font itself.
+        button.maximumContentSizeCategory = UIContentSizeCategoryLarge
+        button.showsLargeContentViewer = true
+        button.largeContentTitle = text
+        button.addInteraction(UILargeContentViewerInteraction())
         button.addAction(
             UIAction.actionWithTitle(title = text, image = null, identifier = null) { _ -> onTitleTapped() },
             forControlEvents = UIControlEventTouchUpInside,
@@ -272,6 +320,7 @@ private class NativeBarContainer(
     }
 
     private fun barButton(action: ActionSnapshot): UIBarButtonItem {
+        if (action.busy) return busyBarButton(action.label, bar.tintColor)
         val image = if (action.symbol.isEmpty()) null else UIImage.systemImageNamed(action.symbol)
         return when (action.kind) {
             "menu" -> UIBarButtonItem(
@@ -304,7 +353,7 @@ private class NativeBarContainer(
                 selected = action.checked
                 when {
                     action.tint == BarTint.DESTRUCTIVE -> tintColor = UIColor.systemRedColor
-                    action.checked -> tintColor = bar.tintColor
+                    action.checked -> tintColor = action.checkedTint?.toUIColor() ?: bar.tintColor
                 }
             }
         }
@@ -370,6 +419,19 @@ private class NativeBarContainer(
         while (true) top = top.presentedViewController ?: break
         top.presentViewController(alert, animated = true, completion = null)
     }
+}
+
+/**
+ * A busy icon action: a spinner where the icon was, as the Compose bars draw it. The indicator
+ * takes no touches, so the action can't fire again while it runs.
+ */
+internal fun busyBarButton(label: String, tint: UIColor?): UIBarButtonItem {
+    val indicator = UIActivityIndicatorView(activityIndicatorStyle = UIActivityIndicatorViewStyleMedium).apply {
+        tint?.let { color = it }
+        accessibilityLabel = label
+        startAnimating()
+    }
+    return UIBarButtonItem(customView = indicator).apply { accessibilityLabel = label }
 }
 
 private fun Color.toUIColor(): UIColor =

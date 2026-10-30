@@ -3,6 +3,9 @@ package com.garfiec.librechat.feature.conversations.drawer
 import com.garfiec.librechat.core.model.Conversation
 import com.garfiec.librechat.core.model.EndpointConfig
 import com.garfiec.librechat.core.model.SAVED_TAG
+import com.garfiec.librechat.core.model.config.ModelSpecs
+import com.garfiec.librechat.core.model.config.labelFor
+import com.garfiec.librechat.core.model.iconEndpoint
 import com.garfiec.librechat.core.model.resolveEndpointIconUrl
 
 /**
@@ -21,12 +24,15 @@ internal data class DrawerDisplaySnapshot(
 internal fun Conversation.toDrawerDisplayData(
     activeConversationId: String?,
     endpointConfigs: Map<String, EndpointConfig>,
+    serverUrl: String,
+    modelSpecs: ModelSpecs? = null,
 ): DrawerConversationDisplayData {
     val convId = conversationId ?: ""
     return DrawerConversationDisplayData(
         conversationId = convId,
         title = title ?: "New Chat",
         model = model,
+        modelLabel = modelSpecs?.labelFor(spec) ?: model,
         endpoint = endpoint,
         updatedAt = updatedAt,
         isActive = convId == activeConversationId,
@@ -34,6 +40,7 @@ internal fun Conversation.toDrawerDisplayData(
         isPinned = pinned == true,
         chatProjectId = chatProjectId,
         tags = tags,
-        endpointIconUrl = resolveEndpointIconUrl(endpointConfigs),
+        endpointIconUrl = resolveEndpointIconUrl(endpointConfigs, serverUrl),
+        iconEndpoint = iconEndpoint,
     )
 }

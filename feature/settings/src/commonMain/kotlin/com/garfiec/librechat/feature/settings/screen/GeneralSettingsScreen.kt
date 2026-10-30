@@ -2,6 +2,7 @@ package com.garfiec.librechat.feature.settings.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,7 +17,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.ManageSearch
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Tablet
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,6 +32,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,6 +52,9 @@ import com.garfiec.librechat.core.ui.components.topbar.BarNavigation
 import com.garfiec.librechat.core.ui.components.topbar.BarTitle
 import com.garfiec.librechat.feature.settings.resources.*
 import com.garfiec.librechat.feature.settings.resources.Res
+import com.garfiec.librechat.feature.settings.resources.advanced_search
+import com.garfiec.librechat.feature.settings.resources.advanced_search_desc
+import com.garfiec.librechat.feature.settings.resources.section_search
 import com.garfiec.librechat.feature.settings.viewmodel.AppearanceSettingsViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.GeneralSettingsViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.UpdateCheckViewModel
@@ -161,6 +169,21 @@ fun GeneralSettingsContent(
                     }
                 }
 
+                item(key = "search_header") {
+                    AdaptiveSectionHeader(stringResource(Res.string.section_search))
+                }
+                adaptiveSection {
+                    row(key = "advanced_search") {
+                        SwitchSettingRow(
+                            icon = Icons.Default.ManageSearch,
+                            title = stringResource(Res.string.advanced_search),
+                            subtitle = stringResource(Res.string.advanced_search_desc),
+                            checked = uiState.advancedSearchEnabled,
+                            onCheckedChange = viewModel::setAdvancedSearchEnabled,
+                        )
+                    }
+                }
+
                 if (updateViewModel.releaseNotesAvailable || updateViewModel.isSupported) {
                     item(key = "updates_header") {
                         AdaptiveSectionHeader(stringResource(Res.string.section_updates))
@@ -203,10 +226,21 @@ fun GeneralSettingsContent(
                     row(key = "about_info") {
                         AboutInfo(
                             serverUrl = uiState.serverUrl,
+                            serverTrustedViaUserCa = uiState.serverTrustedViaUserCa,
                             appVersion = uiState.appVersion,
                             gitSha = uiState.gitSha,
                             serverVersion = uiState.serverVersion,
                             buildInfo = uiState.buildInfo,
+                        )
+                    }
+                    row(key = "privacy_policy") {
+                        val uriHandler = LocalUriHandler.current
+                        GeneralSettingsRow(
+                            icon = Icons.Default.PrivacyTip,
+                            title = stringResource(Res.string.privacy_policy_title),
+                            subtitle = stringResource(Res.string.privacy_policy_desc),
+                            // Android throws when no browser is installed (de-Googled ROMs, work profiles).
+                            onClick = { runCatching { uriHandler.openUri(PRIVACY_POLICY_URL) } },
                         )
                     }
                 }
@@ -240,6 +274,25 @@ private fun TabletSidebarGestureToggle(
     onGestureEnabledChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    SwitchSettingRow(
+        icon = Icons.Default.Tablet,
+        title = stringResource(Res.string.sidebar_swipe_gesture),
+        subtitle = stringResource(Res.string.sidebar_swipe_gesture_desc),
+        checked = gestureEnabled,
+        onCheckedChange = onGestureEnabledChange,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun SwitchSettingRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier = modifier) {
         Column(
             modifier = Modifier
@@ -251,7 +304,7 @@ private fun TabletSidebarGestureToggle(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    imageVector = Icons.Default.Tablet,
+                    imageVector = icon,
                     contentDescription = null,
                     modifier = Modifier.size(24.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -259,19 +312,19 @@ private fun TabletSidebarGestureToggle(
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = stringResource(Res.string.sidebar_swipe_gesture),
+                        text = title,
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     Text(
-                        text = stringResource(Res.string.sidebar_swipe_gesture_desc),
+                        text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Spacer(modifier = Modifier.width(16.dp))
                 AdaptiveSwitch(
-                    checked = gestureEnabled,
-                    onCheckedChange = onGestureEnabledChange,
+                    checked = checked,
+                    onCheckedChange = onCheckedChange,
                 )
             }
         }
@@ -280,8 +333,9 @@ private fun TabletSidebarGestureToggle(
 }
 
 @Composable
-private fun AboutInfo(
+internal fun AboutInfo(
     serverUrl: String,
+    serverTrustedViaUserCa: Boolean,
     appVersion: String,
     gitSha: String,
     serverVersion: String?,
@@ -293,36 +347,10 @@ private fun AboutInfo(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = stringResource(Res.string.app_version_label),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    text = appVersion,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            AboutRow(stringResource(Res.string.app_version_label), appVersion)
             if (gitSha.isNotBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = stringResource(Res.string.app_build_label),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        text = gitSha,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                AboutRow(stringResource(Res.string.app_build_label), gitSha)
             }
             Spacer(modifier = Modifier.height(8.dp))
             Row(
@@ -340,6 +368,15 @@ private fun AboutInfo(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
+                )
+            }
+            if (serverTrustedViaUserCa) {
+                Text(
+                    text = stringResource(Res.string.server_user_ca_notice),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 )
             }
             // Resolved LibreChat server version. Always shown — "Unknown" when it can't be
@@ -368,15 +405,21 @@ private fun AboutInfo(
     }
 }
 
+/**
+ * A label with its value on the trailing edge, or on the line below when a translation leaves them
+ * too little room side by side: a version or a commit is no use cut short.
+ */
 @Composable
 private fun AboutRow(label: String, value: String) {
-    Row(
+    FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
+            // Counted when the pair is fitted on one line, so the two never run together.
+            modifier = Modifier.padding(end = 12.dp),
         )
         Text(
             text = value,
@@ -384,7 +427,6 @@ private fun AboutRow(label: String, value: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
         )
     }
 }
@@ -439,3 +481,10 @@ private fun GeneralSettingsRow(
         if (showDivider) AdaptiveDivider()
     }
 }
+
+/**
+ * The published policy (docs/PRIVACY.md). Google Play and the App Store both require an in-app link;
+ * it is shown on every channel. Installed builds keep this URL for good, so moving the file needs a
+ * stub left at this path, plus the Play Console entry and PRIVACY.md section 16.
+ */
+private const val PRIVACY_POLICY_URL = "https://github.com/garfiec/Librechat-Mobile/blob/develop/docs/PRIVACY.md"

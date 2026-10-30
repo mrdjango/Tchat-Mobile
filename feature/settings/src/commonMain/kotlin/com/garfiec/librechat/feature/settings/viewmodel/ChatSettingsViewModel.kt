@@ -9,9 +9,11 @@ import com.garfiec.librechat.core.data.datastore.ChatHeaderContent
 import com.garfiec.librechat.core.data.datastore.ContextBarPlacement
 import com.garfiec.librechat.core.data.datastore.DuringRunAction
 import com.garfiec.librechat.core.data.datastore.LatexRenderer
+import com.garfiec.librechat.core.data.datastore.PreferenceStore
 import com.garfiec.librechat.core.data.datastore.SettingsDataStore
 import com.garfiec.librechat.core.data.datastore.StarredModelsDisplay
 import com.garfiec.librechat.core.data.datastore.UploadRoutingMode
+import com.garfiec.librechat.core.data.datastore.WebSearchPreference
 import com.garfiec.librechat.core.model.speech.TtsVoice
 import com.garfiec.librechat.feature.settings.viewmodel.delegate.SpeechSettingsFactory
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +26,7 @@ import kotlinx.coroutines.flow.update
 @Suppress("TooManyFunctions")
 class ChatSettingsViewModel(
     settingsDataStore: SettingsDataStore,
+    preferenceStore: PreferenceStore,
     speechSettingsFactory: SpeechSettingsFactory,
 ) : ViewModel() {
 
@@ -38,6 +41,7 @@ class ChatSettingsViewModel(
     /** Owns the DataStore read flows + write setters; merges them with [_uiState]. */
     private val prefsController = ChatPreferencesController(
         settingsDataStore,
+        preferenceStore,
         _uiState,
         viewModelScope,
     )
@@ -73,8 +77,8 @@ class ChatSettingsViewModel(
         prefsController.setAutoScrollEnabled(enabled)
     }
 
-    fun setShowThinkingBlocks(show: Boolean) {
-        prefsController.setShowThinkingBlocks(show)
+    fun setThinkingOpenByDefault(open: Boolean) {
+        prefsController.setThinkingOpenByDefault(open)
     }
 
     fun setContextBarPlacement(placement: ContextBarPlacement) {
@@ -91,6 +95,14 @@ class ChatSettingsViewModel(
 
     fun setShowImageDescriptions(show: Boolean) {
         prefsController.setShowImageDescriptions(show)
+    }
+
+    fun setPreferLastUsedModel(prefer: Boolean) {
+        prefsController.setPreferLastUsedModel(prefer)
+    }
+
+    fun setWebSearchFirst(first: WebSearchPreference) {
+        prefsController.setWebSearchFirst(first)
     }
 
     fun setShowSiteIcons(show: Boolean) {

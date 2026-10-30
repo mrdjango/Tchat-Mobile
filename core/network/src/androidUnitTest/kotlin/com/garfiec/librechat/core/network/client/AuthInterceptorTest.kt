@@ -3,6 +3,8 @@ package com.garfiec.librechat.core.network.client
 import com.garfiec.librechat.core.common.identity.AccountId
 import com.garfiec.librechat.core.common.identity.AccountState
 import com.garfiec.librechat.core.common.identity.InMemoryActiveAccountProvider
+import com.garfiec.librechat.core.common.identity.deriveAccountId
+import com.garfiec.librechat.core.common.identity.deriveServerId
 import com.google.common.truth.Truth.assertThat
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -20,6 +22,10 @@ import kotlinx.coroutines.withContext
 import org.junit.Test
 
 class AuthInterceptorTest {
+
+    private val accountA = deriveAccountId(
+        deriveServerId("https://a.example.com"), "user-a",
+    ).value
 
     private class FakeTokenManager(
         private var accessToken: String? = "initial-token",
@@ -459,7 +465,7 @@ class AuthInterceptorTest {
             respond("Unauthorized", HttpStatusCode.Unauthorized)
         }
         val gate = SwitchGate(
-            activeAccountProvider = InMemoryActiveAccountProvider(AccountState.Resolved(AccountId("acct-a"))),
+            activeAccountProvider = InMemoryActiveAccountProvider(AccountState.Resolved(AccountId(accountA))),
             serverUrlProvider = FakeServerUrlProvider("https://a.example.com"),
             tokenManager = tokenManager,
             accountReadyGate = null,
@@ -487,7 +493,7 @@ class AuthInterceptorTest {
         val tokenManager = FakeTokenManager(accessToken = "a-token", refreshOutcome = RefreshResult.HardExpired)
         val engine = MockEngine { respond("Unauthorized", HttpStatusCode.Unauthorized) }
         val gate = SwitchGate(
-            activeAccountProvider = InMemoryActiveAccountProvider(AccountState.Resolved(AccountId("acct-a"))),
+            activeAccountProvider = InMemoryActiveAccountProvider(AccountState.Resolved(AccountId(accountA))),
             serverUrlProvider = FakeServerUrlProvider("https://a.example.com"),
             tokenManager = tokenManager,
             accountReadyGate = null,
@@ -502,7 +508,7 @@ class AuthInterceptorTest {
 
         assertThat(response.status).isEqualTo(HttpStatusCode.Unauthorized)
         assertThat(tokenManager.sessionExpiredCount).isEqualTo(1)
-        assertThat(tokenManager.lastExpiredAccountId).isEqualTo("acct-a")
+        assertThat(tokenManager.lastExpiredAccountId).isEqualTo(accountA)
     }
 
     /**

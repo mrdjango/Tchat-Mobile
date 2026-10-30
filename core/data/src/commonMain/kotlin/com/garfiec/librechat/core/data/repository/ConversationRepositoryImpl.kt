@@ -11,9 +11,11 @@ import com.garfiec.librechat.core.common.result.suspendRunCatching
 import com.garfiec.librechat.core.data.datastore.AccountRoster
 import com.garfiec.librechat.core.data.db.dao.ConversationDao
 import com.garfiec.librechat.core.data.db.dao.MessageDao
+import com.garfiec.librechat.core.data.db.dao.PrefetchWatermarkDao
 import com.garfiec.librechat.core.data.mapper.toEntity
 import com.garfiec.librechat.core.data.mapper.toModel
 import com.garfiec.librechat.core.data.mapper.toModels
+import com.garfiec.librechat.core.data.search.SearchIndexMaintenance
 import com.garfiec.librechat.core.model.Conversation
 import com.garfiec.librechat.core.model.ConversationPage
 import com.garfiec.librechat.core.model.SAVED_TAG
@@ -33,10 +35,19 @@ class ConversationRepositoryImpl(
     private val conversationsApi: ConversationsApi,
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
+    private val prefetchWatermarkDao: PrefetchWatermarkDao,
     private val activeAccountProvider: ActiveAccountProvider,
     private val roster: AccountRoster,
     private val json: Json,
     private val dispatcher: CoroutineDispatcher,
+    private val searchIndexMaintenance: SearchIndexMaintenance? = null,
+    // The server deletes a conversation's shared links with it, so the Shared chats page and the
+    // chat menu's "Link active" cue must hear about every delete, from any surface.
+    private val shareChanges: ShareChangeSignal,
+    // A deleted chat leaves its tags' counts one lower server-side; the cached counts must follow,
+    // and a bookmark's chat list must drop it.
+    private val tagRepository: TagRepository,
+    private val tagChanges: TagChangeSignal,
 ) : ConversationRepository {
 
     // toModels() decodes each row's tags JSON and formats two timestamps, so the whole cached list
@@ -114,6 +125,33 @@ class ConversationRepositoryImpl(
         }
     }
 
+    override suspend fun getConversationsForTag(
+        tag: String,
+        cursor: String?,
+        limit: Int,
+    ): Result<ConversationPage> {
+        return safeApiCall {
+            // Captured before the network suspend, as in getConversationsForProject.
+            val accountId = activeAccountProvider.currentAccountId()?.value
+            val response = conversationsApi.getConversations(
+                cursor = cursor,
+                limit = limit,
+                tags = listOf(tag),
+            )
+            // The list omits tags: the preserving upsert keeps what the cache knows of them.
+            if (accountId != null) {
+                conversationDao.upsertPreservingTags(
+                    accountId,
+                    response.conversations.map { it.toEntity().copy(accountId = accountId) },
+                )
+            }
+            ConversationPage(
+                conversations = response.conversations,
+                nextCursor = response.nextCursor,
+            )
+        }
+    }
+
     override suspend fun getConversation(id: String, originAccount: AccountId?): Result<Conversation> {
         val account = resolveWriteAccountId(originAccount, activeAccountProvider, roster)
         val cached = account?.let { conversationDao.getByIdForAccount(id, it) }
@@ -135,7 +173,10 @@ class ConversationRepositoryImpl(
             val accountId = resolveWriteAccountId(originAccount, activeAccountProvider, roster)
             val conversation = conversationsApi.getConversation(id)
             if (accountId != null) {
-                conversationDao.upsertPreservingTags(accountId, conversation.toEntity().copy(accountId = accountId))
+                // The single-conversation GET is the full document, tags included: the server's tags
+                // win over the cached ones. Only the list paths, which omit tags, preserve them.
+                val tags = conversation.tags.filter { it.isNotBlank() }
+                conversationDao.upsert(conversation.copy(tags = tags).toEntity().copy(accountId = accountId))
             }
             conversation
         }
@@ -202,6 +243,7 @@ class ConversationRepositoryImpl(
         return safeApiCall {
             val accountId = activeAccountProvider.currentAccountId()?.value
             conversationsApi.deleteConversation(id)
+            shareChanges.bump()
             // The local delete must be account-scoped, so it can't run while unresolved. The server row
             // is already gone, so the stale local row lingers in the list until a resolved-account wipe;
             // log it. In practice a delete is a foreground action where the account is resolved.
@@ -219,6 +261,7 @@ class ConversationRepositoryImpl(
             } else {
                 Logger.w { "Server-deleted $id but kept local row: no resolved account to scope the delete" }
             }
+            refreshTagCountsAfterDelete()
         }
     }
 
@@ -278,7 +321,18 @@ class ConversationRepositoryImpl(
         val accountId = activeAccountProvider.currentAccountId()?.value
         return safeApiCall {
             conversationsApi.deleteAllConversations()
-            if (accountId != null) conversationDao.deleteAllForAccount(accountId)
+            shareChanges.bump()
+            if (accountId != null) {
+                // The same set AccountDataPurger clears, minus the account-level rows (drafts, tags)
+                // the server call never touched. Messages have no FK to their conversation, so a
+                // conversation-only wipe would strand every cached message (still searchable, still
+                // counted); a watermark outliving its rows reads as "already warm", so the
+                // prefetcher would never re-fetch a conversation restored from an import.
+                searchIndexMaintenance?.purgeAccountMessages(accountId) ?: messageDao.deleteAllForAccount(accountId)
+                prefetchWatermarkDao.deleteAllForAccount(accountId)
+                conversationDao.deleteAllForAccount(accountId)
+            }
+            refreshTagCountsAfterDelete()
         }
     }
 
@@ -304,7 +358,7 @@ class ConversationRepositoryImpl(
         conversationDao.upsertPreservingTags(accountId, conversation.toEntity().copy(accountId = accountId))
     }
 
-    override suspend fun updateConversationTagsLocal(id: String, tags: List<String>) {
+    private suspend fun updateConversationTagsLocal(id: String, tags: List<String>) {
         // Local-only tag write; skip when unresolved rather than running an account-blind by-PK update.
         // Unlike the server-backed writes there is no remote copy to recover from, so a drop loses the
         // edit outright — log it. In practice the account is resolved during active use; an unresolved
@@ -362,6 +416,17 @@ class ConversationRepositoryImpl(
                 )
             }
         }
+    }
+
+    // Best-effort, like the message purge: the server delete already happened, so a failed tag refresh
+    // must not flip delete() to an error; the counts catch up on the next refresh. refreshTags returns
+    // its failure rather than throwing, and a 403 (bookmarks not permitted) lands there too. The
+    // revision bump makes every bookmark surface reload.
+    private suspend fun refreshTagCountsAfterDelete() {
+        if (tagRepository.refreshTags() is Result.Error) {
+            Logger.w { "Deleted a conversation but failed to refresh tag counts" }
+        }
+        tagChanges.bump()
     }
 
     // Stamps + caches a single server-returned conversation for the account captured at request time.

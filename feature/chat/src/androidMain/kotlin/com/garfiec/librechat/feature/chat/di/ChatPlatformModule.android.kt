@@ -31,6 +31,15 @@ actual val chatPlatformModule: Module = module {
             // [3] initialEndpoint, [4] initialModel — model-shortcut pre-select; absent otherwise.
             initialEndpoint = params.values.getOrNull(3) as String?,
             initialModel = params.values.getOrNull(4) as String?,
+            // [5] targetMessageId, [6] highlightQuery — open at a search hit; absent otherwise.
+            initialTargetMessageId = params.values.getOrNull(5) as String?,
+            initialHighlightQuery = params.values.getOrNull(6) as String?,
+            // [7] the hit matched in the target's reasoning; absent otherwise.
+            initialTargetInReasoning = params.values.getOrNull(7) as? Boolean ?: false,
+            // [8] project a new chat is filed into; absent otherwise.
+            initialChatProjectId = params.values.getOrNull(8) as String?,
+            // [9] the spec a model shortcut was recorded from; absent otherwise.
+            initialSpec = params.values.getOrNull(9) as String?,
             agentRepository = get(),
             chatRepository = get(),
             messageRepository = get(),
@@ -45,10 +54,16 @@ actual val chatPlatformModule: Module = module {
             promptRepository = get(),
             queuedTurnRepository = get(),
             shareRepository = get(),
+            shareLinkControllerFactory = get(),
+            tagRepository = get(),
             traceRepository = get(),
             mcpRepository = get(),
+            skillsRepository = get(),
             userRepository = get(),
             roleRepository = get(),
+            memoryRepository = get(),
+            webSearchReadiness = get(),
+            conversationWebSearchStore = get(),
             permissionGate = get(),
             connectivityObserver = get(),
             activeAccountProvider = get(),
@@ -63,6 +78,7 @@ actual val chatPlatformModule: Module = module {
             siteIconPromptSession = get(),
             tchatModelCatalogRepository = get(), // TCHAT
             tchatSettingsStore = get(), // TCHAT
+            preferenceStore = get(),
             resumePinStore = get(),
         )
     }

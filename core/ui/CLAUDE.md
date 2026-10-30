@@ -14,7 +14,23 @@ Material 3 theme and shared Compose components used across all feature modules. 
 - `LibreChatTopBar` - App bar with optional back navigation and actions.
 - `LoadingIndicator` - Centered circular progress.
 - `ErrorBanner` - Dismissible error message bar.
-- `EmptyState` - Illustration + message for empty lists.
+- `EmptyState` - Icon + message for empty lists, with an optional `action` slot (the create button).
+- `InitialTile` - Rounded-square tile for a named thing (project, MCP server): its image, else the
+  first letter on `avatarColorForSeed`. Seed it with a stable id. `TileStatusDot` goes in its
+  `badge` slot. Use it wherever a list of user-made things needs an identity mark, so they match.
+- `ShareLinkSheet` (`components/share/`) - The one share sheet for a conversation's link. It renders
+  a `ShareSheetState` (`:core:model` `share/`); which controls a state shows is decided in
+  `ShareSheetControls`, which is unit-tested. The host owns the clipboard write (`onCopy`); Share…
+  uses `rememberShareText()` (`media/ShareText.kt`). Its Manage access page shows while the host
+  passes an open `AclState`.
+- `AclSharingSection` (`components/acl/`) - Who can open a resource: public switch, grants with the
+  owner locked, people search. Stateless over `AclState` (`:core:model` `acl/`), driven by
+  `:core:data` `AclController(AclPolicy)`. Shared links use it; the agent and skill editors still
+  carry their own copies until they migrate.
+- `BookmarkPickerSheet` / `BookmarkEditorSheet` (`components/bookmarks/`) - The per-chat bookmark
+  checklist and the bookmark create/edit sheet, used by the drawer, project chats and the chat
+  screen. The checklist renders a `BookmarkPickerUiState`; `:core:data` `BookmarkPickerController`
+  drives it (each tap saves at once). The editor validates with `:core:model` `BookmarkNameRules`.
 - `AvatarImage` - User/agent/model avatar with Coil image loading and fallback.
 - `ConfirmationDialog` - Reusable confirm/cancel dialog.
 - `DiscardChangesDialog` - "Discard changes?" for leaving an editor with unsaved edits. Every
@@ -22,6 +38,14 @@ Material 3 theme and shared Compose components used across all feature modules. 
   owns `onBackRequested()` and the dialog flag, `PlatformBackHandler` is enabled only while dirty (a
   clean form keeps predictive back), and the top bar's back goes through the same check, since the
   handler never fires on iOS. Dirty = what Save would send differs from what was loaded.
+  A sheet editor (the memory sheet) uses the `AdaptiveModalBottomSheet(interceptDismiss = dirty)`
+  overload instead: while it is true, swipe, scrim, handle tap and back leave the sheet up and call
+  `onDismissRequest`, which raises the dialog; the sheet closes when the caller drops it.
+  Both overloads take `secure`: while true the sheet stays out of screenshots and the recents
+  snapshot (Android `FLAG_SECURE`: the M3 sheet's own window, or the activity window for the glass
+  sheet, ref-counted so a flag set elsewhere survives). Set it while a `SecretTextField` is revealed.
+  iOS has no equivalent; re-mask on ON_PAUSE there. Not ON_STOP: iOS stops drawing when the scene
+  enters the background, so a re-mask at ON_STOP never reaches the app-switcher snapshot.
 - `ModelIcon` - Endpoint-specific model icons.
 - `EndpointBadge` - Colored badge showing the AI provider.
 - `SearchBar` - Reusable search input field.
@@ -29,6 +53,16 @@ Material 3 theme and shared Compose components used across all feature modules. 
 - `PullToRefresh` - Pull-to-refresh wrapper.
 - `BannerDisplay` - The server banner. The server sends at most one and only ever types it
   `banner`, so there is a single visual treatment; a `persistable` banner hides the dismiss control.
+
+### Autofill helpers
+- `Modifier.excludeFromAutofill()` (`components/ExcludeFromAutofill.kt`): for masked fields holding a
+  secret that isn't the login (API keys, tokens, PDF passwords). Android only.
+- `SecretTextField` (`components/SecretTextField.kt`): the field for such a secret. Masked, trailing
+  show/hide button, `excludeFromAutofill`, password keyboard. Reveal is hoisted (`revealed` +
+  `onRevealedChange`) so the caller can re-mask on ON_PAUSE and knows when a secret is on screen. Use
+  it rather than a new reveal toggle; the PDF password and gateway-header value fields do.
+- `KeyboardOptions.withIosTextContentType()` (`components/IosTextContentType.kt`): iOS
+  `textContentType` roles (`.username`, `.newPassword`, `.oneTimeCode`); a no-op on Android.
 
 ### Keyboard dismissal (`components/ClearFocusOnTap.kt`)
 `Modifier.clearFocusOnTap()` clears focus — dismissing the keyboard — on a tap nothing else handled.
@@ -137,7 +171,10 @@ Rules — follow these when writing or reviewing UI:
    up a second time, it belongs in a new `Adaptive*` component.
 
 Known gaps (stay M3 in glass until someone adds a wrapper): `ExposedDropdownMenuBox` menus, `Slider`,
-`LinearProgressIndicator`, scrolling tab rows. `ForbiddenImport` also misses a fully-qualified call
+scrolling tab rows, and the indeterminate `LinearProgressIndicator`. The determinate bar has
+`AdaptiveLinearProgressIndicator`, but raw `LinearProgressIndicator` is not banned yet: the context
+gauge, the context-usage settings pill, file upload progress and the iOS media loader still call it.
+`ForbiddenImport` also misses a fully-qualified call
 (`androidx.compose.material3.AlertDialog(…)` with no import) — write the import and use the wrapper.
 
 **Adding a new style-aware control:** write `AdaptiveX` in `components/` with the M3 signature,
@@ -155,6 +192,14 @@ the controls bullet below.
   `UINavigationBar` on iOS 26+, and a simulated glass bar elsewhere. Every bar icon is a `BarIcon`
   from `BarIcons` (Material vector + SF Symbol); `BarIconsSymbolTest` in `:shared` iosTest fails on a
   symbol UIKit does not know. Use `AdaptiveScaffold` for screens with an adaptive bar or FAB.
+- **Scrolling under the bars.** A list screen that should show its content through the status bar
+  and top bar passes `MaterialBarStyle(translucent = true)` (Material draws a fading surface scrim,
+  like the chat top bar, instead of a solid container; glass bars are translucent already), wraps
+  the list in `UnderBarsPullToRefreshBox(barPadding = innerPadding)` rather than padding it, and
+  adds `innerPadding` to the list's `contentPadding`. States that don't scroll (empty, error,
+  loading) still pad themselves. In Material, `belowBar` sits inside the scrim, so give it a
+  transparent container (`AdaptiveTabRow(containerColor = …)`); in glass it floats below the
+  bar's scrim, as before.
 - **Native bars sit above the whole Compose canvas**, so a Compose surface meant to cover them (the
   drawer, a sheet or dialog scrim) draws *under* them. Such surfaces call `CoversNativeBars(active)`;
   the bar hides while any are up. `AdaptiveModalBottomSheet`, `AdaptiveAlertDialog` and
@@ -179,22 +224,26 @@ the controls bullet below.
   `dismissOnBackPress` / `dismissOnClickOutside`, and rises above the keyboard. The panel is glass
   and the buttons stay plain `TextButton`s — one glass layer, as on an iOS alert. `AdaptiveDialog` (arbitrary full content) still opens a window and
   stays opaque. `AdaptiveCard` is a glass panel over `LocalGlassBackdrop` (cards floating over
-  content, e.g. the tool-approval / ask-user panels above the composer). The adaptive
+  content, e.g. the tool-approval / ask-user panels above the composer); its `onClick` overload
+  is the tappable list card, so don't add `Modifier.clickable` to the plain one. The adaptive
   dialogs and the M3 sheet provide `LocalInSeparateWindow`: inside their own window a sheet falls back
   to the opaque M3 sheet and a top bar stays in Compose, with nothing for the caller to set.
-- **Controls look like iOS in glass mode**, drawn in Compose: `AdaptiveSwitch`, `AdaptiveRadioButton`
+- **Controls look like iOS in glass mode**, drawn in Compose: `AdaptiveSwitch` (with `AdaptiveSwitchPlaceholder`, the bare off track in each style, for a value not known yet), `AdaptiveRadioButton`
   (a checkmark), `AdaptiveCheckbox`, `AdaptiveDivider` (inset hairline), `AdaptiveButton` (flat
   capsule) and `AdaptiveOutlinedButton`/`AdaptiveFilledTonalButton` (borderless capsule on
-  `GlassControlColors.fill`, accent label unless the caller picked a colour),
+  `GlassControlColors.fill`, accent label unless the caller picked a colour), `AdaptiveTextButton`
+  (the iOS plain button: no fill, capsule press shape; raw `TextButton` is not banned yet, it has
+  ~100 call sites and renders the same in Material),
   `AdaptiveOutlinedTextField` (iOS rounded filled field; the chat composer keeps its own field),
   `AdaptiveSegmentedChoice` and `AdaptiveTabRow` (the liquid segmented control in glass; the tab
   row takes a `backdrop` only in a bar slot), `AdaptivePillChoice` (a full-width sliding-pill
   toggle in Material, like the drawer's Chats/Projects switch, for a few short options; the
   liquid segmented control in glass), `AdaptiveFloatingActionButton` (`small` for the M3
-  small FAB), `AdaptiveSectionHeader`, the four
+  small FAB), `AdaptiveExtendedFloatingActionButton` (labelled; collapse it with `expanded` on scroll), `AdaptiveSectionHeader`, the four
   `Adaptive*Chip`s (pills), `AdaptiveSnackbarHost` (a glass capsule toast that samples the
-  `AdaptiveScaffold` backdrop) and `AdaptiveCircularProgressIndicator` (iOS activity indicator when
-  indeterminate). Each mirrors the M3 signature and passes straight through in Material, and detekt
+  `AdaptiveScaffold` backdrop), `AdaptiveCircularProgressIndicator` (iOS activity indicator when
+  indeterminate) and `AdaptiveLinearProgressIndicator` (determinate only: an iOS capsule progress
+  bar in glass; progress clamped to 0..1, NaN as 0; its raw M3 bar isn't banned yet, see Known gaps). Each mirrors the M3 signature and passes straight through in Material, and detekt
   bans the raw M3 control. Scrolling tab rows have no glass counterpart and stay M3. Settings
   pages group rows with `adaptiveSection { row(key) { … } }` inside `AdaptiveGroupedPage` (rounded,
   inset cells on a grouped background in both styles); a row's own
@@ -209,6 +258,11 @@ the controls bullet below.
   recorded content is usually transparent, and a blurred transparent copy lets the sharp original
   show through. Don't add `vibrancy()` back without measuring; it was the entire cost of glass while
   streaming.
+
+### Status colours (`theme/StatusColors.kt`)
+`statusColors()` gives `success`, `info`, `warning`, `neutral`, `error` for state (connected, in
+progress, needs you, idle, failed). Use it instead of colour literals; it follows light/dark and the
+accent. Always pair a status colour with a label or icon, never colour alone.
 
 ### Context usage breakdown (`contextusage/`)
 `ContextBreakdownCard` renders the context-window breakdown for both the chat gauge (`:feature:chat`)

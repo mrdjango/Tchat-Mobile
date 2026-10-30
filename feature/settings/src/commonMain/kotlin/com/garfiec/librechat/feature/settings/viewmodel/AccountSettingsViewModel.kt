@@ -3,14 +3,22 @@ package com.garfiec.librechat.feature.settings.viewmodel
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.garfiec.librechat.core.data.datastore.ServerDataStore
 import com.garfiec.librechat.core.data.repository.AuthRepository
 import com.garfiec.librechat.core.data.repository.BalanceRepository
 import com.garfiec.librechat.core.data.repository.ConfigRepository
+import com.garfiec.librechat.core.data.repository.KeyRepository
+import com.garfiec.librechat.core.data.repository.RoleRepository
 import com.garfiec.librechat.core.data.repository.UserRepository
 import com.garfiec.librechat.core.model.User
+import com.garfiec.librechat.core.model.media.resolveAvatarUrl
+import com.garfiec.librechat.core.ui.media.AvatarImagePreparer
+import com.garfiec.librechat.feature.settings.model.AutoRefillInfo
 import com.garfiec.librechat.feature.settings.model.UserDisplayData
 import com.garfiec.librechat.feature.settings.util.ContentReader
 import com.garfiec.librechat.feature.settings.viewmodel.delegate.AccountDelegate
+import com.garfiec.librechat.feature.settings.viewmodel.delegate.ProviderKeysSummary
+import com.garfiec.librechat.feature.settings.viewmodel.delegate.ProviderKeysSummaryDelegate
 import com.garfiec.librechat.feature.settings.viewmodel.delegate.TwoFactorSecurityDelegate
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +30,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlin.time.Clock
 
 @Immutable
 data class AccountSettingsUiState(
@@ -50,8 +59,7 @@ data class AccountSettingsUiState(
      * showing a zero it never sent.
      */
     val balanceEnabled: Boolean = false,
-    val tokenCredits: Long = 0,
-    val isBalanceLoading: Boolean = false,
+    val balance: BalanceUiState = BalanceUiState.Loading,
     // Avatar
     val showAvatarDialog: Boolean = false,
     val isAvatarUploading: Boolean = false,
@@ -77,7 +85,21 @@ data class AccountSettingsUiState(
     val showDisableTwoFactorDialog: Boolean = false,
     val showEnableTwoFactorOtpDialog: Boolean = false,
     val showBackupCodesOtpDialog: Boolean = false,
+    val showRegenerateBackupCodesConfirm: Boolean = false,
+    /** The Provider Keys row's summary; null hides the row (no endpoint takes a user-provided value). */
+    val providerKeysSummary: ProviderKeysSummary = ProviderKeysSummary.Hidden,
 )
+
+/** The Balance section. Shown only while [AccountSettingsUiState.balanceEnabled]. */
+@Immutable
+sealed interface BalanceUiState {
+    data object Loading : BalanceUiState
+
+    data class Loaded(val tokenCredits: Double, val autoRefill: AutoRefillInfo) : BalanceUiState
+
+    /** The request failed. A server with no balance record for the user answers 404, which is `Loaded(0)`. */
+    data object Error : BalanceUiState
+}
 
 /** Backs the Account tab: profile, avatar, balance, two-factor, sign out and account deletion. */
 @Suppress("LongParameterList", "TooManyFunctions") // one-line forwarders to the two delegates
@@ -86,26 +108,49 @@ class AccountSettingsViewModel(
     authRepository: AuthRepository,
     balanceRepository: BalanceRepository,
     contentReader: ContentReader,
+    avatarImagePreparer: AvatarImagePreparer,
     configRepository: ConfigRepository,
+    serverDataStore: ServerDataStore,
+    keyRepository: KeyRepository,
+    roleRepository: RoleRepository,
     ioDispatcher: CoroutineDispatcher,
+    clock: Clock = Clock.System,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AccountSettingsUiState())
     private val stateHandle = SettingsStateHandle(_uiState, viewModelScope)
 
-    private val accountDelegate =
-        AccountDelegate(stateHandle, userRepository, balanceRepository, contentReader, ioDispatcher)
+    private val accountDelegate = AccountDelegate(
+        stateHandle,
+        userRepository,
+        balanceRepository,
+        contentReader,
+        avatarImagePreparer,
+        ioDispatcher,
+    )
     private val twoFactorDelegate = TwoFactorSecurityDelegate(stateHandle, authRepository)
+    private val providerKeysSummaryDelegate =
+        ProviderKeysSummaryDelegate(configRepository, roleRepository, keyRepository, viewModelScope, clock)
 
     /**
      * `allowAccountDeletion` defaults to `true` (older-server behaviour) when the field is absent
      * or the config hasn't loaded yet — see VERSION_GATES.md guideline #2.
+     *
+     * The avatar is resolved here because local storage hands back a relative `/images/…` path,
+     * which Coil cannot load; `_uiState` keeps what the server sent.
      */
     val uiState: StateFlow<AccountSettingsUiState> =
-        combine(_uiState, configRepository.startupConfig) { state, config ->
+        combine(
+            _uiState,
+            configRepository.startupConfig,
+            serverDataStore.currentUrlFlow,
+            providerKeysSummaryDelegate.summary,
+        ) { state, config, baseUrl, providerKeysSummary ->
             state.copy(
+                user = state.user?.let { it.copy(avatar = resolveAvatarUrl(it.avatar, baseUrl)) },
                 allowAccountDeletion = config?.allowAccountDeletion ?: true,
                 balanceEnabled = config?.balance?.enabled == true,
+                providerKeysSummary = providerKeysSummary,
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, AccountSettingsUiState())
 
@@ -121,8 +166,22 @@ class AccountSettingsViewModel(
         }
     }
 
+    private var providerKeysSummaryRequested = false
+
+    /** The tab is showing: loads the Provider Keys row's summary the first time only. */
+    fun loadProviderKeysSummary() {
+        if (!providerKeysSummaryRequested) refreshProviderKeysSummary()
+    }
+
+    /** A resume of the screen (back from the Provider Keys page or another app): re-reads the summary. */
+    fun refreshProviderKeysSummary() {
+        providerKeysSummaryRequested = true
+        providerKeysSummaryDelegate.refresh()
+    }
+
     // Profile & avatar
     fun retry() = accountDelegate.retry()
+    fun retryBalance() = accountDelegate.loadBalance()
     fun showAvatarDialog() = accountDelegate.showAvatarDialog()
     fun dismissAvatarDialog() = accountDelegate.dismissAvatarDialog()
     fun uploadAvatar(uri: Any) = accountDelegate.uploadAvatar(uri)
@@ -140,13 +199,16 @@ class AccountSettingsViewModel(
         twoFactorDelegate.enableTwoFactor(token = token, backupCode = backupCode)
     fun dismissEnableTwoFactorOtpDialog() = twoFactorDelegate.dismissEnableTwoFactorOtpDialog()
     fun confirmEnableTwoFactor(code: String) = twoFactorDelegate.confirmEnableTwoFactor(code)
-    fun confirmDisableTwoFactor(code: String) = twoFactorDelegate.confirmDisableTwoFactor(code)
+    fun confirmDisableTwoFactor(token: String?, backupCode: String?) =
+        twoFactorDelegate.confirmDisableTwoFactor(token = token, backupCode = backupCode)
     fun dismissTwoFactorSetupDialog() = twoFactorDelegate.dismissTwoFactorSetupDialog()
     fun dismissDisableTwoFactorDialog() = twoFactorDelegate.dismissDisableTwoFactorDialog()
     fun dismissBackupCodesDialog() = twoFactorDelegate.dismissBackupCodesDialog()
-    fun viewBackupCodes() = twoFactorDelegate.viewBackupCodes()
-    fun viewBackupCodesWithOtp(token: String?, backupCode: String?) =
-        twoFactorDelegate.viewBackupCodes(token = token, backupCode = backupCode)
+    fun requestRegenerateBackupCodes() = twoFactorDelegate.requestRegenerateBackupCodes()
+    fun dismissRegenerateBackupCodesConfirm() = twoFactorDelegate.dismissRegenerateBackupCodesConfirm()
+    fun confirmRegenerateBackupCodes() = twoFactorDelegate.confirmRegenerateBackupCodes()
+    fun regenerateBackupCodesWithOtp(token: String?, backupCode: String?) =
+        twoFactorDelegate.regenerateBackupCodes(token = token, backupCode = backupCode)
     fun dismissBackupCodesOtpDialog() = twoFactorDelegate.dismissBackupCodesOtpDialog()
 }
 

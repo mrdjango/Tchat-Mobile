@@ -6,10 +6,13 @@ import com.garfiec.librechat.feature.chat.navigation.ModelShortcutBus
 import com.garfiec.librechat.feature.chat.prompts.PromptEditorViewModel
 import com.garfiec.librechat.feature.chat.prompts.PromptsViewModel
 import com.garfiec.librechat.feature.chat.viewmodel.BackgroundTasksViewModel
+import com.garfiec.librechat.feature.chat.viewmodel.ChatNoticeHandoff
 import com.garfiec.librechat.feature.chat.viewmodel.ConversationMediaViewModel
 import com.garfiec.librechat.feature.chat.viewmodel.NewChatSelectionHandoff
+import com.garfiec.librechat.feature.chat.viewmodel.ProjectLandingViewModel
 import com.garfiec.librechat.feature.chat.viewmodel.PromptInsertionHandoff
 import com.garfiec.librechat.feature.chat.viewmodel.ServerFileSelectionHandoff
+import com.garfiec.librechat.feature.chat.viewmodel.SharedChatViewModel
 import com.garfiec.librechat.feature.chat.viewmodel.SiteIconPromptSession
 import com.garfiec.librechat.feature.chat.viewmodel.SubagentThreadsViewModel
 import com.garfiec.librechat.feature.chat.viewmodel.TraceViewerViewModel
@@ -23,6 +26,7 @@ val chatModule = module {
     includes(chatPlatformModule)
     single { NewChatSelectionHandoff() }
     single { PromptInsertionHandoff() }
+    single { ChatNoticeHandoff() }
     single { ServerFileSelectionHandoff() }
     single { ArtifactViewerHandoff() }
     single { ModelShortcutBus() }
@@ -42,6 +46,14 @@ val chatModule = module {
             initialGroupId = params.getOrNull(),
         )
     }
+    // The project's id and the name it was opened with, from the NewChat route via parametersOf.
+    viewModel { params ->
+        ProjectLandingViewModel(
+            projectId = params[0],
+            initialName = params[1],
+            projectRepository = get(),
+        )
+    }
     // conversationId arrives from the navigation layer via parametersOf — same reason as above.
     viewModel { params ->
         ConversationMediaViewModel(
@@ -51,6 +63,16 @@ val chatModule = module {
             userRepository = get(),
             serverDataStore = get(),
             defaultDispatcher = get(KoinQualifiers.Default),
+        )
+    }
+    viewModel { params ->
+        SharedChatViewModel(
+            shareId = params.get(),
+            shareRepository = get(),
+            conversationRepository = get(),
+            activeAccountProvider = get(),
+            serverUrlProvider = get(),
+            configRepository = get(),
         )
     }
 }

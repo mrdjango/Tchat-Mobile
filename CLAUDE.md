@@ -30,6 +30,7 @@ feature/conversations/→ Paginated list, CRUD, tags, search, export/import
 feature/settings/     → Account, appearance, about, danger zone
 feature/agents/       → Agent marketplace with search and categories
 feature/files/        → File upload, management, image viewer
+testing/speech-fixture/ → Stand-in speech provider APK for scripts/verify-speech-services.py (never ships)
 ```
 
 Each module has its own `CLAUDE.md` with specific guidance.
@@ -45,6 +46,15 @@ Each module has its own `CLAUDE.md` with specific guidance.
   from `LibreChatTheme`, and `Adaptive*` components in `:core:ui` self-theme into one of two variants.
   Screens use `Adaptive*` (detekt bans raw M3 chrome) and don't branch on style. See "The pattern"
   in `core/ui/CLAUDE.md`.
+- Distribution channels: open source (`foss` flavor, `com.garfiec.librechat`; Xcode `Release`) vs
+  store (`play` flavor, `com.garfiec.librechat.play`; Xcode `Release-AppStore`). A behaviour that
+  differs between them is a field on `ChannelPolicy` (`:core:common`), injected where needed; a
+  preference default that differs is a `perChannel(…)` default in `AppPreferences` (`:core:data`).
+  Never branch on `BuildConfig.FLAVOR` or `DistributionChannel` at a call site (detekt bans the
+  import in non-test code; `:core:common` uses it from its own package), and don't call
+  `ChannelPolicy.pick` from a feature either: add a field. A channel that can't be determined fails
+  at launch by design.
+  See `docs/RELEASING.md` "Distribution channels".
 
 ## Adding a New Feature Module
 

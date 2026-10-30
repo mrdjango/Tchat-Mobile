@@ -19,20 +19,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.garfiec.librechat.core.ui.components.AdaptiveButton
 import com.garfiec.librechat.core.ui.components.AdaptiveCircularProgressIndicator
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedTextField
 import com.garfiec.librechat.core.ui.components.AdaptiveScaffold
+import com.garfiec.librechat.core.ui.components.IosTextContentType
 import com.garfiec.librechat.core.ui.components.topbar.AdaptiveTopBar
 import com.garfiec.librechat.core.ui.components.topbar.AdaptiveTopBarSpec
 import com.garfiec.librechat.core.ui.components.topbar.BarIcons
 import com.garfiec.librechat.core.ui.components.topbar.BarNavigation
 import com.garfiec.librechat.core.ui.components.topbar.BarTitle
+import com.garfiec.librechat.core.ui.components.withIosTextContentType
+import com.garfiec.librechat.feature.auth.diagnostics.DiagnosticLogLink
 import com.garfiec.librechat.feature.auth.resources.*
 import com.garfiec.librechat.feature.auth.resources.Res
 import com.garfiec.librechat.feature.auth.viewmodel.ResetPasswordViewModel
@@ -120,13 +126,13 @@ fun ResetPasswordScreen(
                     value = uiState.password,
                     onValueChange = viewModel::onPasswordChanged,
                     label = { Text(stringResource(Res.string.new_password_label)) },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.NewPassword },
                     singleLine = true,
-                    visualTransformation = passwordMaskTransformation(),
+                    visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
                         autoCorrectEnabled = false,
-                    ),
+                    ).withIosTextContentType(IosTextContentType.NewPassword),
                     enabled = !uiState.isLoading,
                 )
 
@@ -136,13 +142,13 @@ fun ResetPasswordScreen(
                     value = uiState.confirmPassword,
                     onValueChange = viewModel::onConfirmPasswordChanged,
                     label = { Text(stringResource(Res.string.confirm_new_password_label)) },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.NewPassword },
                     singleLine = true,
-                    visualTransformation = passwordMaskTransformation(),
+                    visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
                         autoCorrectEnabled = false,
-                    ),
+                    ).withIosTextContentType(IosTextContentType.NewPassword),
                     enabled = !uiState.isLoading,
                 )
 
@@ -153,6 +159,7 @@ fun ResetPasswordScreen(
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    if (uiState.offerDiagnosticLog) DiagnosticLogLink()
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))

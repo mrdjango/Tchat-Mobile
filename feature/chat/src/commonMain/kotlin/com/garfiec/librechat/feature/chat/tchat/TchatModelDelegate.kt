@@ -119,7 +119,7 @@ class TchatModelDelegate(
 
     private fun publishSpecs(config: StartupConfig?) {
         val specs = config?.modelSpecs
-        val defaultPreset = specs?.list?.firstOrNull { it.default == true }?.preset
+        val defaultPreset = specs?.list?.firstOrNull { it.isDefault }?.preset
         val defaultSpec = defaultPreset?.let { preset ->
             val endpoint = preset.endpoint
             val model = preset.model

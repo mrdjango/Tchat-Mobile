@@ -2,7 +2,10 @@ package com.garfiec.librechat
 
 import android.app.Application
 import android.content.Context
+import androidx.lifecycle.SavedStateHandle
 import com.garfiec.librechat.core.common.AppInfo
+import com.garfiec.librechat.core.common.ChannelPolicy
+import com.garfiec.librechat.core.common.DistributionChannel
 import com.garfiec.librechat.core.common.conversation.OpenConversationRegistry
 import com.garfiec.librechat.core.common.identity.ActiveAccountProvider
 import com.garfiec.librechat.core.common.lifecycle.DeferredWorkWindow
@@ -13,7 +16,10 @@ import com.garfiec.librechat.core.common.network.RequestActivityTracker
 import com.garfiec.librechat.core.common.power.PowerStateObserver
 import com.garfiec.librechat.core.data.datastore.AccountRoster
 import com.garfiec.librechat.core.data.datastore.ConfigCacheDataStore
+import com.garfiec.librechat.core.data.datastore.ConversationWebSearchStore
 import com.garfiec.librechat.core.data.datastore.DateTimePrefsStore
+import com.garfiec.librechat.core.data.datastore.DrawerPinsStore
+import com.garfiec.librechat.core.data.datastore.PreferenceStore
 import com.garfiec.librechat.core.data.datastore.ServerDataStore
 import com.garfiec.librechat.core.data.datastore.SettingsDataStore
 import com.garfiec.librechat.core.data.datastore.SsoRiskDataStore
@@ -30,6 +36,7 @@ import com.garfiec.librechat.core.data.repository.AuthRepository
 import com.garfiec.librechat.core.data.repository.BackgroundTaskRepository
 import com.garfiec.librechat.core.data.repository.BalanceRepository
 import com.garfiec.librechat.core.data.repository.BannerRepository
+import com.garfiec.librechat.core.data.repository.BookmarksGate
 import com.garfiec.librechat.core.data.repository.ChatRepository
 import com.garfiec.librechat.core.data.repository.ConfigRepository
 import com.garfiec.librechat.core.data.repository.ConversationRepository
@@ -49,6 +56,7 @@ import com.garfiec.librechat.core.data.repository.QueuedTurnRepository
 import com.garfiec.librechat.core.data.repository.ResumePinStore
 import com.garfiec.librechat.core.data.repository.RoleRepository
 import com.garfiec.librechat.core.data.repository.ScheduleRepository
+import com.garfiec.librechat.core.data.repository.SearchCapabilityRepository
 import com.garfiec.librechat.core.data.repository.SearchRepository
 import com.garfiec.librechat.core.data.repository.ServerRepository
 import com.garfiec.librechat.core.data.repository.ShareRepository
@@ -61,6 +69,9 @@ import com.garfiec.librechat.core.data.repository.TchatModelCatalogRepository
 import com.garfiec.librechat.core.data.repository.ToolFavoritesRepository
 import com.garfiec.librechat.core.data.repository.TraceRepository
 import com.garfiec.librechat.core.data.repository.UserRepository
+import com.garfiec.librechat.core.data.repository.WebSearchReadinessRepository
+import com.garfiec.librechat.core.data.search.MessageSearchRepository
+import com.garfiec.librechat.core.data.share.ShareLinkControllerFactory
 import com.garfiec.librechat.core.data.update.AppInstallSource
 import com.garfiec.librechat.core.data.update.AppUpdateRepository
 import com.garfiec.librechat.core.data.util.PermissionGate
@@ -90,6 +101,7 @@ import com.garfiec.librechat.core.network.api.ProjectsApi
 import com.garfiec.librechat.core.network.api.PromptsApi
 import com.garfiec.librechat.core.network.api.QueuedTurnsApi
 import com.garfiec.librechat.core.network.api.SchedulesApi
+import com.garfiec.librechat.core.network.api.SearchApi
 import com.garfiec.librechat.core.network.api.ShareApi
 import com.garfiec.librechat.core.network.api.SkillsApi
 import com.garfiec.librechat.core.network.api.SpeechApi
@@ -98,6 +110,7 @@ import com.garfiec.librechat.core.network.api.TagsApi
 import com.garfiec.librechat.core.network.api.TracesApi
 import com.garfiec.librechat.core.network.api.UserApi
 import com.garfiec.librechat.core.network.client.AccountReadyGate
+import com.garfiec.librechat.core.network.client.CertificateTrustRegistry
 import com.garfiec.librechat.core.network.client.ServerUrlProvider
 import com.garfiec.librechat.core.network.client.SwitchGate
 import com.garfiec.librechat.core.network.client.TokenManager
@@ -109,6 +122,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import org.junit.Test
 import org.koin.core.annotation.KoinExperimentalAPI
+import org.koin.test.verify.definition
+import org.koin.test.verify.injectedParameters
 import org.koin.test.verify.verify
 import java.io.File
 import kotlin.reflect.KClass
@@ -137,6 +152,8 @@ class KoinGraphVerificationTest {
             // Android framework
             Context::class,
             Application::class,
+            // Supplied by a ViewModel's CreationExtras at resolution time, never declared.
+            SavedStateHandle::class,
             // core:common provides
             CoroutineDispatcher::class,
             CoroutineScope::class,
@@ -149,6 +166,7 @@ class KoinGraphVerificationTest {
             RequestActivityTracker::class,
             ActiveAccountProvider::class,
             AppInfo::class,
+            ChannelPolicy::class,
             // core:logging provides
             DiagnosticLogRepository::class,
             // core:network provides
@@ -156,6 +174,7 @@ class KoinGraphVerificationTest {
             ServerUrlProvider::class,
             AccountReadyGate::class,
             SwitchGate::class,
+            CertificateTrustRegistry::class,
             SseClient::class,
             AgentToolsApi::class,
             AgentsApi::class,
@@ -166,6 +185,7 @@ class KoinGraphVerificationTest {
             ChatApi::class,
             ConfigApi::class,
             ConversationsApi::class,
+            SearchApi::class,
             EndpointTokenApi::class,
             FavoritesApi::class,
             FilesApi::class,
@@ -195,9 +215,12 @@ class KoinGraphVerificationTest {
             AccountSwitcher::class,
             DateTimePrefsStore::class,
             SettingsDataStore::class,
+            PreferenceStore::class,
+            DrawerPinsStore::class,
             SsoRiskDataStore::class,
             ThemeDataStore::class,
             TchatSettingsStore::class, // TCHAT
+            ConversationWebSearchStore::class,
             AgentRepository::class,
             AgentToolsRepository::class,
             ApiKeyRepository::class,
@@ -225,6 +248,8 @@ class KoinGraphVerificationTest {
             RoleRepository::class,
             ScheduleRepository::class,
             SearchRepository::class,
+            MessageSearchRepository::class,
+            SearchCapabilityRepository::class,
             ShareRepository::class,
             SkillsRepository::class,
             SubagentRepository::class,
@@ -235,7 +260,10 @@ class KoinGraphVerificationTest {
             ToolFavoritesRepository::class,
             TraceRepository::class,
             UserRepository::class,
+            WebSearchReadinessRepository::class,
+            ShareLinkControllerFactory::class,
             PermissionGate::class,
+            BookmarksGate::class,
             SessionTask::class,
             AttachmentWarmer::class,
             PrefetchStatusReporter::class,
@@ -268,7 +296,12 @@ class KoinGraphVerificationTest {
         }
 
         sharedKoinModules.forEach { module ->
-            module.verify(extraTypes = extraTypes)
+            module.verify(
+                extraTypes = extraTypes,
+                // Exempt for ChannelPolicy alone: DistributionChannel is deliberately not in the
+                // graph, so a definition that injects it must still fail here.
+                injections = injectedParameters(definition<ChannelPolicy>(DistributionChannel::class)),
+            )
         }
     }
 }

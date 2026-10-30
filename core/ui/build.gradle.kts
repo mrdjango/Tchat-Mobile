@@ -28,9 +28,12 @@ kotlin {
             implementation(libs.kyant.backdrop)
             // LifecycleResumeEffect / currentStateAsState for the app-wide time ticker.
             implementation(libs.lifecycle.runtime.compose.kmp)
+            // The share sheet's QR code.
+            implementation(libs.qrose)
         }
         androidMain.dependencies {
-            // Runtime-permission launcher for saving images to the gallery (API < 29).
+            // Activity-result launchers: the gallery-save permission request (API < 29) and
+            // TextFileSaver's Storage Access Framework picker.
             implementation(libs.activity.compose)
             implementation(libs.kermit)
         }

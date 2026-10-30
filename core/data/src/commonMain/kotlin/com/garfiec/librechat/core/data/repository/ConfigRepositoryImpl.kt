@@ -4,21 +4,28 @@ import co.touchlab.kermit.Logger
 import com.garfiec.librechat.core.common.BackendBuildClass
 import com.garfiec.librechat.core.common.BackendVersion
 import com.garfiec.librechat.core.common.DetectedBackend
+import com.garfiec.librechat.core.common.EndpointConstants
+import com.garfiec.librechat.core.common.UnmappedBuildDetection
 import com.garfiec.librechat.core.common.generated.BackendCommitMap
 import com.garfiec.librechat.core.common.result.AccessGatewayException
 import com.garfiec.librechat.core.common.result.ApiException
 import com.garfiec.librechat.core.common.result.FailureKind
 import com.garfiec.librechat.core.common.result.Result
+import com.garfiec.librechat.core.common.result.failureKind
 import com.garfiec.librechat.core.common.result.safeApiCall
 import com.garfiec.librechat.core.data.datastore.ConfigCacheDataStore
+import com.garfiec.librechat.core.data.datastore.ServerDataStore
 import com.garfiec.librechat.core.logging.Diag
+import com.garfiec.librechat.core.logging.LogOrigin
 import com.garfiec.librechat.core.model.EndpointConfig
 import com.garfiec.librechat.core.model.config.StartupConfig
 import com.garfiec.librechat.core.model.response.Category
 import com.garfiec.librechat.core.network.api.ConfigApi
+import com.garfiec.librechat.core.network.client.PendingRequestIdentity
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,7 +36,10 @@ class ConfigRepositoryImpl(
     private val configApi: ConfigApi,
     private val configCache: ConfigCacheDataStore,
     private val dispatcher: CoroutineDispatcher,
+    serverDataStore: ServerDataStore,
 ) : ConfigRepository {
+
+    override val serverUrl: Flow<String> = serverDataStore.currentUrlFlow
 
     private val _startupConfig = MutableStateFlow<StartupConfig?>(null)
     override val startupConfig: StateFlow<StartupConfig?> = _startupConfig.asStateFlow()
@@ -90,58 +100,145 @@ class ConfigRepositoryImpl(
         ) { "server config snapshot" }
     }
 
-    override suspend fun validateServerUrl(url: String): Result<StartupConfig> =
-        fetchAndValidateConfig { config ->
-            _startupConfig.value = config
-            configCache.saveStartupConfig(config)
-            logConfigSnapshot(config)
-        }
+    override suspend fun publishStartupConfig(config: StartupConfig) {
+        _startupConfig.value = config
+        configCache.saveStartupConfig(config)
+        logConfigSnapshot(config)
+    }
 
-    override suspend fun probeServerUrl(): Result<StartupConfig> =
-        // Validation only — publishing/caching would attribute the probed server's config to the
-        // live one (see the interface KDoc); the add flow carries the result on its pending session.
-        fetchAndValidateConfig { }
+    override suspend fun resolveServer(
+        candidates: List<String>,
+        headers: Map<String, String>,
+    ): ServerResolution {
+        var typedFailure: ProbeFailure? = null
+        candidates.forEachIndexed { index, candidate ->
+            val outcome = withContext(PendingRequestIdentity(candidate, headers = { headers }, bearer = { null })) {
+                fetchCandidateConfig()
+            }
+            val failure = when (outcome) {
+                is ProbeOutcome.Valid -> {
+                    if (index > 0) {
+                        Diag.i("ServerProbe", attrs = mapOf("candidate" to candidateLabel(index))) {
+                            "server found at the origin of the entered address"
+                        }
+                    }
+                    return ServerResolution.Resolved(candidate, outcome.config)
+                }
+                is ProbeFailure -> outcome
+            }
+            val tryNext = index < candidates.lastIndex && failure.tryAnotherPath
+            probeFailed(failure, candidateLabel(index), fellBack = tryNext)
+            val typed = typedFailure ?: failure.also { typedFailure = it }
+            if (!tryNext) return ServerResolution.Failed(pickError(typed, failure))
+        }
+        return ServerResolution.Failed(Result.Error(message = "Please enter a server URL"))
+    }
+
+    /**
+     * The typed address's error, unless a later candidate failed with something the user can act on
+     * that the typed one hid: a gateway or a certificate at the origin is the real problem when the
+     * path merely 404'd.
+     */
+    private fun pickError(typed: ProbeFailure, last: ProbeFailure): Result.Error =
+        if (last !== typed && last.error.kind in ACTIONABLE_KINDS) last.error else typed.error
+
+    private fun candidateLabel(index: Int): String = if (index == 0) "typed" else "origin"
+
+    private sealed interface ProbeOutcome {
+        data class Valid(val config: StartupConfig) : ProbeOutcome
+    }
+
+    /**
+     * Why a candidate failed. [tryAnotherPath] is true when the host answered and only this path
+     * isn't LibreChat — the one case where the origin can still be the server.
+     */
+    private class ProbeFailure(
+        val reason: String,
+        val error: Result.Error,
+        val tryAnotherPath: Boolean = false,
+    ) : ProbeOutcome
 
     @Suppress("TooGenericExceptionCaught") // last resort after the typed catches above
-    private suspend fun fetchAndValidateConfig(
-        onValid: suspend (StartupConfig) -> Unit,
-    ): Result<StartupConfig> {
+    private suspend fun fetchCandidateConfig(): ProbeOutcome {
         return try {
             // Maps its own failures instead of going through safeApiCall, so it takes
             // safeApiCall's dispatcher hop explicitly (#326).
             val config = withContext(dispatcher) { configApi.getStartupConfig() }
-            if (!isValidLibreChatConfig(config)) {
-                Result.Error(message = "This doesn't appear to be a LibreChat server")
-            } else {
-                onValid(config)
-                Result.Success(config)
-            }
+            if (!isValidLibreChatConfig(config)) notLibreChat(null) else ProbeOutcome.Valid(config)
         } catch (e: SerializationException) {
-            Result.Error(e, "This doesn't appear to be a LibreChat server")
+            notLibreChat(e)
         } catch (e: ApiException) {
             val message = when (e.statusCode) {
-                404 -> "This doesn't appear to be a LibreChat server"
+                404 -> NOT_LIBRECHAT_MESSAGE
                 in 500..599 -> "Server error. Please try again later."
                 else -> e.message ?: "Could not connect to server"
             }
-            Result.Error(e, message)
+            ProbeFailure("http_status", Result.Error(e, message), tryAnotherPath = e.statusCode in 400..499)
         } catch (e: HttpRequestTimeoutException) {
-            Result.Error(e, "Connection timed out. Check the URL and try again.")
+            ProbeFailure("timeout", Result.Error(e, "Connection timed out. Check the URL and try again."))
         } catch (e: AccessGatewayException) {
             // Must stay above the blanket catch, which would call a reachable-and-answering gateway a
-            // connection problem. Worded here rather than via FailureKind.message(): both callers are
+            // connection problem. Worded here rather than via FailureKind.message(): the caller is
             // the pre-login server screen, and the shared wording points at Settings — which needs
             // the sign-in the gateway is blocking.
-            Result.Error(
-                exception = e,
-                message = "Your server's access gateway rejected this request. " +
-                    "Check the gateway headers under Advanced.",
-                kind = FailureKind.AccessGateway,
+            ProbeFailure(
+                "access_gateway",
+                Result.Error(
+                    exception = e,
+                    message = "Your server's access gateway rejected this request. " +
+                        "Check the gateway headers under Advanced.",
+                    kind = FailureKind.AccessGateway,
+                ),
             )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Result.Error(e, "Could not reach the server. Check the URL and your connection.")
+            when (e.failureKind()) {
+                FailureKind.Tls -> ProbeFailure(
+                    "tls",
+                    Result.Error(
+                        exception = e,
+                        message = "This server's security certificate was rejected: it isn't trusted by this " +
+                            "device, has expired, or was issued for a different address. If the server uses a " +
+                            "private certificate authority, install that authority's certificate on this device.",
+                        kind = FailureKind.Tls,
+                    ),
+                )
+                // A body that isn't JSON at all — a web page answering 200 at this path (Ktor finds no
+                // transformation for text/html) — is a host that answered, not one that didn't.
+                FailureKind.MalformedResponse -> notLibreChat(e)
+                else -> ProbeFailure(
+                    "unreachable",
+                    Result.Error(e, "Could not reach the server. Check the URL and your connection."),
+                )
+            }
+        }
+    }
+
+    private fun notLibreChat(cause: Throwable?): ProbeFailure =
+        ProbeFailure("not_librechat", Result.Error(cause, NOT_LIBRECHAT_MESSAGE), tryAnotherPath = true)
+
+    /**
+     * Records why a candidate failed: this path maps its own failures instead of going through
+     * safeApiCall, so nothing else logs them. Never log the host — the log is exported before sign-in.
+     * A miss the search moves past is informational; the one that ends it is the warning.
+     */
+    private fun probeFailed(failure: ProbeFailure, candidate: String, fellBack: Boolean) {
+        val status = (failure.error.exception as? ApiException)?.statusCode
+        val attrs = buildMap {
+            put("path", "/api/config")
+            put("reason", failure.reason)
+            put("candidate", candidate)
+            put("fell_back", fellBack.toString())
+            status?.let { put("status", it.toString()) }
+        }
+        val origin = if (status != null || failure.reason == "not_librechat") LogOrigin.SERVER else LogOrigin.NETWORK
+        if (fellBack) {
+            Diag.i("ServerProbe", origin = origin, attrs = attrs) { "server check missed, trying the origin" }
+        } else {
+            Diag.w("ServerProbe", origin = origin, throwable = failure.error.exception, attrs = attrs) {
+                "server check failed"
+            }
         }
     }
 
@@ -158,7 +255,7 @@ class ConfigRepositoryImpl(
     override suspend fun reloadForActiveServer() {
         _startupConfig.value = configCache.loadStartupConfig()
         _endpointConfigs.value = configCache.loadEndpointConfigs().orEmpty()
-        _availableModels.value = configCache.loadAvailableModels().orEmpty()
+        _availableModels.value = configCache.loadAvailableModels().orEmpty().normalizedModels()
         // Version re-detects from the reloaded config on the next checkBackendVersion pass.
         publishDetectedBackend(null)
         loggedConfigSignature = null
@@ -218,12 +315,12 @@ class ConfigRepositoryImpl(
     override suspend fun fetchModels(): Result<Map<String, List<String>>> {
         if (_availableModels.value.isEmpty()) {
             configCache.loadAvailableModels()?.let { cached ->
-                _availableModels.value = cached
+                _availableModels.value = cached.normalizedModels()
             }
         }
 
         val result = safeApiCall {
-            val models = configApi.getModels()
+            val models = configApi.getModels().normalizedModels()
             _availableModels.value = models
             configCache.saveAvailableModels(models)
             models
@@ -238,6 +335,13 @@ class ConfigRepositoryImpl(
         }
         return result
     }
+
+    /**
+     * Agents come from `/api/agents`: an `agents` key or a repeated model here duplicates a model
+     * selector LazyColumn key, which crashes (#541).
+     */
+    private fun Map<String, List<String>>.normalizedModels(): Map<String, List<String>> =
+        filterKeys { it != EndpointConstants.AGENTS }.mapValues { (_, models) -> models.distinct() }
 
     /**
      * Checks the backend version against the supported version. See [detectVersion] for how the
@@ -320,19 +424,19 @@ class ConfigRepositoryImpl(
 
     /**
      * Resolves the backend identity from a startup config, in order:
-     * 1. the explicit `version` field (future-proof — not yet emitted by any release; yields
-     *    [BackendBuildClass.UNKNOWN] with no commit date),
-     * 2. the build commit (`buildInfo.commit`) looked up in the baked [BackendCommitMap] — the only
-     *    reliable server-sent signal (LibreChat has no version endpoint), covering tagged
+     * 1. the build commit (`buildInfo.commit`) looked up in the baked [BackendCommitMap] — the
+     *    primary signal, and the only exact one (LibreChat has no version endpoint), covering tagged
      *    official/rc images AND untagged dev builds (classification + commit date let
      *    `BackendVersion.supportsFeature` gate features a dev build carries even though its
-     *    package.json still reports the previous release).
-     * Null when neither resolves.
+     *    package.json still reports the previous release). Every version string below is secondary.
+     * 2. the explicit `version` field (future-proof — not yet emitted by any release; yields
+     *    [BackendBuildClass.UNKNOWN] with no commit date),
+     * 3. for a commit the map has never seen (a server upgraded past the pin),
+     *    [UnmappedBuildDetection]: a version-tag `buildInfo.branch`, else a `buildInfo.buildDate`
+     *    after the pinned commit's date.
+     * Null when none resolves.
      */
     private suspend fun detectVersion(config: StartupConfig?): DetectedBackend? {
-        config?.version?.trimStart('v', 'V')?.takeIf { it.isNotBlank() }?.let {
-            return DetectedBackend(version = it)
-        }
         val buildInfo = config?.buildInfo
         val commit = buildInfo?.commit
         if (commit != null) {
@@ -366,7 +470,26 @@ class ConfigRepositoryImpl(
                 return resolved
             }
         }
-        return null
+        config?.version?.trimStart('v', 'V')?.takeIf { it.isNotBlank() }?.let {
+            return DetectedBackend(version = it)
+        }
+        // The build-date fallback reads BackendCommitMap too, which a config without a commit has
+        // not parsed yet: keep that first parse off the caller thread as well.
+        val unmapped = withContext(dispatcher) {
+            UnmappedBuildDetection.detect(branch = buildInfo?.branch, buildDate = buildInfo?.buildDate)
+        }
+        if (unmapped != null) {
+            Diag.i(
+                "BackendVersion",
+                attrs = mapOf(
+                    "resolvedVia" to if (unmapped.classification == BackendBuildClass.DEV) "buildInfo.buildDate" else "buildInfo.branch",
+                    "commit" to (buildInfo?.commitShort ?: commit ?: "none"),
+                    "classification" to unmapped.classification.name,
+                    "version" to unmapped.version,
+                ),
+            ) { "backend version placed from an unmapped build" }
+        }
+        return unmapped
     }
 
     override suspend fun getCategories(): Result<List<Category>> = safeApiCall {
@@ -380,5 +503,10 @@ class ConfigRepositoryImpl(
         publishDetectedBackend(null)
         loggedConfigSignature = null
         configCache.clear()
+    }
+
+    private companion object {
+        const val NOT_LIBRECHAT_MESSAGE = "This doesn't appear to be a LibreChat server"
+        val ACTIONABLE_KINDS = setOf(FailureKind.AccessGateway, FailureKind.Tls)
     }
 }

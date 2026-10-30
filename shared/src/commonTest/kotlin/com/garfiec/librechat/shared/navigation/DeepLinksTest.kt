@@ -2,6 +2,7 @@ package com.garfiec.librechat.shared.navigation
 
 import com.garfiec.librechat.feature.chat.navigation.ArtifactShortcutViewer
 import com.garfiec.librechat.feature.chat.navigation.Chat
+import com.garfiec.librechat.feature.chat.navigation.NewChat
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -20,6 +21,41 @@ class DeepLinksTest {
         val route = assertIs<DeepLinkResolution.Route>(resolution)
         assertTrue(route.requiresAuth)
         assertEquals(id, assertIs<Chat>(route.target).conversationId)
+    }
+
+    @Test
+    fun conversationWithMessage_opensAtThatMessage() {
+        val id = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+        val message = "0f1e2d3c-4b5a-4968-8776-655443322110"
+        val route = assertIs<DeepLinkResolution.Route>(
+            DeepLinks.resolve(uri("conversation", id, mapOf("message" to message))),
+        )
+        val chat = assertIs<Chat>(route.target)
+        assertEquals(id, chat.conversationId)
+        assertEquals(message, chat.targetMessageId)
+    }
+
+    @Test
+    fun conversationWithMalformedMessage_opensTheChatOnly() {
+        val id = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+        val route = assertIs<DeepLinkResolution.Route>(
+            DeepLinks.resolve(uri("conversation", id, mapOf("message" to "x"))),
+        )
+        assertEquals(null, assertIs<Chat>(route.target).targetMessageId)
+    }
+
+    @Test
+    fun modelShortcut_carriesItsSpecWhenItHasOne() {
+        val withSpec = assertIs<DeepLinkResolution.Route>(
+            DeepLinks.resolve(uri("model", query = mapOf("endpoint" to "openAI", "model" to "gpt-4o", "spec" to "fast"))),
+        )
+        assertTrue(withSpec.requiresAuth)
+        assertEquals(NewChat(endpoint = "openAI", model = "gpt-4o", spec = "fast"), withSpec.target)
+
+        val raw = assertIs<DeepLinkResolution.Route>(
+            DeepLinks.resolve(uri("model", query = mapOf("endpoint" to "openAI", "model" to "gpt-4o", "spec" to ""))),
+        )
+        assertEquals(NewChat(endpoint = "openAI", model = "gpt-4o"), raw.target)
     }
 
     @Test

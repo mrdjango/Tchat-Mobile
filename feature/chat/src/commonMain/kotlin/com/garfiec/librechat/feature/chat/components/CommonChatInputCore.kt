@@ -12,9 +12,11 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -33,6 +35,9 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
@@ -43,13 +48,20 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -60,25 +72,36 @@ import com.garfiec.librechat.core.ui.components.AdaptiveCircularProgressIndicato
 import com.garfiec.librechat.core.ui.components.pressBounce
 import com.garfiec.librechat.core.ui.components.rememberPressBounce
 import com.garfiec.librechat.core.ui.glass.LocalGlassBackdrop
+import com.garfiec.librechat.core.ui.glass.drawInsetOutlineStroke
 import com.garfiec.librechat.core.ui.glass.glassSurface
 import com.garfiec.librechat.core.ui.glass.rememberGlassStyle
 import com.garfiec.librechat.core.ui.theme.isLiquidGlass
+import com.garfiec.librechat.feature.chat.components.veil.LocalComposerFlare
+import com.garfiec.librechat.feature.chat.components.veil.retonedSurface
+import com.garfiec.librechat.feature.chat.model.ComposerPickerItem
 import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
+import com.garfiec.librechat.feature.chat.model.PickerSkill
 import com.garfiec.librechat.feature.chat.model.PromptMentionDisplayData
 import com.garfiec.librechat.feature.chat.resources.Res
 import com.garfiec.librechat.feature.chat.resources.cd_add_to_queue
 import com.garfiec.librechat.feature.chat.resources.cd_answer_question
 import com.garfiec.librechat.feature.chat.resources.cd_cancel_edit
 import com.garfiec.librechat.feature.chat.resources.cd_cancel_pending_send
+import com.garfiec.librechat.feature.chat.resources.cd_collapse
+import com.garfiec.librechat.feature.chat.resources.cd_during_run_options
+import com.garfiec.librechat.feature.chat.resources.cd_expand
 import com.garfiec.librechat.feature.chat.resources.cd_send_message
 import com.garfiec.librechat.feature.chat.resources.cd_start_voice_recording
 import com.garfiec.librechat.feature.chat.resources.cd_steer_message
 import com.garfiec.librechat.feature.chat.resources.cd_stop_generation
 import com.garfiec.librechat.feature.chat.resources.cd_stop_voice_recording
 import com.garfiec.librechat.feature.chat.resources.cd_update_queued_message
+import com.garfiec.librechat.feature.chat.resources.compare_message_both
+import com.garfiec.librechat.feature.chat.resources.compare_pick_to_send
 import com.garfiec.librechat.feature.chat.resources.editing_queued_message
 import com.garfiec.librechat.feature.chat.resources.hint_message
 import com.garfiec.librechat.feature.chat.resources.hint_message_model
+import com.garfiec.librechat.feature.chat.resources.queue_held_after_refusal
 import com.garfiec.librechat.feature.chat.resources.recording
 import com.garfiec.librechat.feature.chat.tchat.ComposerToolTray
 import com.garfiec.librechat.feature.chat.tchat.ComposerTrayExtras
@@ -126,6 +149,8 @@ data class ChatInputState(
     val pendingSteers: List<PendingSteerChip> = emptyList(),
     /** Staged "Add to chat" excerpts (v0.8.7 quotes); chips above the composer. */
     val pendingQuotes: List<String> = emptyList(),
+    /** Skills picked for the next message; removable chips above the composer. */
+    val pendingManualSkills: List<String> = emptyList(),
     /** True while the composer is editing a queued item (queued-edit mode): the send button
      *  becomes "Update" and an editing banner shows above the input. */
     val isEditingQueued: Boolean = false,
@@ -147,8 +172,18 @@ data class ChatInputState(
     /** User preference (Settings → Chat) for where the context gauge is surfaced. The composer
      *  only renders it when this is [ContextBarPlacement.ABOVE_INPUT]. */
     val contextBarPlacement: ContextBarPlacement = ContextBarPlacement.OPTIONS_SHEET,
-    /** Prompt groups available to the `/` picker. Filtering happens here, off [inputText]. */
+    /** Prompt groups the `/` and `$` picker lists. Filtering happens here, off [inputText]. */
     val promptSuggestions: List<PromptMentionDisplayData> = emptyList(),
+    /** Skills the picker may offer here, already narrowed (`ChatUiState.pickerSkills`). */
+    val skillSuggestions: List<PickerSkill> = emptyList(),
+    /** The skill catalog is loading for the picker. */
+    val isLoadingSkills: Boolean = false,
+    /** The skill catalog failed to load; the open picker offers a retry. */
+    val skillsLoadFailed: Boolean = false,
+    /** A skill can be picked here (`ChatUiState.canPickSkills`): only then does a leading `$` open the picker. */
+    val canPickSkills: Boolean = false,
+    /** What the field says about an active or pending comparison; setup also holds sends. */
+    val comparisonHint: ComposerComparisonHint = ComposerComparisonHint.NONE,
 )
 
 /**
@@ -156,7 +191,9 @@ data class ChatInputState(
  * attachment chips row, and a slot-based input row with a shared send/stop button.
  *
  * Platform wrappers fill in [leadingButtons] (e.g. "+" button, paste button)
- * and [textFieldContent] (platform-specific text field with mic placement).
+ * and [textFieldContent] (platform-specific text field with mic placement). [leadingButtons] and
+ * [trailingSpacer] are told when the row is compact (narrower than a 360dp phone's), where the
+ * gaps they put beside the field are better given to the field.
  */
 @Composable
 fun CommonChatInputCore(
@@ -180,11 +217,20 @@ fun CommonChatInputCore(
     onCancelSteer: (steerId: String) -> Unit = {},
     /** Remove one staged quote chip (v0.8.7 "Add to chat"). */
     onRemoveQuote: (index: Int) -> Unit = {},
+    /** Remove one picked skill's chip. */
+    onRemoveManualSkill: (name: String) -> Unit = {},
+    /** Retry the picker's failed skill catalog load. */
+    onRetrySkills: () -> Unit = {},
     /** Persist a new default for what a mid-stream send does. */
     onSetDuringRunAction: (DuringRunAction) -> Unit = {},
     /** Number of queued messages held by a Stop/error pause. >0 shows the "Send queued" banner
      *  above the input; 0 hides it (queue empty or draining normally). */
     queuedPausedCount: Int = 0,
+    /** The pause holds a message the server refused: explain that the queue waits for the user,
+     *  even mid-run, where the "Send queued" button itself is hidden. */
+    queueHeldForRefusal: Boolean = false,
+    /** Temporary chat is on: the composer is tinted violet, as on web. */
+    isTemporaryChat: Boolean = false,
     onSendQueuedMessages: () -> Unit = {},
     /** Commit / cancel the in-progress queued edit (see [ChatInputState.isEditingQueued]). */
     onCommitEdit: () -> Unit = {},
@@ -206,14 +252,17 @@ fun CommonChatInputCore(
     onCancelQueuedMessage: (localId: String) -> Unit = {},
     onReorderQueuedMessages: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
     fontSizeMultiplier: Float = 1f,
-    /** Selection from the `/` prompt picker. */
-    onSelectPrompt: (PromptMentionDisplayData) -> Unit = {},
-    leadingButtons: @Composable RowScope.() -> Unit = {},
-    trailingSpacer: @Composable RowScope.() -> Unit = {},
+    /** A row picked from the `/` and `$` list: a prompt or a skill. */
+    onSelectPickerItem: (ComposerPickerItem) -> Unit = {},
+    leadingButtons: @Composable RowScope.(compact: Boolean) -> Unit = {},
+    trailingSpacer: @Composable RowScope.(compact: Boolean) -> Unit = {},
     bottomContent: @Composable BoxScope.() -> Unit = {},
     textFieldContent: @Composable RowScope.() -> Unit,
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surface
+    // The fade keeps temporary chat's retone (see ModeVeil) rather than painting plain surface over it.
+    val retonedSurfaceColor = retonedSurface(surfaceColor)
+    val temporaryAmount = ChatInputDefaults.animateTemporaryAmount(isTemporaryChat)
     // Liquid Glass drops Material's fade: the glass capsule already separates the composer.
     val glass = rememberGlassStyle()
     val glassBackdrop = LocalGlassBackdrop.current
@@ -224,15 +273,18 @@ fun CommonChatInputCore(
                 if (glass != null) {
                     Modifier
                 } else {
-                    Modifier.background(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                surfaceColor.copy(alpha = 0.7f),
-                                surfaceColor.copy(alpha = 0.95f),
+                    Modifier.drawBehind {
+                        val surface = lerp(surfaceColor, retonedSurfaceColor, temporaryAmount.value)
+                        drawRect(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    surface.copy(alpha = 0.7f),
+                                    surface.copy(alpha = 0.95f),
+                                ),
                             ),
-                        ),
-                    )
+                        )
+                    }
                 },
             ),
     ) {
@@ -251,6 +303,12 @@ fun CommonChatInputCore(
                 pendingQuotes = state.pendingQuotes,
                 onRemove = onRemoveQuote,
                 fontSizeMultiplier = fontSizeMultiplier,
+            )
+
+            // Picked skills attach to the message being composed, like the quotes above.
+            PendingSkillChipsSection(
+                skills = state.pendingManualSkills,
+                onRemove = onRemoveManualSkill,
             )
 
             PendingSteerChipsSection(
@@ -273,16 +331,21 @@ fun CommonChatInputCore(
                     onCancel = onCancelEdit,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
-            } else if (queuedPausedCount > 0 && !state.isStreaming) {
-                // Gated on !isStreaming: resume() lifts the pause and POPS the head, but
-                // doSendWithSpec early-returns while a run is live, so the message would be
-                // removed from the queue and never sent. A HITL pause is the long-lived
-                // isStreaming window where the composer stays fully interactive.
-                SendQueuedBanner(
-                    count = queuedPausedCount,
-                    onClick = onSendQueuedMessages,
-                    modifier = Modifier.padding(bottom = 8.dp),
-                )
+            } else {
+                // Not gated on isStreaming, unlike the button: a refusal usually lands mid-run,
+                // which is exactly when a held queue looks like one waiting on the run to finish.
+                if (queueHeldForRefusal) QueueHeldNotice(modifier = Modifier.padding(bottom = 6.dp))
+                if (queuedPausedCount > 0 && !state.isStreaming) {
+                    // Gated on !isStreaming: resume() lifts the pause and POPS the head, but
+                    // doSendWithSpec early-returns while a run is live, so the message would be
+                    // removed from the queue and never sent. A HITL pause is the long-lived
+                    // isStreaming window where the composer stays fully interactive.
+                    SendQueuedBanner(
+                        count = queuedPausedCount,
+                        onClick = onSendQueuedMessages,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+                }
             }
 
             AttachmentChipsRow(
@@ -315,6 +378,7 @@ fun CommonChatInputCore(
                 PinnedToolsRow(
                     pinnedToolKeys = state.pinnedToolKeys,
                     enabledTools = state.enabledTools,
+                    lockedTools = state.gates.lockedTools,
                     onToggleTool = onToggleTool,
                     modifier = Modifier.padding(bottom = 4.dp),
                 )
@@ -344,74 +408,171 @@ fun CommonChatInputCore(
                 }
             }
 
-            // Prompt picker, above the input and below the chips/gauge.
-            val slashQuery = remember(state.inputText) { parseSlashQuery(state.inputText) }
-            val promptSuggestions = remember(slashQuery, state.promptSuggestions) {
-                slashQuery?.let { filterMatchingSlashCommands(it, state.promptSuggestions) }.orEmpty()
+            // Prompt and skill picker, above the input and below the chips/gauge.
+            val pickerQuery = remember(state.inputText, state.canPickSkills) {
+                parsePickerQuery(state.inputText, state.canPickSkills)
+            }
+            val pickerRows = remember(pickerQuery, state.promptSuggestions, state.skillSuggestions) {
+                pickerQuery?.let { buildPickerRows(it, state.promptSuggestions, state.skillSuggestions) }.orEmpty()
             }
             PromptSuggestionList(
-                suggestions = promptSuggestions,
-                onSelect = onSelectPrompt,
+                rows = pickerRows,
+                isOpen = pickerQuery != null,
+                hasCandidates = state.promptSuggestions.isNotEmpty() || state.skillSuggestions.isNotEmpty(),
+                isLoadingSkills = state.isLoadingSkills,
+                onSelect = onSelectPickerItem,
+                skillsLoadFailed = state.skillsLoadFailed,
+                onRetrySkills = onRetrySkills,
             )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(
-                        if (glass != null) {
-                            Modifier.glassSurface(glass, GlassComposerShape, glassBackdrop).padding(4.dp)
-                        } else {
-                            Modifier
-                        },
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                leadingButtons()
-                textFieldContent()
-                trailingSpacer()
-                val hasComposerContent = composerCanSend(
-                    inputText = state.inputText,
-                    hasAttachments = state.attachedFiles.isNotEmpty(),
-                    arePicksUnsettled = state.arePicksUnsettled,
-                )
-                // Mid-stream + typed content + queueing allowed → morph Stop into a during-run send.
-                val duringRunSend = state.canQueue && hasComposerContent && onQueue != null &&
-                    !state.isEditingQueued
-                // The picker only earns its space when both routes are open; with steering
-                // unavailable the send button alone says everything there is to say. `canSteer`
-                // is false while a run is paused for review, which is also what keeps the picker
-                // from offering a steer/queue choice over a send that will answer the pause.
-                if (duringRunSend && state.canSteer) {
-                    DuringRunSendMenu(
-                        defaultAction = state.duringRunAction,
-                        onSteerOnce = onSteer,
-                        onQueueOnce = onQueue ?: {},
-                        onSetDefault = onSetDuringRunAction,
+            // Temporary chat's wash on the glass capsule, faded rather than snapped (Material's is in the field).
+            val temporaryWash = ChatInputDefaults.temporaryWash
+            val temporaryBorder = ChatInputDefaults.temporaryBorderColor
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                // Below a 360dp screen the gaps beside the field go, and the during-run caret folds
+                // into the send button, so the field keeps room for more than a word a line.
+                val compact = maxWidth < COMPACT_COMPOSER_ROW_WIDTH
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (glass != null) {
+                                Modifier
+                                    .glassSurface(glass, GlassComposerShape, glassBackdrop, flare = LocalComposerFlare.current)
+                                    .drawBehind {
+                                        val amount = temporaryAmount.value
+                                        if (amount > 0f) {
+                                            val outline = GlassComposerShape.createOutline(size, layoutDirection, this)
+                                            drawOutline(outline, temporaryWash.copy(alpha = temporaryWash.alpha * amount))
+                                            drawInsetOutlineStroke(
+                                                GlassComposerShape,
+                                                temporaryBorder.copy(alpha = temporaryBorder.alpha * amount),
+                                                1.dp.toPx(),
+                                            )
+                                        }
+                                    }
+                                    .padding(4.dp)
+                            } else {
+                                Modifier
+                            },
+                        ),
+                ) {
+                    ComposerInputRow(
+                        state = state,
+                        compact = compact,
+                        leadingButtons = leadingButtons,
+                        textFieldContent = textFieldContent,
+                        trailingSpacer = trailingSpacer,
+                        onSend = onSend,
+                        onStop = onStop,
+                        onQueue = onQueue,
+                        onSteer = onSteer,
+                        onDuringRunSend = onDuringRunSend,
+                        onSetDuringRunAction = onSetDuringRunAction,
+                        onCommitEdit = onCommitEdit,
+                        onCancelPendingSend = onCancelPendingSend,
+                        voice = voice, // TCHAT
                     )
                 }
-                SendStopButton(
-                    isStreaming = state.isStreaming,
-                    canSend = hasComposerContent,
-                    canQueue = duringRunSend,
-                    duringRunTarget = state.duringRunSendTarget,
-                    onSend = onSend,
-                    onStop = onStop,
-                    onQueue = onDuringRunSend,
-                    // In queued-edit mode the button commits the edit instead of send/stop/queue.
-                    isEditingQueued = state.isEditingQueued,
-                    onUpdate = onCommitEdit,
-                    // A send waiting on an in-flight upload: spinner, tap to cancel.
-                    isAwaitingUploadSend = state.isAwaitingUploadSend,
-                    onCancelPendingSend = onCancelPendingSend,
-                    voice = voice, // TCHAT
-                )
             }
         }
         bottomContent()
     }
 }
 
+/** The field and its trailing send/stop control: the part of the composer the glass capsule wraps. */
+@Suppress("LongParameterList")
+@Composable
+private fun ComposerInputRow(
+    state: ChatInputState,
+    compact: Boolean,
+    leadingButtons: @Composable RowScope.(compact: Boolean) -> Unit,
+    textFieldContent: @Composable RowScope.() -> Unit,
+    trailingSpacer: @Composable RowScope.(compact: Boolean) -> Unit,
+    onSend: () -> Unit,
+    onStop: () -> Unit,
+    onQueue: (() -> Unit)?,
+    onSteer: () -> Unit,
+    onDuringRunSend: () -> Unit,
+    onSetDuringRunAction: (DuringRunAction) -> Unit,
+    onCommitEdit: () -> Unit,
+    onCancelPendingSend: () -> Unit,
+    voice: ComposerVoice? = null, // TCHAT
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        leadingButtons(compact)
+        textFieldContent()
+        trailingSpacer(compact)
+        // A comparison still choosing its second model has nowhere to send yet. Committing a queued
+        // edit sends nothing (the queue is held through setup), so Update stays available.
+        val blockedBySetup = state.comparisonHint == ComposerComparisonHint.SETTING_UP && !state.isEditingQueued
+        val hasComposerContent = !blockedBySetup && composerCanSend(
+            inputText = state.inputText,
+            hasAttachments = state.attachedFiles.isNotEmpty(),
+            arePicksUnsettled = state.arePicksUnsettled,
+        )
+        // Mid-stream + typed content + queueing allowed → morph Stop into a during-run send.
+        val duringRunSend = state.canQueue && hasComposerContent && onQueue != null &&
+            !state.isEditingQueued
+        // The picker only earns its space when both routes are open; with steering
+        // unavailable the send button alone says everything there is to say. `canSteer`
+        // is false while a run is paused for review, which is also what keeps the picker
+        // from offering a steer/queue choice over a send that will answer the pause.
+        val picker = duringRunSend && state.canSteer
+        val foldPicker = picker && compact
+        // Keyed on the fold, so a menu left open when the run ends, the draft clears or
+        // the window widens doesn't pop back open on the next mid-run draft.
+        var foldedMenuOpen by remember(foldPicker) { mutableStateOf(false) }
+        if (picker && !compact) {
+            DuringRunSendMenu(
+                defaultAction = state.duringRunAction,
+                onSteerOnce = onSteer,
+                onQueueOnce = onQueue ?: {},
+                onSetDefault = onSetDuringRunAction,
+            )
+        }
+        Box {
+            SendStopButton(
+                isStreaming = state.isStreaming,
+                canSend = hasComposerContent,
+                canQueue = duringRunSend,
+                duringRunTarget = state.duringRunSendTarget,
+                onSend = onSend,
+                onStop = onStop,
+                // Folded, a tap opens the picker, whose first two entries are the two sends.
+                onQueue = if (foldPicker) {
+                    { foldedMenuOpen = true }
+                } else {
+                    onDuringRunSend
+                },
+                opensMenu = foldPicker,
+                // In queued-edit mode the button commits the edit instead of send/stop/queue.
+                isEditingQueued = state.isEditingQueued,
+                onUpdate = onCommitEdit,
+                // A send waiting on an in-flight upload: spinner, tap to cancel.
+                isAwaitingUploadSend = state.isAwaitingUploadSend,
+                onCancelPendingSend = onCancelPendingSend,
+                voice = voice, // TCHAT
+            )
+            DuringRunSendDropdown(
+                expanded = foldPicker && foldedMenuOpen,
+                onDismiss = { foldedMenuOpen = false },
+                defaultAction = state.duringRunAction,
+                onSteerOnce = onSteer,
+                onQueueOnce = onQueue ?: {},
+                onSetDefault = onSetDuringRunAction,
+            )
+        }
+    }
+}
+
 private val GlassComposerShape = RoundedCornerShape(28.dp)
+
+/** The input row's width on a 360dp phone, inside the bar's 12dp side padding. */
+private val COMPACT_COMPOSER_ROW_WIDTH = 336.dp
 
 /** Visual mode of the trailing composer button. TCHAT: [VOICE] is the empty-field mic. */
 internal enum class SendButtonMode { SEND, STOP, QUEUE, STEER, ANSWER, UPDATE, AWAITING, VOICE }
@@ -514,6 +675,8 @@ fun SendStopButton(
     onCancelPendingSend: () -> Unit = {},
     /** TCHAT: shown instead of a disabled Send while the field is empty. */
     voice: ComposerVoice? = null,
+    /** A during-run tap opens the steer/queue picker rather than sending: the caret is folded in. */
+    opensMenu: Boolean = false,
 ) {
     val mode = sendButtonModeFor(
         isStreaming = isStreaming,
@@ -598,9 +761,10 @@ fun SendStopButton(
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 ),
             ) {
-                Icon(
+                DuringRunSendIcon(
                     imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
                     contentDescription = stringResource(Res.string.cd_add_to_queue),
+                    opensMenu = opensMenu,
                 )
             }
 
@@ -612,9 +776,10 @@ fun SendStopButton(
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ),
             ) {
-                Icon(
+                DuringRunSendIcon(
                     imageVector = Icons.Default.Bolt,
                     contentDescription = stringResource(Res.string.cd_steer_message),
+                    opensMenu = opensMenu,
                 )
             }
 
@@ -675,6 +840,26 @@ fun SendStopButton(
 }
 
 /**
+ * A during-run send's icon. When the button opens the picker instead ([opensMenu]), the picker's
+ * caret sits above it and the button is announced as the picker, which is what a tap does.
+ */
+@Composable
+private fun DuringRunSendIcon(imageVector: ImageVector, contentDescription: String, opensMenu: Boolean) {
+    if (!opensMenu) {
+        Icon(imageVector = imageVector, contentDescription = contentDescription)
+        return
+    }
+    val pickerDescription = stringResource(Res.string.cd_during_run_options)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.semantics { this.contentDescription = pickerDescription },
+    ) {
+        Icon(imageVector = Icons.Default.ExpandLess, contentDescription = null, modifier = Modifier.size(16.dp))
+        Icon(imageVector = imageVector, contentDescription = null)
+    }
+}
+
+/**
  * Banner shown above the composer while editing a queued item, with a cancel affordance that
  * discards the edit and restores the previous draft.
  */
@@ -714,6 +899,63 @@ private fun EditingQueuedBanner(
         }
     }
 }
+
+/**
+ * Says why the queue is holding: the server refused a message and it will not send on its own.
+ * Without it a held queue reads as one waiting on the run, and the user waits for nothing.
+ *
+ * Held to [QUEUE_HELD_COLLAPSED_LINES] until tapped open: at a large font scale the whole of it
+ * would take the screen the keyboard leaves.
+ */
+@Composable
+private fun QueueHeldNotice(modifier: Modifier = Modifier) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    var truncated by remember { mutableStateOf(false) }
+    val toggleLabel = stringResource(if (expanded) Res.string.cd_collapse else Res.string.cd_expand)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .then(
+                if (expanded || truncated) {
+                    Modifier.clickable(onClickLabel = toggleLabel) { expanded = !expanded }
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.Info,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = stringResource(Res.string.queue_held_after_refusal),
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = if (expanded) Int.MAX_VALUE else QUEUE_HELD_COLLAPSED_LINES,
+            overflow = TextOverflow.Ellipsis,
+            onTextLayout = { if (!expanded) truncated = it.hasVisualOverflow },
+            modifier = Modifier.weight(1f),
+        )
+        if (expanded || truncated) {
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+private const val QUEUE_HELD_COLLAPSED_LINES = 3
 
 /**
  * Voice mic visual indicator: shows transcription spinner, recording pulse, or idle mic icon.
@@ -771,10 +1013,15 @@ fun ChatInputPlaceholder(
     isRecording: Boolean,
     selectedModelDisplay: String?,
     modifier: Modifier = Modifier,
+    comparisonHint: ComposerComparisonHint = ComposerComparisonHint.NONE,
 ) {
     Text(
         text = if (isRecording) {
             stringResource(Res.string.recording)
+        } else if (comparisonHint == ComposerComparisonHint.SETTING_UP) {
+            stringResource(Res.string.compare_pick_to_send)
+        } else if (comparisonHint == ComposerComparisonHint.BOTH) {
+            stringResource(Res.string.compare_message_both)
         } else if (!selectedModelDisplay.isNullOrBlank()) {
             stringResource(Res.string.hint_message_model, selectedModelDisplay)
         } else {

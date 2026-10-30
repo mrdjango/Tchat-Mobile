@@ -28,7 +28,7 @@ internal object VendoredWebAssets {
      * version, so bumping a library to a build that ships the same names leaves the
      * list byte-identical and a stale copy would be kept and executed indefinitely.
      */
-    const val FINGERPRINT: String = "88c1ad5b89505b6b"
+    const val FINGERPRINT: String = "493853b9ed3a6ca8"
 
     val FILES: List<String> = listOf(
         "katex/LICENSE",
@@ -72,5 +72,9 @@ internal object VendoredWebAssets {
         "react/react.production.min.js",
         "react-dom/LICENSE",
         "react-dom/react-dom.production.min.js",
+        "jszip/LICENSE.markdown",
+        "jszip/jszip.min.js",
+        "docx-preview/LICENSE",
+        "docx-preview/docx-preview.min.js",
     )
 }

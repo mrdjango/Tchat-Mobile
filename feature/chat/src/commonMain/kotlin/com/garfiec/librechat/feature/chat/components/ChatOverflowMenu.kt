@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Archive
@@ -36,12 +38,14 @@ import com.garfiec.librechat.core.ui.components.AdaptiveDropdownMenu
 import com.garfiec.librechat.core.ui.components.MenuDragSelection
 import com.garfiec.librechat.core.ui.components.dragSelectRowIcon
 import com.garfiec.librechat.core.ui.components.menuDragTarget
+import com.garfiec.librechat.core.ui.resources.bookmarks
 import com.garfiec.librechat.feature.chat.resources.Res
 import com.garfiec.librechat.feature.chat.resources.action_archive
 import com.garfiec.librechat.feature.chat.resources.action_duplicate
 import com.garfiec.librechat.feature.chat.resources.action_rename
 import com.garfiec.librechat.feature.chat.resources.action_search
 import com.garfiec.librechat.feature.chat.resources.action_share
+import com.garfiec.librechat.feature.chat.resources.action_share_link_active
 import com.garfiec.librechat.feature.chat.resources.action_show_all_media
 import com.garfiec.librechat.feature.chat.resources.cd_comparison_enabled
 import com.garfiec.librechat.feature.chat.resources.compact_nudge_menu
@@ -53,6 +57,7 @@ import com.garfiec.librechat.feature.chat.resources.save_as_preset
 import com.garfiec.librechat.feature.chat.resources.trace_open
 import com.garfiec.librechat.feature.chat.viewmodel.ContextGaugeDetails
 import org.jetbrains.compose.resources.stringResource
+import com.garfiec.librechat.core.ui.resources.Res as CoreRes
 
 /**
  * The chat top bar's overflow menu in Material style, shared by the Android and iOS floating top
@@ -68,7 +73,13 @@ internal fun ChatOverflowMenu(
     isComparisonEnabled: Boolean,
     contextGauge: ContextGaugeDetails?,
     onItem: (ChatOverflowItem) -> Unit,
+    /** The open chat has a live share link: Share reads "Share · Link active". */
+    shareLinkActive: Boolean = false,
+    /** The open chat carries a bookmark: Bookmarks shows the filled glyph. */
+    hasBookmark: Boolean = false,
     dragSelection: MenuDragSelection? = null,
+    /** False greys out Compare Models (a comparison can't be turned off mid-reply). */
+    canToggleComparison: Boolean = true,
 ) {
     AdaptiveDropdownMenu(
         expanded = expanded,
@@ -99,7 +110,13 @@ internal fun ChatOverflowMenu(
                         OverflowItem(stringResource(Res.string.save_as_preset), Icons.Outlined.SaveAs, select, dragTarget)
                     ChatOverflowItem.PROMPTS_LIBRARY ->
                         OverflowItem(stringResource(Res.string.prompts_library), Icons.Outlined.AutoAwesome, select, dragTarget)
-                    ChatOverflowItem.COMPARE -> CompareItem(isComparisonEnabled, select, dragTarget)
+                    // Disabled, it takes no drag-release either (as AdaptiveTopBar skips disabled rows).
+                    ChatOverflowItem.COMPARE -> CompareItem(
+                        isComparisonEnabled,
+                        canToggleComparison,
+                        select,
+                        if (canToggleComparison) dragTarget else Modifier,
+                    )
                     // The conversation trace (v0.8.8-rc3). Upstream puts it here on mobile too — the
                     // desktop header has a dedicated button, and HeaderMenu carries the same action
                     // behind the overflow control.
@@ -115,7 +132,14 @@ internal fun ChatOverflowMenu(
                     ChatOverflowItem.COMPACT ->
                         OverflowItem(stringResource(Res.string.compact_nudge_menu), Icons.Outlined.Compress, select, dragTarget)
                     ChatOverflowItem.SHARE ->
-                        OverflowItem(stringResource(Res.string.action_share), Icons.Outlined.Share, select, dragTarget)
+                        OverflowItem(shareItemLabel(shareLinkActive), Icons.Outlined.Share, select, dragTarget)
+                    ChatOverflowItem.BOOKMARKS ->
+                        OverflowItem(
+                            stringResource(CoreRes.string.bookmarks),
+                            if (hasBookmark) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                            select,
+                            dragTarget,
+                        )
                     ChatOverflowItem.RENAME ->
                         OverflowItem(stringResource(Res.string.action_rename), Icons.Outlined.Edit, select, dragTarget)
                     ChatOverflowItem.DUPLICATE ->
@@ -157,9 +181,10 @@ private fun OverflowItem(label: String, icon: ImageVector, onClick: () -> Unit, 
 }
 
 @Composable
-private fun CompareItem(isComparisonEnabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun CompareItem(isComparisonEnabled: Boolean, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     DropdownMenuItem(
         modifier = modifier,
+        enabled = enabled,
         text = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -181,3 +206,7 @@ private fun CompareItem(isComparisonEnabled: Boolean, onClick: () -> Unit, modif
         leadingIcon = { Icon(Icons.Outlined.Compare, contentDescription = null, modifier = Modifier.dragSelectRowIcon()) },
     )
 }
+
+@Composable
+internal fun shareItemLabel(linkActive: Boolean): String =
+    stringResource(if (linkActive) Res.string.action_share_link_active else Res.string.action_share)

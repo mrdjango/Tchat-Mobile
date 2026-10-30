@@ -1,32 +1,30 @@
 package com.garfiec.librechat.feature.chat.screen
 
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.garfiec.librechat.feature.chat.components.BookmarkPickerSheetHost
 import com.garfiec.librechat.feature.chat.components.ForkOptionsBottomSheet
-import com.garfiec.librechat.feature.chat.util.rememberClipboardWriter
+import com.garfiec.librechat.feature.chat.components.ShareLinkSheetHost
 import com.garfiec.librechat.feature.chat.viewmodel.ChatUiState
 import com.garfiec.librechat.feature.chat.viewmodel.ChatViewModel
 
 /**
- * The ViewModel outcomes the chat screen acts on: lifecycle pause/resume, Share, Fork and
- * Duplicate. Each is easy to drop silently (the ViewModel never hears a resume, a share link is
- * created the user never sees), which is why they sit together here rather than in the screen.
+ * The ViewModel outcomes the chat screen acts on: lifecycle pause/resume, the share sheet, the
+ * bookmark checklist, Fork and Duplicate. Each is easy to drop silently (the ViewModel never hears
+ * a resume, a fork is made the user never lands in), which is why they sit together here rather
+ * than in the screen.
  */
 @Composable
 internal fun ChatScreenOutcomes(
     uiState: ChatUiState,
     viewModel: ChatViewModel,
-    snackbarHostState: SnackbarHostState,
     onConversationStart: ((conversationId: String, isTemporary: Boolean) -> Unit)?,
     onNavigateToConversation: ((String) -> Unit)?,
 ) {
-    val clipboard = rememberClipboardWriter()
     // The effects below outlive a recomposition, so they read the navigation callbacks through
     // these rather than capturing whichever pair was current when they launched.
     val navigate by rememberUpdatedState(onNavigateToConversation)
@@ -47,13 +45,10 @@ internal fun ChatScreenOutcomes(
         openConversation(dupId, navigate, start)
     }
 
-    val shareLinkUrl by viewModel.shareLinkUrl.collectAsStateWithLifecycle()
-    LaunchedEffect(shareLinkUrl) {
-        val url = shareLinkUrl ?: return@LaunchedEffect
-        clipboard.copy(url, label = "Share Link")
-        viewModel.onShareLinkHandled()
-        snackbarHostState.showSnackbar("Share link copied to clipboard")
-    }
+    // Copy feedback and errors render inside the sheet: a snackbar would sit behind its scrim.
+    ShareLinkSheetHost(controller = viewModel.shareLink, onDismiss = viewModel::closeShareSheet)
+
+    BookmarkPickerSheetHost(controller = viewModel.bookmarkPicker)
 
     val forkMessageId = uiState.showForkOptionsForMessageId
     if (forkMessageId != null) {

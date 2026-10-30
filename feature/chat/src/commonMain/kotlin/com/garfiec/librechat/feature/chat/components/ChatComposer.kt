@@ -4,7 +4,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.garfiec.librechat.core.data.datastore.ContextBarPlacement
 import com.garfiec.librechat.core.data.datastore.DuringRunAction
+import com.garfiec.librechat.feature.chat.model.ComposerPickerItem
 import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
+import com.garfiec.librechat.feature.chat.model.PickerSkill
 import com.garfiec.librechat.feature.chat.model.PromptMentionDisplayData
 import com.garfiec.librechat.feature.chat.tchat.ComposerTrayExtras
 import com.garfiec.librechat.feature.chat.viewmodel.ChatInputGates
@@ -39,6 +41,8 @@ internal expect fun ChatComposer(
     pendingSteers: List<PendingSteerChip>,
     pendingQuotes: List<String>,
     onRemoveQuote: (index: Int) -> Unit,
+    pendingManualSkills: List<String>,
+    onRemoveManualSkill: (name: String) -> Unit,
     onCancelSteer: (steerId: String) -> Unit,
     onSetDuringRunAction: (DuringRunAction) -> Unit,
     attachedFiles: List<AttachedFile>,
@@ -46,7 +50,12 @@ internal expect fun ChatComposer(
     onPasteFiles: (List<Any>) -> Unit,
     pasteScope: CoroutineScope,
     promptSuggestions: List<PromptMentionDisplayData>,
-    onSlashCommandSelect: (PromptMentionDisplayData) -> Unit,
+    skillSuggestions: List<PickerSkill>,
+    isLoadingSkills: Boolean,
+    skillsLoadFailed: Boolean,
+    canPickSkills: Boolean,
+    onRetrySkills: () -> Unit,
+    onPickerSelect: (ComposerPickerItem) -> Unit,
     isRecording: Boolean,
     isTranscribing: Boolean,
     onStartRecording: () -> Unit,
@@ -66,12 +75,16 @@ internal expect fun ChatComposer(
     compactSuggested: Boolean,
     contextBarPlacement: ContextBarPlacement,
     queuedPausedCount: Int,
+    queueHeldForRefusal: Boolean,
+    isTemporaryChat: Boolean,
     onSendQueuedMessages: () -> Unit,
     isEditingQueued: Boolean,
     onCommitEdit: () -> Unit,
     onCancelEdit: () -> Unit,
     isAwaitingUploadSend: Boolean,
     arePicksUnsettled: Boolean,
+    comparison: ComposerComparison?,
+    comparisonHint: ComposerComparisonHint,
     onCancelPendingSend: () -> Unit,
     queuedMessages: List<QueuedMessage>,
     onEditQueuedMessage: (localId: String) -> Unit,

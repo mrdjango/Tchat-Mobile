@@ -10,6 +10,7 @@ import com.garfiec.librechat.core.model.request.CreateAgentRequest
 import com.garfiec.librechat.core.model.request.RevertAgentRequest
 import com.garfiec.librechat.core.model.request.UpdateAgentRequest
 import com.garfiec.librechat.core.model.response.AgentListResponse
+import com.garfiec.librechat.core.model.response.DuplicateAgentResponse
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.delete
@@ -40,18 +41,30 @@ class AgentsApi constructor(
             if (category != null) parameter("category", category)
         }.body()
 
+    /**
+     * One page of `GET /api/agents` (upstream `getListAgentsHandler`).
+     *
+     * The route reads `limit` and `cursor` (the previous page's `after`); it has no page numbers.
+     * [promoted] narrows to Top picks and is sent as `promoted=1`, the only "on" value the route
+     * matches. [requiredPermission] is the permission bit the caller needs on each agent; omitted,
+     * the server uses VIEW.
+     */
     suspend fun getAgentsPaginated(
-        pageNumber: Int,
-        pageSize: Int,
+        limit: Int,
+        cursor: String? = null,
         search: String? = null,
         category: String? = null,
+        promoted: Boolean = false,
+        requiredPermission: Int? = null,
     ): AgentListResponse =
         client.get {
             url { path("api/agents") }
-            parameter("pageNumber", pageNumber)
-            parameter("pageSize", pageSize)
+            parameter("limit", limit)
+            if (cursor != null) parameter("cursor", cursor)
             if (search != null) parameter("search", search)
             if (category != null) parameter("category", category)
+            if (promoted) parameter("promoted", "1")
+            if (requiredPermission != null) parameter("requiredPermission", requiredPermission)
         }.body()
 
     suspend fun getAgent(agentId: String): Agent {
@@ -62,16 +75,15 @@ class AgentsApi constructor(
     }
 
     /**
-     * Fetches the full agent data for editing via the /expanded endpoint.
+     * Fetches the full agent document from `GET /api/agents/:id/expanded`, which requires EDIT
+     * permission on the agent and returns every field, including instructions, tools, category,
+     * and the full model_parameters.
      *
-     * The standard GET /api/agents/:id endpoint returns only basic view fields
-     * (id, name, description, avatar, provider, model, projectIds, isCollaborative,
-     * isPublic, version, createdAt, updatedAt). It does NOT include instructions,
-     * tools, category, conversation_starters, model_parameters, or other
-     * configuration fields needed for editing.
-     *
-     * The /expanded endpoint (GET /api/agents/:id/expanded) requires EDIT permission
-     * and returns the complete agent document with all fields.
+     * [getAgent] uses `GET /api/agents/:id`, which requires only VIEW and returns id, name,
+     * description, conversation_starters, avatar, provider, model, a safe subset of
+     * model_parameters, isPublic, version, createdAt, updatedAt, support_contact and
+     * owner_contact (author only to the agent's author). It has no instructions, tools,
+     * category or is_promoted.
      */
     suspend fun getAgentForEditing(agentId: String): Agent {
         Logger.d("AgentsApi") { "getAgentForEditing($agentId) - using EXPANDED endpoint" }
@@ -98,7 +110,7 @@ class AgentsApi constructor(
         }
     }
 
-    suspend fun duplicateAgent(agentId: String): Agent =
+    suspend fun duplicateAgent(agentId: String): DuplicateAgentResponse =
         client.post {
             url { path("api/agents/$agentId/duplicate") }
         }.body()

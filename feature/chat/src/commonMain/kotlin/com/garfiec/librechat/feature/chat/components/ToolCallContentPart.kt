@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -69,8 +70,10 @@ internal fun ToolCallDispatcher(
 ) {
     val toolCall = part.toolCall
     val cardKey = toolCall?.id?.takeIf { it.isNotEmpty() } ?: stateKey
-    val toolName = toolCall?.name ?: toolCall?.function?.name ?: "Tool Call"
-    val toolNameLower = toolName.lowercase()
+    val namedTool = toolCall?.name ?: toolCall?.function?.name
+    // Routing reads the tool's own name; the translated fallback is only ever displayed.
+    val toolNameLower = namedTool.orEmpty().lowercase()
+    val toolName = namedTool ?: stringResource(Res.string.tool_call_fallback)
     val output = toolCall?.output ?: toolCall?.function?.output
 
     // Subagent tool_call → collapsible trace card (v0.8.6). Live progress comes
@@ -122,13 +125,14 @@ internal fun ToolCallDispatcher(
             parseAskUserQuestionBatch(toolCall?.args)
                 .ifEmpty { parseAskUserQuestionBatch(toolCall?.function?.arguments) }
         }
+        val failed = toolCall?.inputValidationError == true
         if (batch.isNotEmpty()) {
-            val answers = remember(output) { parseAskUserAnswers(output) }
+            val answers = remember(output, failed) { askUserAnswersOrEmpty(output, failed) }
             AskUserQuestionBatchRecordCard(
                 questions = batch,
                 answers = answers,
                 modifier = modifier,
-                failed = toolCall?.inputValidationError == true,
+                failed = failed,
             )
             return
         }
@@ -139,7 +143,7 @@ internal fun ToolCallDispatcher(
             question = question,
             answer = output.orEmpty(),
             modifier = modifier,
-            failed = toolCall?.inputValidationError == true,
+            failed = failed,
         )
         return
     }
@@ -161,6 +165,22 @@ internal fun ToolCallDispatcher(
     Column(modifier = modifier) {
         val cardModifier = Modifier.fillMaxWidth()
         when {
+            // Exact name, as upstream routes it: `contains` would claim an MCP tool named
+            // "find_skill". Ahead of the `contains` branches below for the same reason.
+            isSkillToolCall(namedTool) -> {
+                val skillName = remember(toolCall) {
+                    parseSkillName(toolCall?.args) ?: parseSkillName(toolCall?.function?.arguments)
+                }
+                SkillCallCard(
+                    skillName = skillName,
+                    verdict = toolCallVerdict(toolCall?.effectiveRunStepStatus, isComplete = true),
+                    intent = intent,
+                    durationMs = toolCall?.runStepDurationMs,
+                    output = output,
+                    stateKey = cardKey,
+                    modifier = cardModifier,
+                )
+            }
             toolNameLower.startsWith(ToolConstants.LC_TRANSFER_TO_PREFIX) -> {
                 val target = toolName.substring(ToolConstants.LC_TRANSFER_TO_PREFIX.length).ifBlank { toolName }
                 AgentHandoffCard(
@@ -171,55 +191,108 @@ internal fun ToolCallDispatcher(
             isWebSearchToolCall(toolNameLower) -> {
                 // The real sources arrive as `web_search` attachments (organic + topStories),
                 // not in the tool-call output — prefer them, falling back to output parsing.
+                val searchData = remember(attachments, toolCall?.id) { webSearchData(attachments, toolCall?.id) }
                 val results = remember(attachments, toolCall?.id, output) {
                     collectWebSearchSources(attachments, toolCall?.id)
                         .ifEmpty { parseWebSearchResults(output) }
                 }
-                if (results.isNotEmpty()) {
-                    WebSearchSourcesCard(results = results, modifier = cardModifier)
-                } else {
-                    GenericToolCallCard(displayName, displayArgs, output, cardModifier, cardKey, toolCall?.effectiveRunStepStatus)
+                val closedStatus = toolCall?.effectiveRunStepStatus
+                val outcome = searchOutcome(
+                    toolCallVerdict(closedStatus, isComplete = true),
+                    output,
+                    finished = closedStatus != null || !output.isNullOrBlank() || results.isNotEmpty(),
+                )
+                val searchCard = claimsWebSearchCard(toolNameLower, hasSources = results.isNotEmpty())
+                when {
+                    !searchCard || outcome == SearchOutcome.FAILED ->
+                        GenericToolCallCard(displayName, displayArgs, output, cardModifier, cardKey, toolCall?.effectiveRunStepStatus)
+                    outcome == SearchOutcome.HIDDEN -> Unit
+                    else -> {
+                        val query = remember(toolCall) {
+                            parseSearchQuery(toolCall?.args) ?: parseSearchQuery(toolCall?.function?.arguments)
+                        }
+                        WebSearchCard(
+                            sources = results,
+                            phase = WebSearchPhase.COMPLETE,
+                            modifier = cardModifier,
+                            turn = webSearchTurn(searchData),
+                            intent = intent,
+                            query = query,
+                            answerBox = remember(searchData) { webSearchAnswerBox(searchData) },
+                            // Inside a group the image, shopping and place results sit below the group.
+                            verticals = if (hideAttachments) {
+                                SearchVerticals.Empty
+                            } else {
+                                remember(searchData) { collectSearchVerticals(searchData) }
+                            },
+                            stateKey = cardKey,
+                            inGroup = hideAttachments,
+                        )
+                    }
                 }
             }
             isFileSearchToolCall(toolNameLower) -> {
                 // Same split as web search: the citations live in the `file_search` attachment,
                 // while the tool output is only a flat digest of them.
-                val citations = remember(attachments, toolCall?.id) {
-                    collectFileSearchSources(attachments, toolCall?.id)
+                val citations = remember(attachments, toolCall?.id, output) {
+                    fileSearchResults(attachments, toolCall?.id, output)
                 }
-                if (citations.isNotEmpty()) {
+                val verdict = toolCallVerdict(toolCall?.effectiveRunStepStatus, isComplete = true)
+                // A settled search with nothing to list keeps the generic card, so its output stays readable.
+                val nothingToList = citations.isEmpty() && verdict == ToolCallVerdict.COMPLETED
+                if (nothingToList || searchOutcome(verdict, output) == SearchOutcome.FAILED) {
+                    GenericToolCallCard(displayName, displayArgs, output, cardModifier, cardKey, toolCall?.effectiveRunStepStatus)
+                } else {
+                    val fileActions = rememberToolFileActions(baseUrl)
                     FileSearchSourcesCard(
                         citations = citations,
                         modifier = cardModifier,
                         stateKey = cardKey,
+                        verdict = verdict,
+                        intent = intent,
+                        durationMs = toolCall?.runStepDurationMs,
+                        onOpen = { citation -> citation.asAttachment()?.let(fileActions::openToolFile) },
+                    )
+                }
+            }
+            isCodeExecutionToolCall(toolNameLower) -> {
+                val result = remember(toolCall) { parseCodeExecution(toolCall) }
+                if (result != null) {
+                    CodeExecutionCard(
+                        result = result,
+                        // A saved part is settled: there is no running phase to restore.
+                        phase = codeExecutionPhase(
+                            toolCallVerdict(toolCall?.effectiveRunStepStatus, isComplete = true),
+                            sandboxStarting = false,
+                            result = result,
+                        ),
+                        // A backgrounded call's step closed at dispatch, so its duration is not the task's.
+                        durationMs = toolCall?.runStepDurationMs?.takeIf { toolCall.backgrounded != true },
+                        stateKey = cardKey,
+                        modifier = cardModifier,
                     )
                 } else {
                     GenericToolCallCard(displayName, displayArgs, output, cardModifier, cardKey, toolCall?.effectiveRunStepStatus)
                 }
             }
-            isCodeExecutionToolCall(toolNameLower) -> {
-                val result = remember(toolCall, toolNameLower) {
-                    parseCodeExecution(toolCall)?.let { r ->
-                        if (r.language == null && isBashToolCall(toolNameLower)) r.copy(language = "bash") else r
-                    }
-                }
-                if (result != null) {
-                    CodeExecutionCard(result = result, modifier = cardModifier)
-                } else {
-                    GenericToolCallCard(displayName, displayArgs, output, cardModifier, cardKey, toolCall?.effectiveRunStepStatus)
-                }
-            }
-            toolNameLower.contains(ToolConstants.MEMORY) -> {
+            isMemoryToolCall(namedTool) -> {
                 // The `memory` attachment carries the key and the remembered value; the tool's own
                 // output is only a sentence about them, which is all a server without the payload
-                // gives us.
-                val artifacts = remember(attachments, toolCall?.id, output) {
-                    collectMemoryArtifacts(attachments, toolCall?.id)
-                        .ifEmpty { listOfNotNull(parseMemoryArtifact(output)) }
+                // gives us. A refusal in that sentence, or an error artifact, draws an error card.
+                val artifacts = remember(namedTool, attachments, toolCall?.id, output) {
+                    memoryToolArtifacts(namedTool, output, attachments, toolCall?.id)
                 }
                 if (artifacts.isNotEmpty()) {
-                    artifacts.forEach { artifact ->
-                        MemoryArtifactCard(artifact = artifact, modifier = cardModifier)
+                    // Spaced as the live cards are, so nothing moves when the reply is saved.
+                    val onManage = LocalOpenMemories.current
+                    Column(modifier = cardModifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        artifacts.forEachIndexed { index, artifact ->
+                            MemoryArtifactCard(
+                                artifact = artifact,
+                                onManage = onManage,
+                                stateKey = memoryCardStateKey(toolCall?.id, index),
+                            )
+                        }
                     }
                 } else {
                     GenericToolCallCard(displayName, displayArgs, output, cardModifier, cardKey, toolCall?.effectiveRunStepStatus)

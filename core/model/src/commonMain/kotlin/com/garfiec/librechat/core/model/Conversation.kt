@@ -1,8 +1,11 @@
 package com.garfiec.librechat.core.model
 
+import com.garfiec.librechat.core.model.media.isImageUrl
+import com.garfiec.librechat.core.model.media.resolveIconSource
 import com.garfiec.librechat.core.model.serializer.LenientInstantSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlin.time.Instant
 
 @Serializable
@@ -64,6 +67,20 @@ data class Conversation(
     @SerialName("url_context") val urlContext: Boolean? = null,
     /** Anthropic prompt-cache duration: `"5m"` | `"1h"` (v0.8.7). Persisted per-conversation. */
     val promptCacheTtl: String? = null,
+    val promptPrefix: String? = null,
+    val modelLabel: String? = null,
+    val chatGptLabel: String? = null,
+    @SerialName("reasoning_summary") val reasoningSummary: String? = null,
+    val verbosity: String? = null,
+    val useResponsesApi: Boolean? = null,
+    val disableStreaming: Boolean? = null,
+    val thinking: Boolean? = null,
+    val thinkingBudget: Int? = null,
+    val promptCache: Boolean? = null,
+    val imageDetail: String? = null,
+    val fileTokenLimit: Int? = null,
+    val region: String? = null,
+    val resendFiles: Boolean? = null,
     /** Whether the conversation is pinned to the top of the list (v0.8.7). */
     val pinned: Boolean? = null,
     /** Chat Project (folder) this conversation is assigned to, or null if unassigned (v0.8.7). */
@@ -79,14 +96,34 @@ data class Conversation(
     val createdAt: Instant? = null,
     @Serializable(with = LenientInstantSerializer::class)
     val updatedAt: Instant? = null,
+    /**
+     * Local only: the [updatedAt] this conversation had when its cached parameters were read off
+     * the server. The list route sends no parameters, so a row it refreshed keeps older ones.
+     */
+    @Transient
+    val parametersAsOf: Instant? = null,
 )
 
 /**
- * Resolves the icon URL to display for this conversation, preferring the per-conversation
- * [iconURL] (set by agents/assistants threads) over the per-endpoint URL from
- * [EndpointConfig.iconURL]. Returns null when no URL is available — callers fall through
- * to the bundled brand glyph or Material fallback.
+ * Resolves the icon URL to display for this conversation, as web's `EndpointIcon`: an image
+ * [iconURL] (a spec's or an agent thread's) wins; otherwise the [EndpointConfig.iconURL] of the
+ * endpoint [iconEndpoint] names. Either is joined to [serverUrl] when it is a rooted, bare or
+ * protocol-relative path, as the picker's icons are ([resolveIconSource]). Returns null when no URL
+ * is available — callers fall through to the bundled brand glyph or Material fallback.
  */
 fun Conversation.resolveEndpointIconUrl(
     endpointConfigs: Map<String, EndpointConfig>,
-): String? = iconURL ?: endpoint?.let { endpointConfigs[it]?.iconURL }
+    serverUrl: String,
+): String? {
+    val icon = iconURL?.takeIf(::isImageUrl)
+        ?: (iconURL?.takeIf { it in endpointConfigs } ?: endpoint)?.let { endpointConfigs[it]?.iconURL }
+    return icon?.takeIf(::isImageUrl)?.let { resolveIconSource(it, endpoint, serverUrl).imageUrl } ?: icon
+}
+
+/**
+ * The endpoint whose glyph stands for this conversation: a spec stores an endpoint or provider
+ * name in [iconURL] (`"groq"` on an OpenAI-compatible endpoint), which wins over [endpoint]. A blank
+ * or image [iconURL] leaves [endpoint].
+ */
+val Conversation.iconEndpoint: String?
+    get() = iconURL?.takeIf { it.isNotBlank() && !isImageUrl(it) } ?: endpoint

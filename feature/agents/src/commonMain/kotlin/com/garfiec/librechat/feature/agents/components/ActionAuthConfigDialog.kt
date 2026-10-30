@@ -30,6 +30,7 @@ import com.garfiec.librechat.core.ui.components.AdaptiveDivider
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedTextField
 import com.garfiec.librechat.core.ui.components.AdaptiveRadioButton
 import com.garfiec.librechat.core.ui.components.clearFocusOnTap
+import com.garfiec.librechat.core.ui.components.excludeFromAutofill
 import com.garfiec.librechat.feature.agents.resources.*
 import com.garfiec.librechat.feature.agents.resources.Res
 import org.jetbrains.compose.resources.stringResource
@@ -77,6 +78,7 @@ internal fun AuthConfigDialog(
     AdaptiveAlertDialog(
         modifier = Modifier.clearFocusOnTap(),
         onDismissRequest = onDismiss,
+        scrollableText = false,
         title = { Text(stringResource(Res.string.label_authentication)) },
         text = {
             Column(
@@ -132,7 +134,7 @@ internal fun AuthConfigDialog(
                             } else {
                                 PasswordVisualTransformation()
                             },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().excludeFromAutofill(),
                         )
 
                         Text(
@@ -204,7 +206,7 @@ internal fun AuthConfigDialog(
                             } else {
                                 PasswordVisualTransformation()
                             },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().excludeFromAutofill(),
                         )
 
                         AdaptiveOutlinedTextField(

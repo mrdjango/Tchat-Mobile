@@ -15,8 +15,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -27,6 +30,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +42,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.garfiec.librechat.core.brand.TchatBrand
 import com.garfiec.librechat.core.data.repository.HeaderWriteFailure
@@ -62,10 +69,11 @@ import com.garfiec.librechat.core.ui.resources.server_headers_unverified_delete
 import com.garfiec.librechat.feature.settings.resources.*
 import com.garfiec.librechat.feature.settings.resources.Res
 import com.garfiec.librechat.feature.settings.screen.sections.BackupCodesDialog
-import com.garfiec.librechat.feature.settings.screen.sections.TwoFactorCodeDialog
 import com.garfiec.librechat.feature.settings.screen.sections.TwoFactorSetupDialog
 import com.garfiec.librechat.feature.settings.viewmodel.AccountSettingsViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.ServerHeadersViewModel
+import com.garfiec.librechat.feature.settings.viewmodel.delegate.ProviderKeysSummary
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 import com.garfiec.librechat.core.ui.resources.Res as UiRes
@@ -79,6 +87,7 @@ fun AccountSettingsScreen(
     onNavigateToFavorites: () -> Unit,
     onNavigateToProviderKeys: () -> Unit,
     onNavigateToRoleSkillsAdmin: () -> Unit,
+    onNavigateToRoleMemoriesAdmin: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -102,6 +111,7 @@ fun AccountSettingsScreen(
             onNavigateToFavorites = onNavigateToFavorites,
             onNavigateToProviderKeys = onNavigateToProviderKeys,
             onNavigateToRoleSkillsAdmin = onNavigateToRoleSkillsAdmin,
+            onNavigateToRoleMemoriesAdmin = onNavigateToRoleMemoriesAdmin,
             snackbarHostState = snackbarHostState,
             modifier = Modifier
                 .fillMaxSize()
@@ -121,6 +131,7 @@ fun AccountSettingsContent(
     onNavigateToFavorites: () -> Unit,
     onNavigateToProviderKeys: () -> Unit,
     onNavigateToRoleSkillsAdmin: () -> Unit,
+    onNavigateToRoleMemoriesAdmin: () -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(),
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
@@ -141,6 +152,22 @@ fun AccountSettingsContent(
     // would strand them — and reopening deliberately won't re-read while they are unsaved, so the
     // next open would present a truncated credential as the configured one.
     var showServerHeadersDialog by rememberSaveable { mutableStateOf(false) }
+
+    // The Provider Keys row's summary loads once, the first time this tab is composed resumed (the
+    // pager also lays it out beside the visible tab, and again on scrolling back, each replaying
+    // ON_RESUME to the new observer), and re-reads on each resume the entry itself goes through:
+    // back from Provider Keys (NavDisplay holds an animating scene at STARTED) or from another app.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        var replaying = true
+        val observer = LifecycleEventObserver { _, event ->
+            if (event != Lifecycle.Event.ON_RESUME) return@LifecycleEventObserver
+            if (replaying) viewModel.loadProviderKeysSummary() else viewModel.refreshProviderKeysSummary()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        replaying = false
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LaunchedEffect(uiState.error) {
         val error = uiState.error ?: return@LaunchedEffect
@@ -219,12 +246,7 @@ fun AccountSettingsContent(
                     AdaptiveSectionHeader(stringResource(Res.string.section_balance))
                 }
                 adaptiveSection {
-                    row(key = "balance_section") {
-                        BalanceSection(
-                            tokenCredits = uiState.tokenCredits,
-                            isLoading = uiState.isBalanceLoading,
-                        )
-                    }
+                    balanceRows(uiState.balance, onRetry = viewModel::retryBalance)
                 }
             }
 
@@ -257,7 +279,7 @@ fun AccountSettingsContent(
                         isTwoFactorEnabled = uiState.isTwoFactorEnabled,
                         isLoading = uiState.isTwoFactorLoading,
                         onToggleTwoFactor = viewModel::toggleTwoFactor,
-                        onViewBackupCodes = viewModel::viewBackupCodes,
+                        onRegenerateBackupCodes = viewModel::requestRegenerateBackupCodes,
                     )
                 }
                 // TCHAT: LibreChat's own programmatic API keys (REMOTE_AGENTS) and per-endpoint
@@ -272,13 +294,28 @@ fun AccountSettingsContent(
                             onClick = onNavigateToApiKeys,
                         )
                     }
-                    row(key = "provider_keys_row") {
-                        AccountSettingsRow(
-                            icon = Icons.Default.Key,
-                            title = stringResource(Res.string.provider_keys_title),
-                            subtitle = stringResource(Res.string.provider_keys_subtitle),
-                            onClick = onNavigateToProviderKeys,
-                        )
+                    // Hidden when no reachable endpoint takes a user-provided value: the page would be empty.
+                    // Shown while the endpoint configs haven't loaded, so the page's load error and Retry stay reachable.
+                    val providerKeys = uiState.providerKeysSummary
+                    if (providerKeys != ProviderKeysSummary.Hidden) {
+                        row(key = "provider_keys_row") {
+                            AccountSettingsRow(
+                                icon = Icons.Default.VpnKey,
+                                title = stringResource(Res.string.provider_keys_title),
+                                // The general line until every endpoint has answered, then the count.
+                                subtitle = if (providerKeys is ProviderKeysSummary.Count) {
+                                    pluralStringResource(
+                                        Res.plurals.provider_keys_row_summary,
+                                        providerKeys.totalCount,
+                                        providerKeys.setCount,
+                                        providerKeys.totalCount,
+                                    )
+                                } else {
+                                    stringResource(Res.string.provider_keys_subtitle)
+                                },
+                                onClick = onNavigateToProviderKeys,
+                            )
+                        }
                     }
                 }
                 row(key = "favorites_row") {
@@ -289,14 +326,23 @@ fun AccountSettingsContent(
                         onClick = onNavigateToFavorites,
                     )
                 }
-                // Admin-only: role skill access. Fail-CLOSED — shown only for ADMIN.
+                // Admin-only: role skill and memory access. Fail-CLOSED — shown only for ADMIN.
                 if (uiState.isAdmin) {
                     row(key = "role_skills_admin_row") {
                         AccountSettingsRow(
-                            icon = Icons.Default.Star,
+                            // Skills' own icon, as on the Skills page: Star is Favorites, the row above.
+                            icon = Icons.Default.Extension,
                             title = stringResource(Res.string.role_skills_settings_row),
                             subtitle = stringResource(Res.string.role_skills_description),
                             onClick = onNavigateToRoleSkillsAdmin,
+                        )
+                    }
+                    row(key = "role_memories_admin_row") {
+                        AccountSettingsRow(
+                            icon = Icons.Default.Lightbulb,
+                            title = stringResource(Res.string.role_memories_settings_row),
+                            subtitle = stringResource(Res.string.role_memories_description),
+                            onClick = onNavigateToRoleMemoriesAdmin,
                         )
                     }
                 }
@@ -341,14 +387,41 @@ fun AccountSettingsContent(
             )
         }
 
-        // 2FA disable dialog
+        // 2FA disable dialog. Takes a backup code too: losing the authenticator is the usual
+        // reason to turn 2FA off, and the server accepts either.
         if (uiState.showDisableTwoFactorDialog) {
-            TwoFactorCodeDialog(
+            OtpVerificationDialog(
                 title = stringResource(Res.string.dialog_title_disable_2fa),
                 description = stringResource(Res.string.twofa_disable_instructions),
                 isLoading = uiState.isTwoFactorLoading,
-                onConfirm = viewModel::confirmDisableTwoFactor,
+                onVerify = { token, backupCode ->
+                    viewModel.confirmDisableTwoFactor(token = token, backupCode = backupCode)
+                },
                 onDismiss = viewModel::dismissDisableTwoFactorDialog,
+                verifyLabel = stringResource(Res.string.otp_verify),
+                cancelLabel = stringResource(Res.string.otp_cancel),
+                backupCodeLabel = stringResource(Res.string.otp_backup_code_label),
+                useBackupToggleLabel = stringResource(Res.string.otp_use_backup_code),
+                useOtpToggleLabel = stringResource(Res.string.otp_use_otp_code),
+            )
+        }
+
+        // Regenerating invalidates every existing code, so it is confirmed before the code prompt.
+        if (uiState.showRegenerateBackupCodesConfirm) {
+            AdaptiveAlertDialog(
+                onDismissRequest = viewModel::dismissRegenerateBackupCodesConfirm,
+                title = { Text(stringResource(Res.string.dialog_title_regenerate_backup_codes)) },
+                text = { Text(stringResource(Res.string.regenerate_backup_codes_warning)) },
+                confirmButton = {
+                    TextButton(onClick = viewModel::confirmRegenerateBackupCodes) {
+                        Text(stringResource(Res.string.action_regenerate))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = viewModel::dismissRegenerateBackupCodesConfirm) {
+                        Text(stringResource(Res.string.action_cancel))
+                    }
+                },
             )
         }
 
@@ -475,7 +548,7 @@ fun AccountSettingsContent(
                 description = stringResource(Res.string.otp_desc_regenerate_backup_codes),
                 isLoading = uiState.isTwoFactorLoading,
                 onVerify = { token, backupCode ->
-                    viewModel.viewBackupCodesWithOtp(token = token, backupCode = backupCode)
+                    viewModel.regenerateBackupCodesWithOtp(token = token, backupCode = backupCode)
                 },
                 onDismiss = viewModel::dismissBackupCodesOtpDialog,
                 verifyLabel = stringResource(Res.string.otp_verify),

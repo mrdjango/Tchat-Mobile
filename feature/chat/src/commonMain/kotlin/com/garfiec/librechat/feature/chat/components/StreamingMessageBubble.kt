@@ -25,6 +25,10 @@ import com.garfiec.librechat.core.ui.components.AvatarImage
 import com.garfiec.librechat.core.ui.components.BubbleShape
 import com.garfiec.librechat.core.ui.components.endpointIconPainter
 import com.garfiec.librechat.core.ui.components.isMonochromeEndpointIcon
+import com.garfiec.librechat.feature.chat.resources.Res
+import com.garfiec.librechat.feature.chat.resources.cd_assistant_responding
+import com.garfiec.librechat.feature.chat.resources.cd_generating_response
+import org.jetbrains.compose.resources.stringResource
 
 // Shared BubbleShape is imported from MessageBubble.kt
 
@@ -37,6 +41,10 @@ import com.garfiec.librechat.core.ui.components.isMonochromeEndpointIcon
  * first delta. See StreamingCursor.kt. The reply's reasoning so far ([streamingThinking]) sits above
  * it in a collapsed Thinking block, as the persisted message shows its THINK parts, rather than as
  * body text.
+ *
+ * [pendingSkills] are the skills the turn picked, each a "Running X" row at the top of the reply's
+ * content, under the sender row: where the finalized message draws the skill cards the server
+ * prepends, so the swap doesn't move them past the header.
  */
 @Composable
 fun StreamingMessageBubble(
@@ -51,6 +59,7 @@ fun StreamingMessageBubble(
     showBubbles: Boolean = false,
     useKatex: Boolean = false,
     streamingThinking: String = "",
+    pendingSkills: List<String> = emptyList(),
 ) {
     if (chatLayoutStyle == ChatLayoutConstants.TWO_SIDED) {
         TwoSidedStreamingBubble(
@@ -63,6 +72,7 @@ fun StreamingMessageBubble(
             showBubbles = showBubbles,
             useKatex = useKatex,
             streamingThinking = streamingThinking,
+            pendingSkills = pendingSkills,
             modifier = modifier,
         )
     } else {
@@ -76,6 +86,7 @@ fun StreamingMessageBubble(
             showBubbles = showBubbles,
             useKatex = useKatex,
             streamingThinking = streamingThinking,
+            pendingSkills = pendingSkills,
             modifier = modifier,
         )
     }
@@ -92,8 +103,10 @@ private fun ThreadStreamingBubble(
     showBubbles: Boolean,
     useKatex: Boolean,
     streamingThinking: String,
+    pendingSkills: List<String>,
     modifier: Modifier = Modifier,
 ) {
+    val liveCd = streamingLiveDescription(streamingContent)
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -147,13 +160,10 @@ private fun ThreadStreamingBubble(
                 )
                 .semantics {
                     liveRegion = LiveRegionMode.Polite
-                    contentDescription = if (streamingContent.isNotBlank()) {
-                        "Assistant is responding: $streamingContent"
-                    } else {
-                        "Assistant is generating a response"
-                    }
+                    contentDescription = liveCd
                 },
         ) {
+            StreamingPendingSkills(pendingSkills)
             StreamingThinking(streamingThinking, fontSizeMultiplier, useKatex)
             if (streamingContent.isNotBlank()) {
                 // Routed through TextContentPart so artifact directives render as cards while the
@@ -185,8 +195,10 @@ private fun TwoSidedStreamingBubble(
     showBubbles: Boolean,
     useKatex: Boolean,
     streamingThinking: String,
+    pendingSkills: List<String>,
     modifier: Modifier = Modifier,
 ) {
+    val liveCd = streamingLiveDescription(streamingContent)
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -229,11 +241,7 @@ private fun TwoSidedStreamingBubble(
                 )
                 .semantics {
                     liveRegion = LiveRegionMode.Polite
-                    contentDescription = if (streamingContent.isNotBlank()) {
-                        "Assistant is responding: $streamingContent"
-                    } else {
-                        "Assistant is generating a response"
-                    }
+                    contentDescription = liveCd
                 },
         ) {
             Text(
@@ -248,6 +256,7 @@ private fun TwoSidedStreamingBubble(
                 },
             )
             Spacer(modifier = Modifier.height(4.dp))
+            StreamingPendingSkills(pendingSkills)
             StreamingThinking(streamingThinking, fontSizeMultiplier, useKatex)
             if (streamingContent.isNotBlank()) {
                 // Routed through TextContentPart so artifact directives render as cards while the
@@ -273,6 +282,22 @@ private fun TwoSidedStreamingBubble(
  * expands it mid-stream keeps it expanded as deltas arrive — but not across settle: the persisted
  * THINK part has its own key and opens collapsed (an accepted limit, see feature/chat CLAUDE.md).
  */
+/** What a screen reader announces as the reply streams in. */
+@Composable
+private fun streamingLiveDescription(streamingContent: String): String = if (streamingContent.isNotBlank()) {
+    stringResource(Res.string.cd_assistant_responding, streamingContent)
+} else {
+    stringResource(Res.string.cd_generating_response)
+}
+
+/** One "Running X" row per picked skill, until the final message brings the real cards. */
+@Composable
+private fun StreamingPendingSkills(names: List<String>) {
+    names.forEach { name ->
+        PendingSkillCallRow(skillName = name, modifier = Modifier.padding(bottom = 4.dp))
+    }
+}
+
 @Composable
 private fun StreamingThinking(thinking: String, fontSizeMultiplier: Float, useKatex: Boolean) {
     if (thinking.isBlank()) return
@@ -284,4 +309,27 @@ private fun StreamingThinking(thinking: String, fontSizeMultiplier: Float, useKa
         streaming = true,
     )
     Spacer(modifier = Modifier.height(4.dp))
+}
+
+/**
+ * Padding for the live reply's sibling items (tool cards, workspace changes, office previews,
+ * memory) so they sit in the column its text uses, which is where the persisted message renders
+ * them: `MessageBubble`'s content column on both platforms (avatar column, plus the bubble's own
+ * padding when bubbles are on). Without it they land full width while streaming and shift inward
+ * when the reply settles.
+ */
+internal fun Modifier.streamingContentColumnPadding(
+    chatLayoutStyle: String,
+    showAvatars: Boolean,
+    showBubbles: Boolean,
+): Modifier {
+    val bubblePad = if (showBubbles) 12.dp else 0.dp
+    return if (chatLayoutStyle == ChatLayoutConstants.TWO_SIDED) {
+        val inner = if (showBubbles) 12.dp else 4.dp
+        val avatar = if (showAvatars) 28.dp + 6.dp else 0.dp
+        padding(start = 8.dp + avatar + inner, end = 8.dp + inner, top = 4.dp, bottom = 4.dp)
+    } else {
+        val avatar = if (showAvatars) 36.dp else 0.dp
+        padding(start = 16.dp + avatar + bubblePad, end = 16.dp + bubblePad, top = 4.dp, bottom = 4.dp)
+    }
 }

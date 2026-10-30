@@ -3,8 +3,12 @@ package com.garfiec.librechat.core.data.repository
 import com.garfiec.librechat.core.model.FileReference
 import com.garfiec.librechat.core.model.request.AddedConversation
 import com.garfiec.librechat.core.model.request.ChatRequest
+import com.garfiec.librechat.core.model.request.EditedContent
 import com.garfiec.librechat.core.model.request.EphemeralAgent
 import com.garfiec.librechat.core.model.request.NO_PARENT
+import com.garfiec.librechat.core.model.request.manualSkillsSupportedOn
+import com.garfiec.librechat.core.model.request.normalizeManualSkills
+import com.garfiec.librechat.core.model.request.withManualSkillsFlag
 import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -39,8 +43,18 @@ object ChatPayloadBuilder {
         ephemeralAgent: EphemeralAgent? = null,
         isTemporary: Boolean = false,
         quotes: List<String>? = null,
+        spec: String? = null,
+        chatProjectId: String? = null,
+        manualSkills: List<String>? = null,
+        editedContent: EditedContent? = null,
     ): ChatRequest {
         val resolvedParentMessageId = parentMessageId ?: NO_PARENT
+        // Assistants take none (upstream createPayload strips them there). Otherwise deduped and
+        // capped the way the server resolves them.
+        val sentSkills = if (manualSkillsSupportedOn(endpoint)) normalizeManualSkills(manualSkills) else emptyList()
+        // A non-agent turn that names skills sends the ephemeral skills flag; the resume pin
+        // applies the same rule so the two fingerprints match.
+        val resolvedEphemeralAgent = ephemeralAgent.withManualSkillsFlag(endpoint, sentSkills)
 
         return ChatRequest(
             text = text,
@@ -52,6 +66,7 @@ object ChatPayloadBuilder {
             key = key,
             modelDisplayLabel = modelDisplayLabel,
             model = model,
+            spec = spec,
             agentId = agentId,
             overrideParentMessageId = overrideParentMessageId,
             responseMessageId = responseMessageId,
@@ -61,12 +76,11 @@ object ChatPayloadBuilder {
             // `getCompactionRejection` 400s `INVALID_COMPACTION_REQUEST` on ANY of `isRegenerate`,
             // `isContinued`, `editedContent` or `responseMessageId` arriving alongside `compact`.
             //
-            // Only `isRegenerate` is dropped here, because it is the only one a compaction sets:
-            // `compactConversationNow` is the sole `compact = true` caller and passes nothing
-            // else, so the other three sit at their defaults and never reach the wire. A future
-            // caller that does set one has to drop it here too — this line is not a guard for
-            // them. Upstream drops its own the same way, `isRegenerate: compact === true ?
-            // undefined : isRegenerate` in packages/data-provider/src/createPayload.ts.
+            // `isRegenerate` and `editedContent` are dropped here structurally. `isContinued` and
+            // `responseMessageId` are not: they rely on `compactConversationNow`, the sole
+            // `compact = true` caller, never setting them. Upstream drops its own the same way,
+            // `isRegenerate: compact === true ? undefined : isRegenerate` in
+            // packages/data-provider/src/createPayload.ts.
             isRegenerate = if (compact == true) false else isRegenerate,
             compact = compact,
             isContinued = isContinued,
@@ -74,7 +88,8 @@ object ChatPayloadBuilder {
             quotes = quotes?.takeIf { it.isNotEmpty() },
             files = files?.takeIf { it.isNotEmpty() },
             addedConvo = addedConvo,
-            ephemeralAgent = ephemeralAgent,
+            ephemeralAgent = resolvedEphemeralAgent,
+            manualSkills = sentSkills.ifEmpty { null },
             isTemporary = if (isTemporary) true else null,
             // v0.8.7 #13815: the user's IANA zone (e.g. "America/New_York") so the server resolves
             // agent {{current_date}}/{{current_datetime}} to the user's wall clock, not its own.
@@ -85,6 +100,8 @@ object ChatPayloadBuilder {
             // Minted here (once per send) and encoded once by `toBody`, so it stays byte-stable
             // across any transport-level retry of the same POST. Additive; ignored if unclaimed.
             clientRequestId = Uuid.random().toString(),
+            chatProjectId = chatProjectId,
+            editedContent = if (compact == true) null else editedContent,
         )
     }
 

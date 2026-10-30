@@ -20,7 +20,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
@@ -55,9 +54,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.garfiec.librechat.core.common.ToolConstants
+import com.garfiec.librechat.core.model.files.fileKindOf
 import com.garfiec.librechat.core.model.response.UploadRoute
 import com.garfiec.librechat.core.ui.components.AdaptiveAssistChip
 import com.garfiec.librechat.core.ui.components.AdaptiveCircularProgressIndicator
+import com.garfiec.librechat.core.ui.components.FileTypeTile
+import com.garfiec.librechat.core.ui.components.fileKindGlyph
 import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
 import com.garfiec.librechat.feature.chat.resources.*
 import com.garfiec.librechat.feature.chat.resources.Res
@@ -95,6 +97,8 @@ fun AttachmentChipsRow(
                 hasWebSearch = ToolConstants.WEB_SEARCH in enabledTools,
                 hasCode = ToolConstants.CODE_INTERPRETER in enabledTools,
                 hasFileSearch = ToolConstants.FILE_SEARCH in enabledTools,
+                // Present only where the toggle is offered and on (see ChatUiState.effectiveEnabledTools).
+                hasSkills = ToolConstants.SKILLS in enabledTools,
                 selectedMcpServers = mcpServers.filter { it.name in selectedMcpServerNames },
             )
         }
@@ -102,9 +106,10 @@ fun AttachmentChipsRow(
     val hasWebSearch = ephemeral.hasWebSearch
     val hasCode = ephemeral.hasCode
     val hasFileSearch = ephemeral.hasFileSearch
+    val hasSkills = ephemeral.hasSkills
     val selectedMcpServers = ephemeral.selectedMcpServers
     val hasMcp = selectedMcpServers.isNotEmpty()
-    val hasAnyChip = hasFiles || hasWebSearch || hasCode || hasFileSearch || hasMcp
+    val hasAnyChip = hasFiles || hasWebSearch || hasCode || hasFileSearch || hasSkills || hasMcp
 
     var showFilePreview by remember { mutableStateOf(false) }
 
@@ -177,12 +182,21 @@ fun AttachmentChipsRow(
                     )
                 }
 
+                // Skills chip (per-conversation toggle)
+                if (hasSkills) {
+                    ToolIndicatorChip(
+                        label = stringResource(Res.string.tool_skills),
+                        icon = Icons.Default.Extension,
+                        semanticDescription = stringResource(Res.string.cd_skills_enabled),
+                    )
+                }
+
                 // MCP server chips — one chip per selected server
                 selectedMcpServers.forEach { server ->
                     ToolIndicatorChip(
                         label = server.title ?: server.name,
                         icon = Icons.Default.Extension,
-                        semanticDescription = "${server.title ?: server.name} MCP server enabled",
+                        semanticDescription = stringResource(Res.string.cd_mcp_server_enabled, server.title ?: server.name),
                     )
                 }
             }
@@ -306,8 +320,11 @@ private fun InlineFilePreviewRow(
     }
 }
 
+/** One corner for the thumbnail, the type tile and the upload scrim drawn over either. */
+private val PREVIEW_ITEM_SHAPE = RoundedCornerShape(8.dp)
+
 /**
- * Individual file preview: image thumbnail or file icon with filename.
+ * Individual file preview: image thumbnail, or the file's type tile with its name.
  * Has a small circular X button in the top-right corner.
  */
 @Composable
@@ -329,35 +346,31 @@ private fun FilePreviewItem(
                 contentDescription = stringResource(Res.string.cd_preview_file, file.name),
                 modifier = Modifier
                     .size(56.dp)
-                    .clip(RoundedCornerShape(8.dp)),
+                    .clip(PREVIEW_ITEM_SHAPE),
                 contentScale = ContentScale.Crop,
             )
         } else {
-            Column(
-                modifier = Modifier
-                    .size(56.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        shape = RoundedCornerShape(8.dp),
+            val kind = remember(file.name, file.type) { fileKindOf(file.name, file.type) }
+            FileTypeTile(kind = kind, size = 56.dp, shape = PREVIEW_ITEM_SHAPE) {
+                Column(
+                    modifier = Modifier.padding(4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(
+                        imageVector = fileKindGlyph(kind),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = Color.White,
                     )
-                    .padding(4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.InsertDriveFile,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = file.name,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = file.name,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
 
@@ -367,7 +380,7 @@ private fun FilePreviewItem(
             Box(
                 modifier = Modifier
                     .size(56.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(PREVIEW_ITEM_SHAPE)
                     .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f)),
                 contentAlignment = Alignment.Center,
             ) {
@@ -392,7 +405,7 @@ private fun FilePreviewItem(
             Box(
                 modifier = Modifier
                     .size(56.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(PREVIEW_ITEM_SHAPE)
                     .background(MaterialTheme.colorScheme.error.copy(alpha = 0.6f)),
                 contentAlignment = Alignment.Center,
             ) {
@@ -459,5 +472,6 @@ private data class EphemeralChips(
     val hasWebSearch: Boolean = false,
     val hasCode: Boolean = false,
     val hasFileSearch: Boolean = false,
+    val hasSkills: Boolean = false,
     val selectedMcpServers: List<McpServerDisplayData> = emptyList(),
 )

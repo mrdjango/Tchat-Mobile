@@ -4,33 +4,46 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
 import com.garfiec.librechat.core.common.BackendVersion
+import com.garfiec.librechat.core.common.EndpointConstants
 import com.garfiec.librechat.core.common.identity.AccountTransition
 import com.garfiec.librechat.core.common.identity.ActiveAccountProvider
 import com.garfiec.librechat.core.common.identity.accountTransitions
+import com.garfiec.librechat.core.common.identity.currentAccountId
 import com.garfiec.librechat.core.common.result.Result
-import com.garfiec.librechat.core.data.datastore.SettingsDataStore
+import com.garfiec.librechat.core.data.bookmarks.BookmarkPickerController
 import com.garfiec.librechat.core.data.repository.ChatRepository
 import com.garfiec.librechat.core.data.repository.ConfigRepository
 import com.garfiec.librechat.core.data.repository.ConversationRepository
 import com.garfiec.librechat.core.data.repository.ProjectRepository
 import com.garfiec.librechat.core.data.repository.RoleRepository
-import com.garfiec.librechat.core.data.repository.ShareRepository
 import com.garfiec.librechat.core.data.repository.TagRepository
+import com.garfiec.librechat.core.data.repository.bookmarksEnabled
+import com.garfiec.librechat.core.data.share.ShareLinkController
+import com.garfiec.librechat.core.data.share.ShareLinkControllerFactory
 import com.garfiec.librechat.core.model.ChatProject
 import com.garfiec.librechat.core.model.Conversation
-import com.garfiec.librechat.core.model.ConversationTag
+import com.garfiec.librechat.core.model.EndpointConfig
 import com.garfiec.librechat.core.model.SAVED_TAG
+import com.garfiec.librechat.core.model.config.ModelSpecs
 import com.garfiec.librechat.core.model.config.isSchedulesEnabled
 import com.garfiec.librechat.core.model.permissions.Permission
 import com.garfiec.librechat.core.model.permissions.PermissionType
+import com.garfiec.librechat.core.model.permissions.UserRolePermissions
 import com.garfiec.librechat.core.model.permissions.canCreateSharedLinks
+import com.garfiec.librechat.core.model.permissions.canReachMemoriesSettings
 import com.garfiec.librechat.core.model.permissions.hasAccessOrPermissive
+import com.garfiec.librechat.feature.conversations.components.message
 import com.garfiec.librechat.feature.conversations.export.ConversationExporter
 import com.garfiec.librechat.feature.conversations.export.ExportFormat
+import com.garfiec.librechat.feature.conversations.resources.Res
+import com.garfiec.librechat.feature.conversations.resources.favorite_update_failed
 import com.garfiec.librechat.feature.conversations.viewmodel.ConversationListActionsDelegate
 import com.garfiec.librechat.feature.conversations.viewmodel.ConversationListEvent
 import com.garfiec.librechat.feature.conversations.viewmodel.ProjectActionsDelegate
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -41,6 +54,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
@@ -50,6 +64,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
 /**
@@ -65,14 +80,22 @@ class DrawerViewModel(
     private val tagRepository: TagRepository,
     private val projectRepository: ProjectRepository,
     private val configRepository: ConfigRepository,
-    private val shareRepository: ShareRepository,
+    shareLinkControllerFactory: ShareLinkControllerFactory,
     private val conversationExporter: ConversationExporter,
     private val activeAccountProvider: ActiveAccountProvider,
-    private val settingsDataStore: SettingsDataStore,
+    private val preferences: DrawerPreferences,
     private val chatRepository: ChatRepository,
+    private val search: DrawerSearchSources,
 ) : ViewModel() {
 
-    private val conversationListStateHolder = ConversationListStateHolder(conversationRepository, viewModelScope)
+    private val conversationListStateHolder = ConversationListStateHolder(
+        conversationRepository = conversationRepository,
+        scope = viewModelScope,
+        remoteTitleSearch = search::remoteTitles,
+    )
+
+    private val messageSearch: Flow<DrawerMessageSearch> =
+        search.messageSearch(conversationListStateHolder.searchQuery, activeAccountProvider)
 
     private val favoriteConversations: StateFlow<List<Conversation>> =
         conversationListStateHolder.recentConversations
@@ -88,17 +111,16 @@ class DrawerViewModel(
             .map { list -> list.filter { it.pinned == true } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Inputs for the drawer long-press action menu: the user-defined tags (excluding favorites,
-    // same filter as ConversationListViewModel.observeTags) for the tag picker, plus the
-    // config-driven shared-links flag and the SHARED_LINKS role permission that gate the Share action.
+    // Inputs for the drawer long-press action menu and the bookmark surfaces: the config-driven
+    // shared-links flag and the SHARED_LINKS role permission that gate the Share action, and the one
+    // bookmarks gate (BOOKMARKS USE and interface.bookmarks) behind the stars, Favorites and the
+    // checklist.
     private val drawerActionMenuState: StateFlow<DrawerActionMenuState> =
         combine(
-            tagRepository.observeTags()
-                .map { tags -> tags.filter { it.count > 0 && it.tag != SAVED_TAG } },
             configRepository.startupConfig,
             configRepository.detectedBackendVersion,
             roleRepository.userPermissions,
-        ) { tags, config, version, permissions ->
+        ) { config, version, permissions ->
             // Gate fail-closed on unknown version so older servers don't surface actions
             // they'd 404 on. Thresholds differ: POST /api/convos/pin landed BETWEEN
             // v0.8.7-rc1 and v0.8.7 final (upstream 743f57f63), so pin needs the final;
@@ -111,13 +133,27 @@ class DrawerViewModel(
             // top would only add a second way to get it wrong. `isSchedulesEnabled` is the one
             // reader; do not fold it into a generic interface-flag helper.
             val schedulesEnabled = isSchedulesEnabled(config?.interfaceConfig?.schedules)
-            DrawerActionMenuState(tags, canShare, pinSupported, projectsSupported, schedulesEnabled)
+            DrawerActionMenuState(
+                bookmarksEnabled = bookmarksEnabled(permissions, config?.interfaceConfig),
+                sharedLinksEnabled = canShare,
+                pinEnabled = pinSupported,
+                projectsEnabled = projectsSupported,
+                schedulesEnabled = schedulesEnabled,
+            )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DrawerActionMenuState())
 
     // Chat Projects (v0.8.7). Loaded lazily for the move-to-project picker and the drawer's Projects
-    // tab folder list; the server is the source of truth (no local cache).
+    // tab folder list, every page, in the user's Switchboard-only custom order (the server keeps none).
     private val _projects = MutableStateFlow<List<ChatProject>>(emptyList())
     val projects: StateFlow<List<ChatProject>> = _projects.asStateFlow()
+
+    private var projectsLoadJob: Job? = null
+    private var projectOrderSaveJob: Job? = null
+    private var expandedChatsJob: Job? = null
+
+    /** Parent of the star's writes still queued or out, which an account switch drops. */
+    private val favoriteWrites = SupervisorJob(viewModelScope.coroutineContext[Job])
+    private var lastProjectsReload: TimeSource.Monotonic.ValueTimeMark? = null
 
     // Inline project-chat accordion for the drawer Projects tab. Network-direct per project (Room
     // can't filter by project — see ProjectChatsViewModel), single-expand: only the open project's
@@ -127,16 +163,34 @@ class DrawerViewModel(
     private val _expandedProjectChats = MutableStateFlow<List<Conversation>>(emptyList())
     private val _expandedProjectLoading = MutableStateFlow(false)
 
+    // This transport snapshot needs no structural equality. A concrete type also keeps the
+    // native optimizer from joining this configuration to unrelated generic Pair payloads.
+    private class DrawerModelConfig(
+        val endpoints: Map<String, EndpointConfig>,
+        val specs: ModelSpecs?,
+        val serverUrl: String,
+    ) {
+        fun display(convo: Conversation, activeId: String?) =
+            convo.toDrawerDisplayData(activeId, endpoints, serverUrl, specs)
+    }
+
+    private val drawerModelConfig = combine(
+        configRepository.endpointConfigs,
+        // Only the specs matter here: any other startup-config change would re-map the whole list.
+        configRepository.startupConfig.map { it?.modelSpecs }.distinctUntilChanged(),
+        configRepository.serverUrl,
+    ) { endpoints, specs, serverUrl -> DrawerModelConfig(endpoints, specs, serverUrl) }
+
     val inlineProjectChats: StateFlow<InlineProjectChatsState> = combine(
         _expandedProjectId,
         _expandedProjectChats,
         _expandedProjectLoading,
         conversationListStateHolder.activeConversationId,
-        configRepository.endpointConfigs,
-    ) { expandedId, convos, loading, activeId, configs ->
+        drawerModelConfig,
+    ) { expandedId, convos, loading, activeId, modelConfig ->
         InlineProjectChatsState(
             expandedProjectId = expandedId,
-            conversations = convos.map { it.toDrawerDisplayData(activeId, configs) },
+            conversations = convos.map { modelConfig.display(it, activeId) },
             isLoading = loading,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), InlineProjectChatsState())
@@ -148,8 +202,15 @@ class DrawerViewModel(
     private val _events = MutableSharedFlow<ConversationListEvent>(extraBufferCapacity = 1)
     val events: SharedFlow<ConversationListEvent> = _events.asSharedFlow()
 
+    /**
+     * The long-press menu's "Bookmarks…" checklist, one chat at a time. A tick or create that fails
+     * says so in the sheet; a load that closes it, or a save that fails after it closed, surfaces as
+     * the drawer's error toasts.
+     */
+    val bookmarkPicker = BookmarkPickerController(tagRepository, viewModelScope)
+
     // Shared row-action logic (rename/archive/delete/share/duplicate/export) — the same delegate
-    // ConversationListViewModel and ProjectChatsViewModel use, so the drawer long-press menu surfaces
+    // ProjectChatsViewModel uses, so the drawer long-press menu surfaces
     // Result.Error failures (toast) instead of swallowing them in a dead try/catch around a
     // Result-returning repo call. Room-backed here, so onMutated is a no-op: the conversation
     // observe-Flow already re-emits after a mutation.
@@ -158,7 +219,7 @@ class DrawerViewModel(
         events = _events,
         conversationRepository = conversationRepository,
         tagRepository = tagRepository,
-        shareRepository = shareRepository,
+        shareLinkControllerFactory = shareLinkControllerFactory,
         conversationExporter = conversationExporter,
         onMutated = {},
     )
@@ -167,8 +228,6 @@ class DrawerViewModel(
     private val projectActions = ProjectActionsDelegate(
         scope = viewModelScope,
         projectRepository = projectRepository,
-        onChanged = { loadProjects() },
-        onDeleted = { loadProjects() },
         emitError = { _events.emit(ConversationListEvent.ShowError(it)) },
     )
 
@@ -181,27 +240,19 @@ class DrawerViewModel(
 
     fun setDrawerLibraryTab(tab: DrawerTab) {
         _drawerLibraryTab.value = tab
-        viewModelScope.launch { settingsDataStore.setDrawerLibraryTab(tab.toStorageString()) }
+        viewModelScope.launch { preferences.settings.setDrawerLibraryTab(tab.toStorageString()) }
     }
 
     /**
      * Role-permission flags for drawer UI. Permissive-default (`?: true`) until the
      * role loads; once it does, denied permissions flip the flags off and the drawer
-     * re-composes to hide the corresponding surfaces.
+     * re-composes to hide the corresponding surfaces. Skills also needs the agents
+     * endpoint's `skills` capability (see [isSkillsNavEnabled]).
      */
     private val drawerPermissionFlags: StateFlow<DrawerPermissionFlags> =
-        roleRepository.userPermissions
-            .map { role ->
-                DrawerPermissionFlags(
-                    agentsEnabled = role.hasAccessOrPermissive(PermissionType.AGENTS, Permission.USE),
-                    bookmarksEnabled = role.hasAccessOrPermissive(PermissionType.BOOKMARKS, Permission.USE),
-                    // USE gate is fail-OPEN (read/list visibility); mutation gating
-                    // lives fail-CLOSED inside feature/skills.
-                    skillsEnabled = role.hasAccessOrPermissive(PermissionType.SKILLS, Permission.USE),
-                    schedulesPermitted =
-                        role.hasAccessOrPermissive(PermissionType.SCHEDULES, Permission.USE),
-                )
-            }
+        combine(roleRepository.userPermissions, configRepository.endpointConfigs) { role, endpoints ->
+            drawerPermissionFlags(role, endpoints[EndpointConstants.AGENTS]?.capabilities)
+        }
             .stateIn(viewModelScope, SharingStarted.Eagerly, DrawerPermissionFlags())
 
     /**
@@ -220,19 +271,29 @@ class DrawerViewModel(
         favoriteConversations,
         pinnedConversations,
         conversationListStateHolder.activeConversationId,
-        configRepository.endpointConfigs,
-    ) { grouped, favConvos, pinnedConvos, activeId, endpointConfigs ->
+        drawerModelConfig,
+    ) { grouped, favConvos, pinnedConvos, activeId, modelConfig ->
         DrawerDisplaySnapshot(
             grouped = grouped.map { (group, convos) ->
-                group to convos.map { it.toDrawerDisplayData(activeId, endpointConfigs) }
+                group to convos.map { modelConfig.display(it, activeId) }
             },
-            favorites = favConvos.map { it.toDrawerDisplayData(activeId, endpointConfigs) },
-            pinned = pinnedConvos.map { it.toDrawerDisplayData(activeId, endpointConfigs) },
+            favorites = favConvos.map { modelConfig.display(it, activeId) },
+            pinned = pinnedConvos.map { modelConfig.display(it, activeId) },
         )
     }
 
+    /** The search query as typed, for the field itself; [drawerUiState] carries it a beat later. */
+    val searchQuery: StateFlow<String> = conversationListStateHolder.searchQuery
+
+    /**
+     * Where the drawer's cursor and list were. Unfolding a Fold moves the drawer from the phone sheet
+     * to the tablet sidebar, a new place in the tree (and usually a recreated activity), so nothing
+     * the old one remembered reaches the new one; this instance is shared by both.
+     */
+    val viewMemory = DrawerViewMemory()
+
     val drawerUiState: StateFlow<DrawerUiState> = combine(
-        displayConversations,
+        combine(displayConversations, messageSearch) { display, messages -> display to messages },
         conversationListStateHolder.searchQuery,
         combine(
             conversationListStateHolder.isRefreshing,
@@ -243,9 +304,10 @@ class DrawerViewModel(
         },
         drawerPermissionFlags,
         drawerActionMenuState,
-    ) { display, query, refreshState, perms, actionMenu ->
+    ) { (display, messages), query, refreshState, perms, actionMenu ->
         val (refreshing, loadingMore, hasMore) = refreshState
         DrawerUiState(
+            messageSearch = if (query.isBlank()) DrawerMessageSearch.Idle else messages,
             groupedConversations = display.grouped,
             favoriteConversations = display.favorites,
             pinnedConversations = display.pinned,
@@ -254,32 +316,36 @@ class DrawerViewModel(
             isLoadingMore = loadingMore,
             hasMore = hasMore,
             agentsEnabled = perms.agentsEnabled,
-            bookmarksEnabled = perms.bookmarksEnabled,
+            marketplaceEnabled = perms.marketplaceEnabled,
+            bookmarksEnabled = actionMenu.bookmarksEnabled,
             skillsEnabled = perms.skillsEnabled,
+            promptsEnabled = perms.promptsEnabled,
+            mcpServersEnabled = perms.mcpServersEnabled,
+            memoriesEnabled = perms.memoriesEnabled,
             // BOTH halves, in upstream's order: the permission, then the server flag.
             schedulesEnabled = perms.schedulesPermitted && actionMenu.schedulesEnabled,
-            availableTags = actionMenu.availableTags,
             sharedLinksEnabled = actionMenu.sharedLinksEnabled,
             pinEnabled = actionMenu.pinEnabled,
             projectsEnabled = actionMenu.projectsEnabled,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, DrawerUiState())
 
+    /** The footer's Workspace row and tray: what the gates allow, split into pinned and the rest. */
+    val workspace: StateFlow<WorkspaceUiState> =
+        combine(drawerUiState.map { it.visibleWorkspace }.distinctUntilChanged(), preferences.pins.pinned, ::workspaceUiState)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, WorkspaceUiState())
+
+    /** Whether [accountId] is still the active account: a hit drawn before a switch is not opened. */
+    fun isActiveAccount(accountId: String): Boolean = activeAccountProvider.currentAccountId()?.value == accountId
+
     private companion object {
+        private val PROJECTS_RELOAD_MERGE = 1.seconds
         const val ACTIVE_JOBS_POLL_MS = 5_000L
         const val ACTIVE_JOBS_GRACE_MS = 30_000L
     }
 
-    private data class DrawerPermissionFlags(
-        val agentsEnabled: Boolean = true,
-        val bookmarksEnabled: Boolean = true,
-        val skillsEnabled: Boolean = true,
-        /** The permission half only. Scheduled chats need the server flag too — see the combine. */
-        val schedulesPermitted: Boolean = true,
-    )
-
     private data class DrawerActionMenuState(
-        val availableTags: List<ConversationTag> = emptyList(),
+        val bookmarksEnabled: Boolean = true,
         val sharedLinksEnabled: Boolean = false,
         val pinEnabled: Boolean = false,
         val projectsEnabled: Boolean = false,
@@ -329,7 +395,7 @@ class DrawerViewModel(
             activeJobsPoll.collect { _activeJobIds.value = it }
         }
         viewModelScope.launch {
-            val persisted = DrawerTab.fromString(settingsDataStore.drawerLibraryTab.first())
+            val persisted = DrawerTab.fromString(preferences.settings.drawerLibraryTab.first())
             _drawerLibraryTab.update { it ?: persisted }
         }
         // Load the Chat Projects folders once the backend is known to support them (v0.8.7-rc1+).
@@ -341,6 +407,18 @@ class DrawerViewModel(
                 }
             }
         }
+        viewModelScope.launch {
+            projectRepository.revision.drop(1).collect { reloadProjects(force = true) }
+        }
+        viewModelScope.launch {
+            bookmarkPicker.failures.collect { _events.emit(ConversationListEvent.ShowErrorRes(it.message)) }
+        }
+        // Bookmarks turned off (role or server config) while the checklist was up: take it down.
+        viewModelScope.launch {
+            drawerActionMenuState.map { it.bookmarksEnabled }.distinctUntilChanged().collect { enabled ->
+                if (!enabled) bookmarkPicker.close()
+            }
+        }
         // The active account changed underneath this Activity-scoped VM. This is the drawer half of
         // the reset the nav shell also performs (NavHostViewModel runs the nav/session half against
         // its own independent accountTransitions() subscription — the flow is cold per-collector, so
@@ -350,10 +428,19 @@ class DrawerViewModel(
         viewModelScope.launch {
             activeAccountProvider.accountTransitions().collect { transition ->
                 _activeJobIds.value = emptySet()
+                // A share sheet open on the outgoing account's chat must not act on the new one.
+                conversationActions.closeShareSheet()
+                // Ticks still queued for the outgoing account's chat too: their legs would reach the
+                // new account's server.
+                bookmarkPicker.closeForAccountSwitch()
+                favoriteWrites.cancelChildren()
+                // A load started for the outgoing account would otherwise land after this reset.
+                projectsLoadJob?.cancel()
+                // An order not yet written for an account being signed out would outlive its purge.
+                projectOrderSaveJob?.cancel()
+                lastProjectsReload = null
                 _projects.value = emptyList()
-                _expandedProjectId.value = null
-                _expandedProjectChats.value = emptyList()
-                _expandedProjectLoading.value = false
+                closeExpandedProject()
                 conversationListStateHolder.reset()
                 // No tagRepository.clearCache() here: observeTags() is account-scoped, so the
                 // outgoing account's tags never show, and RefreshTagsSessionTask (fired by the nav
@@ -378,11 +465,15 @@ class DrawerViewModel(
 
     /**
      * Pull-to-refresh: refreshes the drawer conversation list + favorites + tags. The explicit tag
-     * refresh is wanted here because a manual refresh has no session-task machinery behind it.
+     * refresh is wanted here because a manual refresh has no session-task machinery behind it. Not
+     * while bookmarks are off: the tags route answers 403 to a role without BOOKMARKS USE.
      */
     fun refreshConversations() {
         conversationListStateHolder.refreshConversations()
-        viewModelScope.launch { tagRepository.refreshTags() }
+        // Read at the source, not from the drawer's WhileSubscribed state, which is permissive until collected.
+        val enabled =
+            bookmarksEnabled(roleRepository.userPermissions.value, configRepository.startupConfig.value?.interfaceConfig)
+        if (enabled) viewModelScope.launch { tagRepository.refreshTags() }
     }
 
     /**
@@ -403,20 +494,25 @@ class DrawerViewModel(
         conversationListStateHolder.onSearchQueryChanged(query)
     }
 
-    fun toggleFavorite(conversationId: String, currentTags: List<String>) {
-        viewModelScope.launch {
-            val result = tagRepository.toggleFavorite(conversationId, currentTags)
+    /**
+     * The star or the menu's Favorite on [conversationId]. [favorite] is what the user asked for (the
+     * opposite of what the row showed), so a stale row or a repeat tap changes nothing.
+     */
+    fun setFavorite(conversationId: String, favorite: Boolean) {
+        viewModelScope.launch(favoriteWrites) {
+            val result = tagRepository.setConversationTag(conversationId, SAVED_TAG, attached = favorite)
             if (result is Result.Error) {
                 Logger.w(result.exception) { "Failed to toggle favorite for $conversationId" }
                 // Surface the failure like the row-action delegate does, instead of only logging —
                 // otherwise a failed favorite from the drawer gives the user no feedback.
-                _events.emit(ConversationListEvent.ShowError(result.message ?: "Failed to update favorite"))
+                _events.emit(ConversationListEvent.ShowErrorRes(Res.string.favorite_update_failed))
             }
         }
     }
 
     // --- Drawer conversation action menu (long-press). Row actions route through the shared
-    // ConversationListActionsDelegate; favorite/pin/tags stay local (different signatures). ---
+    // ConversationListActionsDelegate; favorite/pin stay local (different signatures), bookmarks
+    // go through [bookmarkPicker]. ---
 
     fun renameConversation(id: String, newTitle: String) = conversationActions.renameConversation(id, newTitle)
 
@@ -439,14 +535,30 @@ class DrawerViewModel(
      */
     fun toggleProjectExpanded(projectId: String) {
         if (_expandedProjectId.value == projectId) {
-            _expandedProjectId.value = null
-            _expandedProjectChats.value = emptyList()
+            closeExpandedProject()
             return
         }
         _expandedProjectId.value = projectId
         _expandedProjectChats.value = emptyList()
         _expandedProjectLoading.value = true
-        viewModelScope.launch {
+        loadExpandedChats(projectId)
+    }
+
+    /** Also run when a folder is picked up to drag, so every row is one line and the rows swap evenly. */
+    fun closeExpandedProject() {
+        expandedChatsJob?.cancel()
+        _expandedProjectId.value = null
+        _expandedProjectChats.value = emptyList()
+        _expandedProjectLoading.value = false
+    }
+
+    /**
+     * Loads the open folder's chats, latest wins. The spinner is cleared by whichever load finishes,
+     * so a reload that replaces a folder's first load also ends that load's spinner.
+     */
+    private fun loadExpandedChats(projectId: String) {
+        expandedChatsJob?.cancel()
+        expandedChatsJob = viewModelScope.launch {
             val result = conversationRepository.getConversationsForProject(projectId = projectId)
             // The user may have collapsed or opened another folder while this was in flight.
             if (_expandedProjectId.value != projectId) return@launch
@@ -459,22 +571,82 @@ class DrawerViewModel(
         }
     }
 
-    /** Loads the user's projects for the move-to-project picker. */
+    /**
+     * Reloads the folders and the open folder's chats, keeping the rows on screen meanwhile. Runs on
+     * a project change (which includes a new chat filed into one) and when the Projects tab comes on
+     * screen.
+     */
+    fun reloadProjects(force: Boolean = false) {
+        if (!drawerUiState.value.projectsEnabled) return
+        // The drawer opening and the panel sliding into view land within a moment of each other; one
+        // fetch answers both. A project change is news, so it always reloads.
+        val last = lastProjectsReload
+        if (!force && last != null && last.elapsedNow() < PROJECTS_RELOAD_MERGE) return
+        lastProjectsReload = TimeSource.Monotonic.markNow()
+        loadProjects()
+        _expandedProjectId.value?.let(::loadExpandedChats)
+    }
+
+    /** Loads the user's projects for the folder list and the move-to-project picker. */
     fun loadProjects() {
-        viewModelScope.launch {
-            when (val result = projectRepository.listProjects()) {
-                is Result.Success -> _projects.value = result.data.projects
+        // Latest wins: create-then-assign bumps the revision twice, and an older answer landing last
+        // would leave a stale count.
+        projectsLoadJob?.cancel()
+        val pendingSave = projectOrderSaveJob
+        projectsLoadJob = viewModelScope.launch {
+            // Arranged against the saved order, so a drop still being written would be undone.
+            pendingSave?.join()
+            when (val result = projectRepository.listAllProjectsInCustomOrder()) {
+                is Result.Success -> {
+                    _projects.value = result.data.projects
+                    // The open folder was deleted (here or on the Projects index): close it, which
+                    // also drops the header's "New chat in" for it. Only a whole list can say a
+                    // project is gone. Not in a project is never listed.
+                    val expanded = _expandedProjectId.value
+                    if (expanded != null && expanded != ChatProject.UNASSIGNED &&
+                        result.data.isComplete &&
+                        result.data.projects.none { it.id == expanded }
+                    ) {
+                        closeExpandedProject()
+                    }
+                }
                 is Result.Error -> Logger.w(result.exception) { "Failed to load projects" }
                 is Result.Loading -> Unit
             }
         }
     }
 
+    /**
+     * **Switchboard-only.** The user dropped a dragged folder: [orderedIds] is the drawer's new order.
+     * Shown at once and saved on the device. A load in flight would be arranged against the old
+     * order and land over the drop, so it is restarted behind the save instead.
+     */
+    fun reorderProjects(orderedIds: List<String>) {
+        val current = _projects.value
+        val byId = current.associateBy { it.id }
+        val dropped = orderedIds.toSet()
+        // A reload during the drag may have added a project the dragged list never had: it keeps
+        // its place at the end rather than voiding the drop.
+        val reordered = orderedIds.mapNotNull(byId::get) + current.filter { it.id !in dropped }
+        if (reordered == current) return
+        // The list on screen is this account's; the save must go to it even if it runs after a switch.
+        val accountId = activeAccountProvider.currentAccountId() ?: return
+        val loadWasRunning = projectsLoadJob?.isActive == true
+        projectsLoadJob?.cancel()
+        _projects.value = reordered
+        val previousSave = projectOrderSaveJob
+        projectOrderSaveJob = viewModelScope.launch {
+            previousSave?.join()
+            projectRepository.saveProjectOrder(accountId, reordered.map { it.id })
+        }
+        if (loadWasRunning) loadProjects()
+    }
+
     /** Assigns [conversationId] to [projectId], or unassigns it when null. */
     fun moveConversationToProject(conversationId: String, projectId: String?) {
         viewModelScope.launch {
             when (val result = projectRepository.assignConversation(conversationId, projectId)) {
-                is Result.Success -> onProjectAssignmentChanged()
+                is Result.Success -> Unit
                 is Result.Error -> {
                     Logger.e(result.exception) { "Failed to move conversation to project" }
                     _events.emit(ConversationListEvent.ShowError("Failed to move conversation"))
@@ -494,7 +666,7 @@ class DrawerViewModel(
                             Logger.e(assign.exception) { "Failed to assign new project" }
                             _events.emit(ConversationListEvent.ShowError("Failed to move conversation"))
                         }
-                        is Result.Success -> onProjectAssignmentChanged()
+                        is Result.Success -> Unit
                         is Result.Loading -> Unit
                     }
                 }
@@ -507,24 +679,14 @@ class DrawerViewModel(
         }
     }
 
-    /**
-     * Refresh the Projects mode after a conversation's project assignment changes: reload the
-     * folders, whose conversationCount is now stale.
-     */
-    private fun onProjectAssignmentChanged() {
-        loadProjects()
-    }
+    fun createProject(name: String, description: String) = projectActions.create(name, description)
 
-    fun createProject(name: String) = projectActions.create(name)
-
-    fun renameProject(projectId: String, name: String) = projectActions.rename(projectId, name)
+    fun editProject(projectId: String, name: String, description: String) =
+        projectActions.edit(projectId, name, description)
 
     fun deleteProject(projectId: String) {
         // Collapse the inline accordion if the deleted project was open, so its stale chats clear.
-        if (_expandedProjectId.value == projectId) {
-            _expandedProjectId.value = null
-            _expandedProjectChats.value = emptyList()
-        }
+        if (_expandedProjectId.value == projectId) closeExpandedProject()
         projectActions.delete(projectId)
     }
 
@@ -534,7 +696,11 @@ class DrawerViewModel(
         isActive = conversationListStateHolder.activeConversationId.value == id,
     )
 
+    val shareLink: ShareLinkController get() = conversationActions.shareLink
+
     fun shareConversation(conversationId: String) = conversationActions.shareConversation(conversationId)
+
+    fun closeShareSheet() = conversationActions.closeShareSheet()
 
     fun duplicateConversation(conversationId: String, title: String?) =
         conversationActions.duplicateConversation(conversationId, title)
@@ -542,24 +708,36 @@ class DrawerViewModel(
     fun exportConversation(conversationId: String, title: String?, format: ExportFormat) =
         conversationActions.exportConversation(conversationId, title, format)
 
-    /**
-     * Persists the user-chosen tags for [conversationId], preserving favorite status.
-     * [currentTags] is the conversation's existing tag list (to detect the SAVED_TAG).
-     */
-    fun updateConversationTags(conversationId: String, currentTags: List<String>, userTags: List<String>) {
-        val wasFavorited = SAVED_TAG in currentTags
-        val cleaned = userTags.filterNot { it == SAVED_TAG }
-        val finalTags = if (wasFavorited) cleaned + SAVED_TAG else cleaned
-        viewModelScope.launch {
-            when (tagRepository.setConversationTags(conversationId, finalTags)) {
-                is Result.Success -> {
-                    tagRepository.refreshTags()
-                }
-                is Result.Error -> {
-                    _events.emit(ConversationListEvent.ShowError("Failed to update tags"))
-                }
-                is Result.Loading -> { /* no-op */ }
-            }
-        }
+    /** Opens the bookmark checklist on [conversationId]: its bookmarks are read from the server first. */
+    fun openBookmarks(conversationId: String) {
+        if (!drawerUiState.value.bookmarksEnabled) return
+        bookmarkPicker.open(conversationId)
     }
 }
+
+internal data class DrawerPermissionFlags(
+    val agentsEnabled: Boolean = true,
+    val marketplaceEnabled: Boolean = true,
+    /** Fail-closed on the capability half, so false until the endpoint config arrives. */
+    val skillsEnabled: Boolean = false,
+    /** The permission half only. Scheduled chats need the server flag too — see the combine. */
+    val schedulesPermitted: Boolean = true,
+    val promptsEnabled: Boolean = true,
+    val mcpServersEnabled: Boolean = true,
+    val memoriesEnabled: Boolean = true,
+)
+
+/**
+ * The role's drawer flags; a null role (still loading, failed, timed out) is permissive. Skills also
+ * needs the agents endpoint's [agentsCapabilities] to include `skills` ([isSkillsNavEnabled]).
+ */
+internal fun drawerPermissionFlags(role: UserRolePermissions?, agentsCapabilities: List<String>?): DrawerPermissionFlags =
+    DrawerPermissionFlags(
+        agentsEnabled = role.hasAccessOrPermissive(PermissionType.AGENTS, Permission.USE),
+        marketplaceEnabled = role.hasAccessOrPermissive(PermissionType.MARKETPLACE, Permission.USE),
+        skillsEnabled = isSkillsNavEnabled(role, agentsCapabilities),
+        schedulesPermitted = role.hasAccessOrPermissive(PermissionType.SCHEDULES, Permission.USE),
+        promptsEnabled = role.hasAccessOrPermissive(PermissionType.PROMPTS, Permission.USE),
+        mcpServersEnabled = role.hasAccessOrPermissive(PermissionType.MCP_SERVERS, Permission.USE),
+        memoriesEnabled = role.canReachMemoriesSettings(),
+    )

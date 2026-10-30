@@ -10,6 +10,7 @@
     <string name="action_insert">Einfügen</string>
     <string name="action_open">Öffnen</string>
     <string name="action_share">Teilen</string>
+    <string name="action_share_link_active">Teilen · Link aktiv</string>
     <string name="action_search">Suchen</string>
     <string name="action_archive">Archivieren</string>
     <string name="action_duplicate">Duplizieren</string>
@@ -19,7 +20,17 @@
     <string name="new_chat">Neuer Chat</string>
     <string name="load_preset">Vorlage laden</string>
     <string name="save_as_preset">Als Vorlage speichern</string>
-    <string name="save_and_submit">Speichern &amp; senden</string>
+    <string name="saving">Wird gespeichert…</string>
+    <string name="rerun">Erneut ausführen</string>
+    <string name="update_and_rerun">Aktualisieren &amp; erneut ausführen</string>
+    <string name="edit_part_response">Antwort</string>
+    <string name="edit_part_thoughts">Gedanken</string>
+    <string name="edit_status_part_empty">Ein Teil der Nachricht darf nicht leer sein.</string>
+    <string name="edit_status_save_before_rerun">Speichere deine Änderungen, bevor du erneut ausführst.</string>
+    <string name="edit_status_unsaved_changes">Nicht gespeicherte Änderungen.</string>
+    <string name="edit_status_rerun_discards_changes">Erneutes Ausführen erzeugt diese Antwort neu und verwirft deine Änderungen.</string>
+    <string name="edit_status_rerun_needs_user_turn">Für das erneute Ausführen wird eine Nutzernachricht benötigt.</string>
+    <string name="notice_message_save_failed">Deine Änderung konnte nicht gespeichert werden.</string>
     <string name="preset_name_label">Vorlagenname</string>
     <string name="code">Code</string>
     <string name="preview">Vorschau</string>
@@ -29,7 +40,24 @@
     <!-- Neutral label for the active agent when its name hasn't resolved yet (never a model string). -->
     <string name="chat_agent_fallback_label">Agent</string>
     <string name="compare_models">Modelle vergleichen</string>
+    <string name="compare_with">Vergleichen mit</string>
+    <string name="compare_start">Starten</string>
+    <string name="compare_setup_hint">Jede Nachricht geht an beide Modelle. Tippe auf A oder B, um sein Modell zu wählen.</string>
+    <string name="compare_same_model">Gleiches Modell, zweite Antwort</string>
+    <string name="compare_pick_below">Unten auswählen</string>
+    <string name="compare_message_both">Nachricht an beide Modelle</string>
+    <string name="compare_pick_to_send">Wähle Modell B zum Senden</string>
+    <string name="compare_not_picked">Noch nicht gewählt</string>
+    <string name="compare_empty_lane">Sende eine Nachricht, um hier seine Antwort zu sehen.</string>
+    <string name="compare_empty_pick_right">Wähle rechts ein Modell zum Vergleichen.</string>
+    <string name="compare_empty_ready">Tippe auf „Starten“ und sende dann eine Nachricht. Beide Modelle antworten nebeneinander.</string>
+    <string name="compare_browse_all">Alle Modelle durchsuchen</string>
+    <string name="compare_pick_second_model">Zweites Modell wählen</string>
+    <string name="cd_change_compared_models">Verglichene Modelle ändern</string>
+    <string name="compare_lane_a">A</string>
+    <string name="compare_lane_b">B</string>
     <string name="how_can_i_help">Wie kann ich dir heute helfen?</string>
+    <string name="chat_in_project">In %1$s</string>
     <string name="recording">Aufnahme läuft…</string>
     <string name="hint_message_model">Nachricht an %1$s</string>
     <string name="hint_message">Nachricht…</string>
@@ -61,6 +89,9 @@
     <string name="cd_more_options">Weitere Optionen</string>
     <string name="cd_scroll_to_bottom">Nach unten scrollen</string>
     <string name="cd_select_model">Modell auswählen</string>
+    <string name="cd_starter_send">Senden</string>
+    <string name="cd_starter_edit">Vor dem Senden bearbeiten</string>
+    <string name="starters_try_asking">Frag zum Beispiel</string>
     <string name="cd_librechat">Switchboard</string>
     <string name="cd_comparison_enabled">Vergleich aktiviert</string>
 
@@ -100,7 +131,6 @@
     <string name="cd_code_execution_result">Ergebnis der Code-Ausführung</string>
     <string name="cd_exit_code_success">Exit-Code 0 (Erfolg)</string>
     <string name="cd_exit_code_failure">Exit-Code %1$d (Fehler)</string>
-    <string name="exit_code">Exit %1$d</string>
     <string name="label_code">Code</string>
     <string name="label_output">Ausgabe:</string>
     <string name="label_error">Fehler:</string>
@@ -179,8 +209,6 @@
     <string name="trace_error_unsupported">Der Tracing-Dienst dieses Servers kann keine Traces liefern.</string>
 
     <!-- Office-doc preview attachments (deferred preview, v0.8.6+) -->
-    <string name="office_preview_preparing">Vorschau von %1$s wird vorbereitet…</string>
-    <string name="office_preview_failed">Vorschau von %1$s nicht möglich (%2$s)</string>
     <string name="office_preview_unavailable">%1$s — Vorschau nicht verfügbar</string>
 
     <!-- Content descriptions - Tool calls -->
@@ -200,8 +228,15 @@
     <string name="tool_model">Modell</string>
     <string name="tool_model_parameters">Modellparameter</string>
     <string name="tool_model_parameters_desc">Temperatur, Tokens und mehr anpassen</string>
+    <string name="param_set_by_spec">Die Einstellungen dieses Modells legt der Server fest. Sie lassen sich hier nicht ändern.</string>
+    <string name="tool_set_by_spec">Für dieses Modell vom Server aktiviert</string>
     <string name="tool_web_search">Websuche</string>
     <string name="tool_web_search_desc">Im Web nach Informationen suchen</string>
+    <string name="web_search_librechat">LibreChat-Suche</string>
+    <string name="web_search_checking">LibreChat-Suche wird geprüft…</string>
+    <string name="web_search_built_in">Integrierte Suche von %1$s</string>
+    <string name="web_search_built_in_plain">Integrierte Suche</string>
+    <string name="web_search_set_by_spec">%1$s, für dieses Modell vom Server aktiviert</string>
     <string name="web_searched">Im Web gesucht</string>
     <string name="tool_url_context">URL-Kontext</string>
     <string name="tool_url_context_desc">Das Modell von dir genannte URLs und YouTube-Videos lesen lassen</string>
@@ -254,8 +289,12 @@
     <string name="audio_decode_failed">Audio konnte nicht dekodiert werden</string>
 
     <!-- Citation -->
-    <string name="citation_number">Quelle %1$d</string>
-    <string name="cd_open_citation_url">Quellen-URL öffnen</string>
+    <string name="citation_sources_title">Quellen</string>
+    <string name="cd_citation">Quelle: %1$s</string>
+    <plurals name="cd_citation_more">
+        <item quantity="one">Quelle: %1$s und %2$d weitere</item>
+        <item quantity="other">Quelle: %1$s und %2$d weitere</item>
+    </plurals>
 
     <!-- Fork options -->
     <string name="fork_conversation">Unterhaltung verzweigen</string>
@@ -286,18 +325,27 @@
     <string name="cd_mcp_resource">MCP-Ressource: %1$s</string>
 
     <!-- Memory artifact -->
-    <string name="cd_memory_artifact">Erinnerungsartefakt: %1$s</string>
-    <string name="memory_artifact_untitled">Ohne Titel</string>
     <string name="label_memory">Erinnerung</string>
-    <string name="cd_memory_artifacts">Aktualisierte Erinnerungen: %1$d</string>
+    <string name="memory_manage">Verwalten</string>
+    <string name="cd_memory_manage">Erinnerungen verwalten</string>
+    <plurals name="cd_memory_artifacts_summary">
+        <item quantity="one">%1$s, %2$s Änderung</item>
+        <item quantity="other">%1$s, %2$s Änderungen</item>
+    </plurals>
     <string name="memory_updated">Gespeicherte Erinnerung aktualisiert</string>
     <string name="memory_error">Erinnerungsfehler</string>
     <string name="memory_updated_items">Aktualisierte Erinnerungen</string>
     <string name="memory_deleted_items">Gelöschte Erinnerungen</string>
     <string name="memory_deleted">Erinnerung gelöscht</string>
     <string name="memory_storage_full">Erinnerungsspeicher voll</string>
-    <string name="memory_already_exceeded">Erinnerungsspeicher bereits voll – um %1$d Tokens überschritten. Lösche vorhandene Erinnerungen, bevor du neue hinzufügst.</string>
-    <string name="memory_would_exceed">Speichern nicht möglich – Limit würde um %1$d Tokens überschritten. Lösche vorhandene Erinnerungen, um Platz zu schaffen.</string>
+    <plurals name="memory_already_exceeded">
+        <item quantity="one">Erinnerungsspeicher bereits voll – um %1$s Token überschritten. Lösche vorhandene Erinnerungen, bevor du neue hinzufügst.</item>
+        <item quantity="other">Erinnerungsspeicher bereits voll – um %1$s Tokens überschritten. Lösche vorhandene Erinnerungen, bevor du neue hinzufügst.</item>
+    </plurals>
+    <plurals name="memory_would_exceed">
+        <item quantity="one">Speichern nicht möglich – Limit würde um %1$s Token überschritten. Lösche vorhandene Erinnerungen, um Platz zu schaffen.</item>
+        <item quantity="other">Speichern nicht möglich – Limit würde um %1$s Tokens überschritten. Lösche vorhandene Erinnerungen, um Platz zu schaffen.</item>
+    </plurals>
     <string name="files_searched">Deine Dateien durchsucht</string>
     <string name="cd_file_search_source">Quelle der Dateisuche: %1$s</string>
     <string name="file_search_relevance">%1$d %%</string>
@@ -318,10 +366,7 @@
     <!-- Message files -->
     <string name="file_fallback">Datei</string>
     <string name="attachment_fallback">Anhang</string>
-    <string name="pdf_document">PDF-Dokument</string>
     <string name="pdf_load_failed">PDF konnte nicht geladen werden</string>
-    <string name="cd_share_pdf">PDF teilen</string>
-    <string name="cd_open_pdf">PDF öffnen</string>
     <string name="retry">Erneut versuchen</string>
     <string name="messages_unavailable_title">Nachrichten nicht verfügbar</string>
     <string name="messages_unavailable_body">Diese Unterhaltung konnte nicht geladen werden und auf diesem Gerät ist keine Offline-Kopie gespeichert.</string>
@@ -333,8 +378,12 @@
     <string name="cd_unpin_favorite">Favorit lösen</string>
     <string name="cd_collapse_section">%1$s einklappen</string>
     <string name="cd_expand_section">%1$s ausklappen</string>
-    <string name="set_api_key_action">API-Schlüssel festlegen</string>
-    <string name="cd_set_api_key">API-Schlüssel für %1$s konfigurieren</string>
+    <string name="set_api_key_action">Schlüssel hinzufügen</string>
+    <string name="cd_set_api_key">Schlüssel für %1$s hinzufügen</string>
+    <!-- Under an endpoint or spec name in the model picker when its key is missing. -->
+    <string name="model_selector_needs_key">Braucht deinen Schlüssel</string>
+    <!-- Same place, in the minute before the server deletes an expired key. -->
+    <string name="model_selector_key_expired">Schlüssel abgelaufen</string>
 
     <!-- Preset picker -->
     <string name="select_preset">Vorlage auswählen</string>
@@ -446,22 +495,31 @@
     <string name="dialog_title_fill_variables">Variablen ausfüllen</string>
 
     <!-- Comparison mode -->
-    <string name="continue_with_response">Mit dieser Antwort fortfahren</string>
-    <string name="waiting_for_response">Warten auf Antwort…</string>
+    <string name="keep_this_answer">Diese Antwort behalten</string>
+    <string name="reply_stopped">Angehalten</string>
+    <string name="action_continue_reply">Fortsetzen</string>
+    <string name="action_keep_and_continue">Behalten und fortsetzen</string>
 
     <!-- Provider Keys chat-time errors. -->
     <string name="provider_keys_chat_error_no_key">Kein Schlüssel gefunden. Bitte gib einen Schlüssel an und versuche es erneut.</string>
-    <!-- {0} = endpoint name, {1} = expiredAt (server-locale string, NOT ISO) -->
+    <!-- {0} = endpoint name, {1} = expiry date and time, already formatted in the user's locale -->
     <string name="provider_keys_chat_error_expired">Der angegebene Schlüssel für %1$s ist am %2$s abgelaufen. Bitte gib einen neuen Schlüssel an und versuche es erneut.</string>
     <string name="provider_keys_chat_error_invalid">Ungültiger Schlüssel angegeben. Bitte gib einen gültigen Schlüssel an und versuche es erneut.</string>
-    <!-- Snackbar action label that deep-links to Settings → Provider Keys -->
-    <string name="provider_keys_chat_error_cta">Schlüsseleinstellungen öffnen</string>
+    <string name="provider_keys_chat_error_no_key_for">Kein Schlüssel für %1$s gefunden. Bitte gib einen Schlüssel an und versuche es erneut.</string>
+    <string name="provider_keys_chat_error_invalid_for">Ungültiger Schlüssel für %1$s angegeben. Bitte gib einen gültigen Schlüssel an und versuche es erneut.</string>
+    <string name="provider_keys_chat_error_expired_no_label">Der angegebene Schlüssel ist am %1$s abgelaufen. Bitte gib einen neuen Schlüssel an und versuche es erneut.</string>
+    <string name="provider_keys_chat_error_no_base_url">Keine Basis-URL gefunden. Bitte gib eine an und versuche es erneut.</string>
+    <string name="provider_keys_chat_error_no_base_url_for">Keine Basis-URL für %1$s gefunden. Bitte gib eine an und versuche es erneut.</string>
+    <string name="provider_keys_chat_error_invalid_base_url">Die angegebene Basis-URL verweist auf eine eingeschränkte Adresse. Bitte verwende eine gültige externe URL und versuche es erneut.</string>
+    <string name="provider_keys_chat_error_invalid_base_url_for">Die angegebene Basis-URL für %1$s verweist auf eine eingeschränkte Adresse. Bitte verwende eine gültige externe URL und versuche es erneut.</string>
     <string name="queued_messages_dropped_account_switch">Nachrichten in der Warteschlange wurden nach dem Kontowechsel verworfen</string>
 
     <!-- Send block reasons (shown in error snackbar when send can't proceed) -->
     <string name="send_block_select_agent">Wähle einen Agenten aus, bevor du deine Nachricht sendest.</string>
     <string name="send_block_select_model">Wähle ein Modell aus, bevor du deine Nachricht sendest.</string>
+    <string name="send_block_select_second_model">Wähle Modell B aus der Liste, bevor du sendest.</string>
     <string name="send_block_agents_unavailable">Agenten sind auf diesem Server nicht verfügbar. Bitte wähle ein anderes Modell.</string>
+    <string name="send_block_api_key_required">Füge deinen API-Schlüssel für %1$s hinzu, um Nachrichten zu senden.</string>
     <string name="send_block_agent_not_available">Der ausgewählte Agent ist auf diesem Server nicht verfügbar. Bitte wähle einen anderen Agenten.</string>
     <string name="send_block_model_not_available">Das ausgewählte Modell ist auf diesem Server nicht verfügbar. Bitte wähle ein anderes Modell.</string>
     <string name="send_block_model_load_failed">Das ausgewählte Modell konnte noch nicht geladen werden. Bitte versuche es erneut oder wähle ein anderes Modell.</string>
@@ -544,6 +602,9 @@
     <string name="error_auth_banned">Dieses Konto oder Netzwerk ist für die Anmeldung gesperrt. Wende dich an einen Administrator.</string>
     <string name="error_auth_cross_origin">Der Server hat die Anmeldung abgelehnt, da sie von einer anderen Website zu kommen scheint. Bitte melde das – es ist ein App-Fehler, kein Passwortproblem.</string>
     <string name="error_share_limit">Zu viele Anfragen für geteilte Links. Warte einen Moment und versuche es erneut.</string>
+    <string name="error_message_limit">Du hast das Nachrichtenlimit dieses Servers erreicht. Warte eine Weile und versuche es dann erneut.</string>
+    <string name="error_ban">Dieses Konto ist auf diesem Server vorübergehend eingeschränkt. Versuche es später erneut oder wende dich an den Administrator des Servers.</string>
+    <string name="error_convo_access">Diese Unterhaltung gehört zu einem anderen Konto und kann hier nicht fortgesetzt werden.</string>
     <string name="ask_user_question_record_asked">Gefragt</string>
     <string name="ask_user_question_record_asking">Fragt</string>
     <string name="ask_user_question_record_answer_label">Deine Antwort:</string>
@@ -557,6 +618,21 @@
     <string name="cd_collapse_ask_user_question">Fragendetails einklappen</string>
     <string name="tool_memory">Erinnerung</string>
     <string name="tool_memory_desc">Den Assistenten Details aus diesem Chat merken lassen</string>
+    <string name="tool_skills">Skills</string>
+    <string name="tool_skills_desc">Den Assistenten in diesem Chat deine Skills nutzen lassen</string>
+    <string name="cd_skills_enabled">Skills aktiviert</string>
+    <string name="picker_type_prompt">Prompt</string>
+    <string name="picker_type_skill">Skill</string>
+    <string name="picker_no_matches">Keine Treffer</string>
+    <string name="picker_loading_skills">Skills werden geladen…</string>
+    <string name="picker_skills_failed">Skills konnten nicht geladen werden</string>
+    <string name="cd_pending_skills">Skills für die nächste Nachricht</string>
+    <string name="cd_remove_skill">Skill %1$s entfernen</string>
+    <string name="cd_skill_always_applied">Immer angewendeter Skill: %1$s</string>
+    <string name="cd_skill_used">Verwendeter Skill: %1$s</string>
+    <string name="skill_call_running">%1$s wird ausgeführt</string>
+    <string name="skill_call_finished">%1$s ausgeführt</string>
+    <string name="skill_call_fallback_name">Skill</string>
     <string name="cd_steer_message">Diese Antwort lenken</string>
     <string name="cd_cancel_steer">Lenken abbrechen</string>
     <string name="cd_during_run_options">Festlegen, was Senden jetzt bewirkt</string>
@@ -564,6 +640,8 @@
     <string name="during_run_queue">Zur Warteschlange hinzufügen</string>
     <string name="during_run_always_steer">Während der Generierung immer lenken</string>
     <string name="during_run_always_queue">Während der Generierung immer einreihen</string>
+    <string name="steer_pending_hint">Wird beim nächsten Tool-Schritt in die Antwort eingefügt. Endet die Antwort vorher, wird sie danach gesendet.</string>
+    <string name="steer_queued_as_follow_up">Deine Nachricht konnte nicht mehr in diese Antwort einfließen und wird danach gesendet.</string>
     <string name="system_event_label">System</string>
     <string name="wakeup_explainer">Dieses dauerhafte Ergebnis hat den Agenten geweckt, um die Unterhaltung fortzusetzen.</string>
     <string name="wakeup_subagent_completed">Subagent-Aufgabe abgeschlossen</string>
@@ -636,21 +714,184 @@
     <string name="compact_confirm_not_now">Nicht jetzt</string>
     <string name="compact_confirm_action">Komprimieren</string>
     <string name="cd_temporary_chat">Temporärer Chat</string>
+    <string name="temporary_chat_title">Temporärer Chat</string>
+    <string name="temporary_chat_subtitle">Diese Unterhaltung wird nicht in deinem Verlauf gespeichert</string>
     <string name="notice_rename_failed">Unterhaltung konnte nicht umbenannt werden</string>
     <string name="notice_delete_failed">Unterhaltung konnte nicht gelöscht werden</string>
     <string name="notice_archive_failed">Unterhaltung konnte nicht archiviert werden</string>
     <string name="notice_duplicate_failed">Unterhaltung konnte nicht dupliziert werden</string>
-    <string name="notice_share_link_failed">Freigabelink konnte nicht erstellt werden</string>
     <string name="notice_preset_save_failed">Voreinstellung konnte nicht gespeichert werden</string>
     <string name="notice_preset_delete_failed">Voreinstellung konnte nicht gelöscht werden</string>
     <string name="notice_preset_update_failed">Voreinstellung konnte nicht aktualisiert werden</string>
     <string name="notice_continue_response_failed">Mit der ausgewählten Antwort konnte nicht fortgefahren werden</string>
     <string name="notice_favorites_limit">Du kannst bis zu %1$d Favoriten anheften.</string>
     <string name="notice_favorites_update_failed">Favoriten konnten nicht aktualisiert werden.</string>
+    <string name="notice_bookmark_update_failed">Lesezeichen konnten nicht aktualisiert werden. Versuche es erneut.</string>
+    <string name="notice_bookmark_create_failed">Lesezeichen konnte nicht erstellt werden. Versuche es erneut.</string>
+    <string name="notice_bookmarks_load_failed">Lesezeichen dieses Chats konnten nicht geladen werden</string>
     <string name="notice_upload_failed">%1$s konnte nicht hochgeladen werden: %2$s</string>
     <string name="notice_upload_failed_unknown">%1$s konnte nicht hochgeladen werden: Unbekannter Fehler</string>
     <string name="notice_upload_unreadable">%1$s konnte nicht hochgeladen werden: Datei konnte nicht gelesen werden</string>
     <string name="notice_upload_too_large">%1$s ist größer als das Serverlimit von %2$s.</string>
     <string name="notice_speech_permission_denied">Berechtigung für die Spracherkennung verweigert</string>
     <string name="notice_speech_unavailable">Spracherkennung nicht verfügbar. Prüfe Einstellungen &gt; Datenschutz &gt; Spracherkennung.</string>
+    <string name="notice_send_refused">Der Server hat diese Nachricht abgelehnt.</string>
+    <string name="notice_skills_not_sent">Einige Skills können in diesem Chat nicht verwendet werden und wurden nicht gesendet.</string>
+    <string name="notice_skills_removed_from_queued">Einige Skills können in diesem Chat nicht verwendet werden und wurden aus der eingereihten Nachricht entfernt.</string>
+    <plurals name="notice_message_limit_retry_minutes">
+        <item quantity="one">Du hast das Nachrichtenlimit dieses Servers erreicht. Versuche es in %1$d Minute erneut.</item>
+        <item quantity="other">Du hast das Nachrichtenlimit dieses Servers erreicht. Versuche es in %1$d Minuten erneut.</item>
+    </plurals>
+    <plurals name="notice_message_limit_retry_hours">
+        <item quantity="one">Du hast das Nachrichtenlimit dieses Servers erreicht. Versuche es in %1$d Stunde erneut.</item>
+        <item quantity="other">Du hast das Nachrichtenlimit dieses Servers erreicht. Versuche es in %1$d Stunden erneut.</item>
+    </plurals>
+    <plurals name="notice_message_limit_retry_days">
+        <item quantity="one">Du hast das Nachrichtenlimit dieses Servers erreicht. Versuche es in %1$d Tag erneut.</item>
+        <item quantity="other">Du hast das Nachrichtenlimit dieses Servers erreicht. Versuche es in %1$d Tagen erneut.</item>
+    </plurals>
+    <string name="queue_held_after_refusal">Der Server hat deine Nachricht abgelehnt. Sie wartet in der Warteschlange und wird nicht von selbst gesendet. Tippe auf „Wartende senden“, wenn du so weit bist.</string>
+    <string name="jump_message_not_found">Diese Nachricht ist nicht mehr in diesem Chat.</string>
+    <string name="jump_branch_switched">Zu Antwort %1$d von %2$d gewechselt, dem Zweig mit dieser Nachricht.</string>
+    <string name="load_image_from_host">Bild von %1$s laden</string>
+    <string name="workspace_changes">Änderungen im Arbeitsbereich</string>
+    <plurals name="n_files_changed">
+        <item quantity="one">%1$d Datei geändert</item>
+        <item quantity="other">%1$d Dateien geändert</item>
+    </plurals>
+    <string name="file_created">Neu</string>
+    <string name="file_updated">Bearbeitet</string>
+    <string name="show_all_n">Alle %1$d anzeigen</string>
+    <string name="cd_download_file">%1$s herunterladen</string>
+    <string name="cd_open_file">%1$s öffnen</string>
+    <string name="preview_preparing">Vorschau wird vorbereitet…</string>
+    <string name="preview_failed_download">Keine Vorschau · zum Ansehen herunterladen</string>
+    <plurals name="text_n_lines">
+        <item quantity="one">%1$d Zeile</item>
+        <item quantity="other">%1$d Zeilen</item>
+    </plurals>
+    <string name="sandbox_starting">Sandbox-Umgebung wird gestartet</string>
+    <string name="analyzing">Analyse läuft</string>
+    <string name="analyzing_finished">Analyse abgeschlossen</string>
+    <plurals name="show_all_n_lines">
+        <item quantity="one">%1$d Zeile anzeigen</item>
+        <item quantity="other">Alle %1$d Zeilen anzeigen</item>
+    </plurals>
+    <string name="cd_copy_output">Ausgabe kopieren</string>
+    <string name="expired">Abgelaufen</string>
+    <string name="expired_explainer">Dateien aus der Code-Sandbox werden 24 Stunden lang aufbewahrt. Diese ist abgelaufen und kann nicht mehr heruntergeladen werden.</string>
+    <string name="file_download_failed">%1$s konnte nicht heruntergeladen werden</string>
+    <plurals name="files_count_summary">
+        <item quantity="one">%1$d Datei</item>
+        <item quantity="other">%1$d Dateien</item>
+    </plurals>
+    <plurals name="plus_n_more">
+        <item quantity="one">+%1$d weitere</item>
+        <item quantity="other">+%1$d weitere</item>
+    </plurals>
+    <string name="greeting_late_night">Schöne späte Nacht</string>
+    <string name="greeting_early_morning">Guten frühen Morgen</string>
+    <string name="greeting_morning">Guten Morgen</string>
+    <string name="greeting_afternoon">Guten Tag</string>
+    <string name="greeting_evening">Guten Abend</string>
+    <string name="greeting_weekend_morning">Schönen Wochenendmorgen</string>
+    <string name="greeting_weekend_afternoon">Schönen Wochenendnachmittag</string>
+    <string name="greeting_weekend_evening">Schönen Wochenendabend</string>
+    <string name="diagram_error_prefix">Diagrammfehler:</string>
+    <string name="stt_mic_permission_required">Für die Spracheingabe ist die Mikrofonberechtigung nötig</string>
+    <string name="stt_speak_now">Jetzt sprechen…</string>
+    <string name="stt_recognition_unavailable">Spracherkennung ist auf diesem Gerät nicht verfügbar</string>
+    <string name="artifact_preview_failed">Vorschau konnte nicht geladen werden</string>
+    <string name="cd_mcp_server_enabled">MCP-Server %1$s aktiviert</string>
+    <string name="cd_code_block">Codeblock</string>
+    <string name="cd_code_block_language">%1$s-Codeblock</string>
+    <string name="log_output_title">Protokollausgabe</string>
+    <string name="cd_attached_image">Angehängtes Bild</string>
+    <string name="model_selector_search">Modelle suchen…</string>
+    <string name="model_selector_my_agents">Meine Agenten</string>
+    <string name="model_selector_spec_only_note">Dieser Server akzeptiert nur die oben aufgeführten Optionen.</string>
+    <string name="agent_handoff_to">Agent %1$s</string>
+    <string name="agent_handoff_run">Lauf: %1$s</string>
+    <string name="sibling_position">Antwort %1$d von %2$d</string>
+    <string name="cd_assistant_responding">Assistent antwortet: %1$s</string>
+    <string name="tool_call_fallback">Tool-Aufruf</string>
+    <string name="prompt_filter_title">Filtern &amp; sortieren</string>
+    <string name="prompt_sort_recent">Neueste</string>
+    <string name="prompt_sort_popular">Beliebt</string>
+    <string name="prompt_sort_alphabetical">Alphabetisch</string>
+    <string name="prompt_editor_create_title">Prompt erstellen</string>
+    <string name="prompt_editor_edit_title">Prompt bearbeiten</string>
+    <string name="prompt_command_placeholder">mein-befehl</string>
+    <string name="prompt_variables_hint">Mit {{variable_name}} Variablen einfügen</string>
+    <string name="prompt_editor_create">Erstellen</string>
+    <string name="prompts_load_failed">Prompts konnten nicht geladen werden</string>
+    <string name="prompts_empty_category">Keine Prompts in dieser Kategorie</string>
+    <string name="prompts_empty">Noch keine Prompts</string>
+    <string name="prompts_empty_category_hint">Andere Kategorie wählen oder Filter entfernen</string>
+    <string name="prompts_empty_hint">Tippe auf +, um einen zu erstellen</string>
+    <string name="prompt_shared">Geteilt</string>
+    <string name="prompt_private">Privat</string>
+    <string name="prompt_permission_view_only">Nur ansehen</string>
+    <string name="prompt_permission_can_edit">Darf bearbeiten</string>
+    <string name="prompt_preview_placeholder">Variablenwerte eingeben, um die Vorschau zu sehen</string>
+    <string name="cd_sync_scroll_on">Bereiche scrollen gemeinsam. Trennen</string>
+    <string name="cd_sync_scroll_off">Bereiche scrollen getrennt. Verknüpfen</string>
+    <!-- Shared chat viewer -->
+    <string name="shared_chat_title_fallback">Geteilter Chat</string>
+    <string name="shared_chat_subtitle">Geteilter Chat · %1$s</string>
+    <string name="shared_chat_continue">Diesen Chat fortsetzen</string>
+    <string name="shared_chat_open_in_browser">Im Browser öffnen</string>
+    <string name="shared_chat_langfuse">Sitzung in Langfuse ansehen</string>
+    <string name="shared_chat_link_updated">Dieser Link wurde aktualisiert. Jetzt wird die neueste Version angezeigt.</string>
+    <string name="shared_chat_continue_rate_limited">Zu viele Anfragen zum Fortsetzen von Chats. Versuche es später erneut.</string>
+    <string name="shared_chat_continue_failed">Dieser Chat konnte nicht fortgesetzt werden</string>
+    <string name="shared_chat_continue_unsupported">Dieser Server kann geteilte Chats nicht fortsetzen</string>
+    <string name="shared_chat_refresh_failed">Dieser geteilte Chat konnte nicht aktualisiert werden</string>
+    <string name="shared_chat_continue_blocked">Dein Server hat das Kopieren dieses Chats blockiert</string>
+    <string name="shared_chat_continue_blocked_reason">Dein Server hat das Kopieren dieses Chats blockiert: %1$s</string>
+    <string name="shared_chat_not_found">Geteilter Link nicht gefunden</string>
+    <string name="shared_chat_not_found_description">Er wurde möglicherweise gelöscht, oder der Link ist falsch.</string>
+    <string name="shared_chat_no_access">Du kannst diesen geteilten Chat nicht öffnen</string>
+    <string name="shared_chat_no_access_description">Er ist nicht mit diesem Konto geteilt.</string>
+    <string name="shared_chat_rate_limited">Zu viele Anfragen für geteilte Links</string>
+    <string name="shared_chat_rate_limited_description">Versuche es gleich noch einmal.</string>
+    <string name="shared_chat_blocked">Dein Server hat diesen geteilten Chat blockiert</string>
+    <string name="shared_chat_load_failed">Dieser geteilte Chat konnte nicht geladen werden</string>
+    <string name="shared_chat_user">Nutzer</string>
+    <string name="shared_chat_file_failed">Diese Datei konnte nicht geöffnet werden</string>
+
+    <!-- Web and file search sources -->
+    <string name="web_searching">Internetsuche läuft</string>
+    <string name="web_searching_again">Sucht erneut im Internet</string>
+    <string name="web_search_processing">Ergebnisse verarbeiten</string>
+    <string name="web_search_reading">Lesen der Suchergebnisse</string>
+    <string name="web_search_details">Suchdetails</string>
+    <string name="web_search_query">Suchanfrage</string>
+    <string name="web_search_images">Bildergebnisse</string>
+    <string name="web_search_shopping">Shopping-Ergebnisse</string>
+    <string name="web_search_places">Orte</string>
+    <string name="files_searching">Durchsuche deine Dateien...</string>
+    <string name="searching_web_and_files">Durchsucht Web und Dateien</string>
+    <string name="searched_web_and_files">Web und Dateien durchsucht</string>
+    <string name="search_cancelled">Abgebrochen</string>
+    <string name="sources_tab_all">Alles</string>
+    <string name="sources_tab_news">Nachrichten</string>
+    <string name="sources_tab_images">Bilder</string>
+    <string name="sources_tab_files">Dateien</string>
+    <string name="sources_agent_files">Agenten-Dateien</string>
+    <string name="sources_agent_file">Quelldokument</string>
+    <string name="web_search_load_images">Bilder laden</string>
+    <string name="cd_open_cited_file">%1$s öffnen</string>
+    <plurals name="web_search_sources">
+        <item quantity="one">%1$d Quelle</item>
+        <item quantity="other">%1$d Quellen</item>
+    </plurals>
+    <plurals name="sources_more">
+        <item quantity="one">+%1$d Quelle</item>
+        <item quantity="other">+%1$d Quellen</item>
+    </plurals>
+    <plurals name="files_more">
+        <item quantity="one">+%1$d Datei</item>
+        <item quantity="other">+%1$d Dateien</item>
+    </plurals>
 </resources>

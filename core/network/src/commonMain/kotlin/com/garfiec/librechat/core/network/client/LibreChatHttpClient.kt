@@ -3,6 +3,8 @@ package com.garfiec.librechat.core.network.client
 import co.touchlab.kermit.Logger
 import com.garfiec.librechat.core.common.network.RequestActivityTracker
 import com.garfiec.librechat.core.common.result.AccessGatewayException
+import com.garfiec.librechat.core.common.result.FailureKind
+import com.garfiec.librechat.core.common.result.failureKind
 import com.garfiec.librechat.core.logging.Diag
 import com.garfiec.librechat.core.logging.LogOrigin
 import com.garfiec.librechat.core.logging.redact.LogRedactor
@@ -17,13 +19,14 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import io.ktor.http.takeFrom
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -38,7 +41,7 @@ object LibreChatHttpClient {
         tokenManager: TokenManager,
         serverUrlProvider: ServerUrlProvider,
         redactor: LogRedactor,
-        imageCookieCredentials: ImageCookieCredentials,
+        refreshCookieCredentials: RefreshCookieCredentials,
         accountReadyGate: AccountReadyGate? = null,
         switchGate: SwitchGate? = null,
         serverHeadersProvider: ServerHeadersProvider = EmptyServerHeadersProvider,
@@ -104,8 +107,11 @@ object LibreChatHttpClient {
         // interceptors run in install order, so the app's `Cookie: refreshToken=` is on the request
         // before applyCustomHeaders folds the user's gateway cookie into the same line — which is what
         // keeps it to one Cookie header and lets the app's segment win a name collision.
+        install(OpenIdCookiePlugin) {
+            this.serverUrlProvider = serverUrlProvider
+        }
         install(ImageCookiePlugin) {
-            this.credentials = imageCookieCredentials
+            this.credentials = refreshCookieCredentials
             this.serverUrlProvider = serverUrlProvider
         }
 
@@ -146,7 +152,7 @@ object LibreChatHttpClient {
                     } catch (_: Exception) {
                         ""
                     }
-                    val extracted = extractErrorMessage(json, bodyText, statusCode)
+                    val extracted = extractDisplayError(json, response, bodyText, statusCode)
                     val isBanned = isLibreChatBan(statusCode, extracted)
 
                     Diag.w(
@@ -161,7 +167,7 @@ object LibreChatHttpClient {
 
                     if (isBanned) {
                         // Scoped to the request's snapshot account: a ban landing on a switched-away
-                        // account's straggler request must not tear down the live session. A pending
+                        // account's straggler request must not be reported against the live one. A pending
                         // add-flow request passes through entirely (its accountId is null, which
                         // emitSessionExpired treats as "active session, always emit") — a ban from
                         // the server being ADDED belongs to the add flow, mirroring the 401 path.
@@ -186,10 +192,17 @@ object LibreChatHttpClient {
         }
 
         defaultRequest {
-            applyBrowserDefaults(serverUrlProvider)
+            applyBrowserDefaults()
             contentType(ContentType.Application.Json)
         }
     }
+
+    /**
+     * What a request's error says when its 401 could not be cleared by a refresh. English, like the
+     * status fallbacks in [extractErrorMessage] — this module has no resources — and app-authored,
+     * so `looksLikeUserMessage` is not consulted.
+     */
+    const val SESSION_RENEWAL_FAILED_MESSAGE = "Your session couldn't be renewed. Sign in again to continue."
 
     // Standard Chrome on Android UA string — ua-parser-js will detect "Chrome" as browser name
     const val BROWSER_USER_AGENT =
@@ -217,10 +230,10 @@ object LibreChatHttpClient {
      *
      * This used to be `bodyText.contains("ban")` against the raw body, which matches any 403 whose
      * body happens to contain those three letters — including a reverse proxy's or WAF's block page.
-     * Emitting [SessionEndReason.BANNED] for one of those tears down a perfectly live session over a
-     * network-layer block, and the user cannot re-authenticate until the block lifts, which is how a
-     * temporary IP ban became a hard logout in #376. Requiring LibreChat's own JSON shape means an
-     * unrecognised 403 now fails the request without ending the session.
+     * Emitting [SessionEndReason.BANNED] for one of those tells the user their account is restricted
+     * over a network-layer block (and once turned a temporary IP ban into a hard logout, #376).
+     * Requiring LibreChat's own JSON shape means an unrecognised 403 fails the request without
+     * reporting a ban.
      */
     private fun isLibreChatBan(statusCode: Int, extracted: ExtractedError): Boolean {
         if (statusCode != 403 || !extracted.serverAuthored) return false
@@ -234,6 +247,27 @@ object LibreChatHttpClient {
      * silent here — nothing fails to decode, the app just stops recognising a ban.
      */
     private val BAN_MESSAGE_MARKERS = listOf("banned", "account")
+
+    /**
+     * [extractErrorMessage], except for a 401 the auth plugin could not clear with a refresh: that one
+     * is about the session, and the server's wording (`jwt expired`) describes the token rather than
+     * anything the user can act on. The plugin sets [SessionRenewalFailedKey] on the call it hands
+     * back (this validator is Ktor's default-installed one, so the outermost sender and the last to
+     * see it); a 401 on an auth route never carries it.
+     */
+    private fun extractDisplayError(
+        json: Json,
+        response: HttpResponse,
+        body: String,
+        statusCode: Int,
+    ): ExtractedError {
+        val renewalFailed = response.call.request.attributes.getOrNull(SessionRenewalFailedKey) == true
+        return if (statusCode == HttpStatusCode.Unauthorized.value && renewalFailed) {
+            ExtractedError(SESSION_RENEWAL_FAILED_MESSAGE, serverAuthored = false)
+        } else {
+            extractErrorMessage(json, body, statusCode)
+        }
+    }
 
     private fun extractErrorMessage(json: Json, body: String, statusCode: Int): ExtractedError {
         if (body.isNotBlank()) {
@@ -274,17 +308,21 @@ object LibreChatHttpClient {
  */
 internal fun HttpRequestRetryConfig.configureRetryPolicy() {
     // A 5xx can arrive as a response (retryIf) or, once HttpResponseValidator throws, as an
-    // ApiException (retryOnExceptionIf) — so both predicates carry the same method gate.
+    // ApiException (retryOnExceptionIf) — so both predicates carry the same method and status gate,
+    // whichever path a non-2xx takes.
     retryIf(maxRetries = 2) { request, response ->
-        request.method.isRetrySafe() && response.status.value in 500..599
+        request.method.isRetrySafe() && response.status.value.isTransientServerError()
     }
     retryOnExceptionIf(maxRetries = 2) { request, cause ->
         request.method.isRetrySafe() &&
             cause !is kotlinx.coroutines.CancellationException &&
+            (cause !is ApiException || cause.statusCode.isTransientServerError()) &&
             // Deterministic until the user edits the credential, so retrying only delays the report.
             // Excluded here rather than by install order: this plugin is installed first and so runs
             // outermost, which it must stay for the transient failures it exists to absorb.
-            cause !is AccessGatewayException
+            cause !is AccessGatewayException &&
+            // Same for a certificate the device doesn't trust.
+            cause.failureKind() != FailureKind.Tls
     }
     exponentialDelay()
 }
@@ -294,15 +332,23 @@ private val RETRY_SAFE_METHODS = setOf(HttpMethod.Get, HttpMethod.Head, HttpMeth
 private fun HttpMethod.isRetrySafe(): Boolean = this in RETRY_SAFE_METHODS
 
 /**
- * Applies the base URL and the browser [User-Agent][LibreChatHttpClient.BROWSER_USER_AGENT] that
- * the stock LibreChat server's `ua-parser-js` middleware requires — a single audited definition
- * point shared by the main and streaming clients so the browser-UA invariant lives in one place.
- * The refresh client deliberately omits this (its `/auth/refresh` route is UA-ungated).
+ * A 5xx that a second attempt could plausibly fix. 501 (route has no strategy for this server, e.g.
+ * `download-url` on local storage) and 505 are verdicts about the server, not momentary failures.
  */
-internal fun DefaultRequestBuilder.applyBrowserDefaults(serverUrlProvider: ServerUrlProvider) {
-    val baseUrl = serverUrlProvider.getBaseUrl()
-    if (baseUrl.isNotEmpty()) {
-        url.takeFrom(baseUrl)
-    }
+private fun Int.isTransientServerError(): Boolean =
+    this in 500..599 && this != HttpStatusCode.NotImplemented.value &&
+        this != HttpStatusCode.VersionNotSupported.value
+
+/**
+ * Applies the browser [User-Agent][LibreChatHttpClient.BROWSER_USER_AGENT] that the stock LibreChat
+ * server's `ua-parser-js` middleware requires — a single audited definition point shared by the main
+ * and streaming clients so the browser-UA invariant lives in one place. The refresh client
+ * deliberately omits this (its `/auth/refresh` route is UA-ungated).
+ *
+ * No URL here: [SwitchBarrierPlugin] or [ServerUrlReadyPlugin] resolves every relative request
+ * against the deployment root before this runs, and `DefaultRequest`'s own merge would apply
+ * different rules to a subpath base.
+ */
+internal fun DefaultRequestBuilder.applyBrowserDefaults() {
     headers.append(HttpHeaders.UserAgent, LibreChatHttpClient.BROWSER_USER_AGENT)
 }

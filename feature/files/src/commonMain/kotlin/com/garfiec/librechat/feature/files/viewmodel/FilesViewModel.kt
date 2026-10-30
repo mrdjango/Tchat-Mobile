@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
+import com.garfiec.librechat.core.common.identity.cleanServerUrl
 import com.garfiec.librechat.core.common.result.Result
 import com.garfiec.librechat.core.common.result.getOrNull
 import com.garfiec.librechat.core.data.datastore.ServerDataStore
@@ -18,10 +19,24 @@ import com.garfiec.librechat.core.model.response.pickerMimeTypes
 import com.garfiec.librechat.core.ui.components.PdfPasswordPromptUi
 import com.garfiec.librechat.core.ui.media.MediaItem
 import com.garfiec.librechat.core.ui.media.MediaPreviewState
+import com.garfiec.librechat.core.ui.platform.formatFileSize
 import com.garfiec.librechat.feature.files.FileDisplayData
 import com.garfiec.librechat.feature.files.FilePreviewDisplayData
 import com.garfiec.librechat.feature.files.platform.FileReader
-import com.garfiec.librechat.feature.files.platform.formatFileSize
+import com.garfiec.librechat.feature.files.resources.Res
+import com.garfiec.librechat.feature.files.resources.filter_all
+import com.garfiec.librechat.feature.files.resources.filter_audio
+import com.garfiec.librechat.feature.files.resources.filter_documents
+import com.garfiec.librechat.feature.files.resources.filter_images
+import com.garfiec.librechat.feature.files.resources.filter_video
+import com.garfiec.librechat.feature.files.resources.no_filter_audio
+import com.garfiec.librechat.feature.files.resources.no_filter_documents
+import com.garfiec.librechat.feature.files.resources.no_filter_images
+import com.garfiec.librechat.feature.files.resources.no_filter_video
+import com.garfiec.librechat.feature.files.resources.sort_date
+import com.garfiec.librechat.feature.files.resources.sort_name
+import com.garfiec.librechat.feature.files.resources.sort_size
+import com.garfiec.librechat.feature.files.resources.sort_type
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -33,24 +48,35 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.StringResource
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
-enum class FileTypeFilter(val label: String) {
-    ALL("All"),
-    IMAGES("Images"),
-    DOCUMENTS("Documents"),
-    AUDIO("Audio"),
-    VIDEO("Video"),
+/** [emptyTitle] is null for [ALL], whose empty state is the general "no files" one. */
+enum class FileTypeFilter(val label: StringResource, val emptyTitle: StringResource?) {
+    ALL(Res.string.filter_all, null),
+    IMAGES(Res.string.filter_images, Res.string.no_filter_images),
+    DOCUMENTS(Res.string.filter_documents, Res.string.no_filter_documents),
+    AUDIO(Res.string.filter_audio, Res.string.no_filter_audio),
+    VIDEO(Res.string.filter_video, Res.string.no_filter_video),
+    ;
+
+    fun matches(type: String): Boolean = when (this) {
+        ALL -> true
+        IMAGES -> type.startsWith("image/")
+        DOCUMENTS -> type.startsWith("application/") || type.startsWith("text/")
+        AUDIO -> type.startsWith("audio/")
+        VIDEO -> type.startsWith("video/")
+    }
 }
 
 // Stored strings are decoupled from the constant names so renaming a constant can't orphan a saved
 // preference (matches StarredModelsDisplay/ContextBarPlacement/etc. in :core:data).
-enum class FileSortField(val label: String) {
-    NAME("Name"),
-    DATE("Date"),
-    SIZE("Size"),
-    TYPE("Type");
+enum class FileSortField(val label: StringResource) {
+    NAME(Res.string.sort_name),
+    DATE(Res.string.sort_date),
+    SIZE(Res.string.sort_size),
+    TYPE(Res.string.sort_type);
 
     companion object {
         fun fromString(value: String?): FileSortField = when (value) {
@@ -103,7 +129,10 @@ enum class FileViewMode {
 
 @Immutable
 data class FilesUiState(
+    /** The selected filter's page: `filesByFilter[selectedFilter]`. */
     val displayFiles: List<FileDisplayData> = emptyList(),
+    /** Every filter's page, so the pager can show the one being swiped in before it's selected. */
+    val filesByFilter: Map<FileTypeFilter, List<FileDisplayData>> = emptyMap(),
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val isUploading: Boolean = false,
@@ -173,24 +202,31 @@ class FilesViewModel(
     private val displayDataCache = mutableMapOf<String, FileDisplayData>()
 
     /**
-     * The filtered + sorted display list, derived only from the inputs that affect it. Kept
+     * Every filter's sorted display list, derived only from the inputs that affect it. Kept
      * separate from [_transientState] so that purely-overlay changes (opening/closing the image
-     * viewer, upload progress, selection) don't re-run filter+sort over the whole file list.
+     * viewer, upload progress, selection) don't re-run filter+sort over the whole file list, and
+     * from [_selectedFilter] so that swiping between filters doesn't either.
      */
-    private val displayList: Flow<DisplayList> = combine(
-        _files,
-        _selectedFilter,
-        _sort,
-    ) { files, filter, sortOrNull ->
+    private val pages: Flow<Pages> = combine(_files, _sort) { files, sortOrNull ->
         val sort = sortOrNull ?: DefaultSort
-        val filtered = filterFiles(files, filter)
-        val sorted = sortFiles(filtered, sort.field, sort.order)
-        DisplayList(
-            files = sorted.map { file -> displayDataCache.getOrPut(file.fileId) { file.toDisplayData() } },
+        val sorted = sortFiles(files, sort.field, sort.order)
+            .map { file -> displayDataCache.getOrPut(file.fileId) { file.toDisplayData() } }
+        Pages(
+            files = FileTypeFilter.entries.associateWith { filter -> sorted.filter { filter.matches(it.type) } },
             hasFiles = files.isNotEmpty(),
-            filter = filter,
             sortField = sort.field,
             sortOrder = sort.order,
+        )
+    }
+
+    private val displayList: Flow<DisplayList> = combine(pages, _selectedFilter) { pages, filter ->
+        DisplayList(
+            files = pages.files[filter].orEmpty(),
+            byFilter = pages.files,
+            hasFiles = pages.hasFiles,
+            filter = filter,
+            sortField = pages.sortField,
+            sortOrder = pages.sortOrder,
         )
     }
 
@@ -202,6 +238,7 @@ class FilesViewModel(
     ) { list, transient, mode, pickerMimeTypes ->
         FilesUiState(
             displayFiles = list.files,
+            filesByFilter = list.byFilter,
             isLoading = transient.isLoading,
             isRefreshing = transient.isRefreshing,
             isUploading = transient.isUploading,
@@ -472,8 +509,10 @@ class FilesViewModel(
      */
     fun openImagePreview(fileId: String) {
         // Reuse the already filtered + sorted display list (URLs resolved once in `previewUrl`)
-        // instead of re-running filter+sort and re-resolving every URL on the tap.
-        val images = uiState.value.displayFiles.filter { it.previewUrl != null }
+        // instead of re-running filter+sort and re-resolving every URL on the tap. Every page that
+        // shows images shows all of them in the same order, so the Images page serves whichever page
+        // was tapped, even one swiped to before the selected filter caught up.
+        val images = uiState.value.filesByFilter[FileTypeFilter.IMAGES].orEmpty().filter { it.previewUrl != null }
         if (images.isEmpty()) return
         // Dedup by URL: the pager keys pages on url, so duplicate URLs would crash it.
         val items = images
@@ -645,15 +684,7 @@ class FilesViewModel(
     // Private helpers
 
     private fun filterFiles(files: List<FileObject>, filter: FileTypeFilter): List<FileObject> =
-        when (filter) {
-            FileTypeFilter.ALL -> files
-            FileTypeFilter.IMAGES -> files.filter { it.type.startsWith("image/") }
-            FileTypeFilter.DOCUMENTS -> files.filter {
-                it.type.startsWith("application/") || it.type.startsWith("text/")
-            }
-            FileTypeFilter.AUDIO -> files.filter { it.type.startsWith("audio/") }
-            FileTypeFilter.VIDEO -> files.filter { it.type.startsWith("video/") }
-        }
+        if (filter == FileTypeFilter.ALL) files else files.filter { filter.matches(it.type) }
 
     private fun sortFiles(
         files: List<FileObject>,
@@ -675,7 +706,7 @@ class FilesViewModel(
     }
 
     private fun FileObject.buildFileUrl(): String {
-        val baseUrl = serverDataStore.getBaseUrl().trimEnd('/')
+        val baseUrl = cleanServerUrl(serverDataStore.getBaseUrl())
         val url = if (filepath.startsWith("http://") || filepath.startsWith("https://")) {
             filepath
         } else if (filepath.isNotBlank()) {
@@ -715,6 +746,13 @@ class FilesViewModel(
     }
 }
 
+private data class Pages(
+    val files: Map<FileTypeFilter, List<FileDisplayData>>,
+    val hasFiles: Boolean,
+    val sortField: FileSortField,
+    val sortOrder: FileSortOrder,
+)
+
 /**
  * Precomputed filtered + sorted display list, recomputed only when files/filter/sort change.
  * Carries the filter/sort inputs it was built from so the UI-state combine doesn't have to
@@ -722,6 +760,7 @@ class FilesViewModel(
  */
 private data class DisplayList(
     val files: List<FileDisplayData>,
+    val byFilter: Map<FileTypeFilter, List<FileDisplayData>>,
     val hasFiles: Boolean,
     val filter: FileTypeFilter,
     val sortField: FileSortField,

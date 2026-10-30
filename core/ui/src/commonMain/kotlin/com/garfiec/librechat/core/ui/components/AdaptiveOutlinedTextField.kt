@@ -1,6 +1,7 @@
 package com.garfiec.librechat.core.ui.components
 
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,11 +27,16 @@ import androidx.compose.material3.TextFieldLabelScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.constrainHeight
+import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.dp
 import com.garfiec.librechat.core.ui.glass.GlassControlColors
 import com.garfiec.librechat.core.ui.theme.isLiquidGlass
@@ -70,7 +76,8 @@ fun AdaptiveOutlinedTextField(
         if (!isLiquidGlass) {
             OutlinedTextField(
                 value = value, onValueChange = onValueChange, modifier = fieldModifier, enabled = enabled,
-                readOnly = readOnly, textStyle = textStyle, label = null, placeholder = placeholder,
+                readOnly = readOnly, textStyle = textStyle, label = null,
+                placeholder = oneLinePlaceholder(placeholder, singleLine || maxLines == 1),
                 leadingIcon = leadingIcon, trailingIcon = trailingIcon, prefix = prefix, suffix = suffix,
                 supportingText = supportingText, isError = isError, visualTransformation = visualTransformation,
                 keyboardOptions = keyboardOptions, keyboardActions = keyboardActions, singleLine = singleLine,
@@ -81,7 +88,8 @@ fun AdaptiveOutlinedTextField(
         }
         TextField(
             value = value, onValueChange = onValueChange, modifier = fieldModifier, enabled = enabled,
-            readOnly = readOnly, textStyle = textStyle, label = null, placeholder = placeholder,
+            readOnly = readOnly, textStyle = textStyle, label = null,
+                placeholder = oneLinePlaceholder(placeholder, singleLine || maxLines == 1),
             leadingIcon = leadingIcon, trailingIcon = trailingIcon, prefix = prefix, suffix = suffix,
             supportingText = supportingText, isError = isError, visualTransformation = visualTransformation,
             keyboardOptions = keyboardOptions, keyboardActions = keyboardActions, singleLine = singleLine,
@@ -123,7 +131,8 @@ fun AdaptiveOutlinedTextField(
         if (!isLiquidGlass) {
             OutlinedTextField(
                 value = value, onValueChange = onValueChange, modifier = fieldModifier, enabled = enabled,
-                readOnly = readOnly, textStyle = textStyle, label = null, placeholder = placeholder,
+                readOnly = readOnly, textStyle = textStyle, label = null,
+                placeholder = oneLinePlaceholder(placeholder, singleLine || maxLines == 1),
                 leadingIcon = leadingIcon, trailingIcon = trailingIcon, prefix = prefix, suffix = suffix,
                 supportingText = supportingText, isError = isError, visualTransformation = visualTransformation,
                 keyboardOptions = keyboardOptions, keyboardActions = keyboardActions, singleLine = singleLine,
@@ -134,7 +143,8 @@ fun AdaptiveOutlinedTextField(
         }
         TextField(
             value = value, onValueChange = onValueChange, modifier = fieldModifier, enabled = enabled,
-            readOnly = readOnly, textStyle = textStyle, label = null, placeholder = placeholder,
+            readOnly = readOnly, textStyle = textStyle, label = null,
+                placeholder = oneLinePlaceholder(placeholder, singleLine || maxLines == 1),
             leadingIcon = leadingIcon, trailingIcon = trailingIcon, prefix = prefix, suffix = suffix,
             supportingText = supportingText, isError = isError, visualTransformation = visualTransformation,
             keyboardOptions = keyboardOptions, keyboardActions = keyboardActions, singleLine = singleLine,
@@ -173,7 +183,8 @@ fun AdaptiveOutlinedTextField(
         OutlinedTextField(
             labelPosition = TextFieldLabelPosition.Above(), // TCHAT: label above the box
             state = state, modifier = modifier, enabled = enabled, readOnly = readOnly, textStyle = textStyle,
-            label = label, placeholder = placeholder, leadingIcon = leadingIcon, trailingIcon = trailingIcon,
+            label = label, placeholder = oneLinePlaceholder(placeholder, lineLimits == TextFieldLineLimits.SingleLine),
+            leadingIcon = leadingIcon, trailingIcon = trailingIcon,
             prefix = prefix, suffix = suffix, supportingText = supportingText, isError = isError,
             inputTransformation = inputTransformation, outputTransformation = outputTransformation,
             keyboardOptions = keyboardOptions, onKeyboardAction = onKeyboardAction, lineLimits = lineLimits,
@@ -184,12 +195,34 @@ fun AdaptiveOutlinedTextField(
     TextField(
         labelPosition = TextFieldLabelPosition.Above(), // TCHAT: label above the box
         state = state, modifier = modifier, enabled = enabled, readOnly = readOnly, textStyle = textStyle,
-        label = label, placeholder = placeholder, leadingIcon = leadingIcon, trailingIcon = trailingIcon,
+        label = label, placeholder = oneLinePlaceholder(placeholder, lineLimits == TextFieldLineLimits.SingleLine),
+        leadingIcon = leadingIcon, trailingIcon = trailingIcon,
         prefix = prefix, suffix = suffix, supportingText = supportingText, isError = isError,
         inputTransformation = inputTransformation, outputTransformation = outputTransformation,
         keyboardOptions = keyboardOptions, onKeyboardAction = onKeyboardAction, lineLimits = lineLimits,
         interactionSource = interactionSource, shape = GlassFieldShape, colors = glassFieldColors(colors),
     )
+}
+
+/**
+ * A single-line field's placeholder stays on one line too. Left to wrap, it would make the empty field
+ * taller than the typed one, which would shrink on the first key. A placeholder Text with maxLines = 1
+ * ellipsizes at the field's width; one that would wrap is laid out on one line and cut at the edge.
+ */
+private fun oneLinePlaceholder(placeholder: (@Composable () -> Unit)?, singleLine: Boolean): (@Composable () -> Unit)? =
+    if (placeholder == null || !singleLine) placeholder else { { OneLine(placeholder) } }
+
+@Composable
+private fun OneLine(content: @Composable () -> Unit) {
+    Layout(content = { Box { content() } }, modifier = Modifier.clipToBounds()) { measurables, constraints ->
+        val child = measurables.single()
+        val wraps = constraints.hasBoundedWidth &&
+            child.minIntrinsicHeight(constraints.maxWidth) > child.minIntrinsicHeight(Constraints.Infinity)
+        val placeable = child.measure(if (wraps) constraints.copy(maxWidth = Constraints.Infinity) else constraints)
+        layout(constraints.constrainWidth(placeable.width), constraints.constrainHeight(placeable.height)) {
+            placeable.placeRelative(0, 0)
+        }
+    }
 }
 
 /**

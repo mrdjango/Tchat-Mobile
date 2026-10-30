@@ -16,8 +16,6 @@
     <string name="close">Fermer</string>
 
     <!-- Content descriptions -->
-    <string name="cd_create_agent">Créer un agent</string>
-    <string name="cd_search">Rechercher</string>
     <string name="cd_back">Retour</string>
     <string name="cd_more_actions">Plus d'actions</string>
     <string name="cd_more_options">Plus d'options</string>
@@ -34,11 +32,26 @@
     <!-- Marketplace screen -->
     <string name="search_agents_hint">Rechercher des agents…</string>
     <string name="no_agents_found">Aucun agent trouvé</string>
-    <string name="no_agents_available">Aucun agent disponible</string>
     <string name="agents_not_available_title">Agents non disponibles</string>
     <string name="agents_not_available_description">L'administrateur de votre serveur a désactivé les agents pour votre compte.</string>
     <string name="try_different_search">Essayez un autre terme de recherche</string>
     <string name="check_back_later">Revenez plus tard pour de nouveaux agents</string>
+    <string name="agents_chip_top_picks">Coups de cœur</string>
+    <string name="agents_chip_all">Tous</string>
+    <string name="agents_chip_editable">Modifiables</string>
+    <string name="agents_top_pick">Coup de cœur</string>
+    <string name="agents_new_agent">Nouvel agent</string>
+    <string name="agent_unnamed">Agent sans nom</string>
+    <string name="agents_clear_search">Effacer la recherche</string>
+    <string name="agents_no_matches_in">Aucun résultat dans %1$s</string>
+    <string name="agents_none_in">Aucun agent dans %1$s</string>
+    <string name="agents_search_all">Rechercher dans tous les agents</string>
+    <string name="agents_show_all">Afficher tous les agents</string>
+    <string name="agents_empty_title">Aucun agent pour l’instant</string>
+    <string name="agents_empty_description_create">Créez un agent avec ses propres instructions, son modèle et ses outils.</string>
+    <string name="agents_load_failed">Impossible de charger les agents</string>
+    <string name="agents_load_more_failed">Impossible de charger plus d’agents</string>
+    <string name="agents_retry">Réessayer</string>
     <string name="error_unknown">Une erreur inconnue s'est produite</string>
     <string name="unknown_author">Inconnu</string>
 
@@ -47,12 +60,8 @@
     <string name="delete_agent">Supprimer l'agent</string>
     <string name="delete_agent_confirm">Voulez-vous vraiment supprimer "%1$s" ? Cette action est irréversible.</string>
     <string name="delete_this_agent">cet agent</string>
-    <string name="by_author">par %1$s</string>
-    <string name="label_description">Description</string>
-    <string name="no_description">Aucune description</string>
     <string name="label_category">Catégorie</string>
     <string name="label_model">Modèle</string>
-    <string name="default_value">Par défaut</string>
     <string name="label_tools">Outils</string>
     <string name="label_conversation_starters">Amorces de conversation</string>
 
@@ -236,13 +245,20 @@
     <string name="acl_public_label">Public</string>
     <string name="acl_public_description">Autoriser toute personne ayant accès au serveur</string>
     <string name="acl_role">Rôle</string>
-    <string name="acl_revoke">Révoquer</string>
+    <string name="acl_revoke_principal">Révoquer l'accès de %1$s</string>
     <string name="acl_search_hint">Rechercher des utilisateurs ou des groupes…</string>
     <string name="acl_search_empty">Aucune correspondance</string>
+    <string name="acl_search_failed">Recherche impossible pour le moment.</string>
+    <string name="acl_search_unavailable">Votre rôle ne permet pas de rechercher des personnes ou des groupes. Demandez à un administrateur d'activer le sélecteur de personnes pour votre rôle.</string>
+    <string name="acl_roles_failed">Impossible de charger les rôles : personne ne peut encore être ajouté.</string>
+    <string name="acl_load_failed">Impossible de charger qui a accès.</string>
+    <string name="acl_share_check_failed">Impossible de vérifier si vous pouvez partager cet agent.</string>
+    <string name="acl_retry">Réessayer</string>
     <string name="acl_grant_dialog_title">Ajouter un utilisateur ou un groupe</string>
     <string name="acl_principal_user">Utilisateur</string>
     <string name="acl_principal_group">Groupe</string>
     <string name="acl_principal_role">Rôle</string>
+    <string name="acl_principal_unknown">Inconnu</string>
     <string name="acl_create_mode_notice">Les contrôles de partage &amp; d'accès sont disponibles après l'enregistrement de l'agent.</string>
 
     <!-- Tool select dialog -->
@@ -306,5 +322,37 @@
     <string name="builtin_file_context_desc">Place les fichiers joints en entier dans le contexte de l'agent.</string>
     <string name="builtin_ask_user">Demander à l'utilisateur</string>
     <string name="builtin_ask_user_desc">Met l'exécution en pause pour vous poser une question de clarification.</string>
-    <string name="agent_contact_title">Contact</string>
+    <string name="agent_category_hr">Ressources humaines</string>
+    <string name="agent_category_rd">Recherche et développement</string>
+    <string name="agent_category_finance">Finance</string>
+    <string name="agent_category_it">Informatique</string>
+    <string name="agent_category_sales">Ventes</string>
+    <string name="agent_category_aftersales">Service après-vente</string>
+    <string name="agent_category_idea">Idées</string>
+    <string name="agent_category_travel">Voyages</string>
+    <string name="agent_category_learning">Apprentissage</string>
+    <string name="agent_category_writing">Rédaction</string>
+    <string name="agent_category_shopping">Achats</string>
+    <string name="agent_category_code">Code</string>
+    <string name="agent_category_misc">Divers</string>
+    <string name="agent_category_roleplay">Jeu de rôle</string>
+    <string name="visibility_team">Équipe</string>
+    <string name="agent_contact_line">Contact : %1$s</string>
+    <string name="agent_pin">Épingler au menu des modèles</string>
+    <string name="agent_unpin">Retirer du menu des modèles</string>
+    <string name="agent_copy_link">Copier le lien</string>
+    <string name="agent_link_copied">Lien copié</string>
+    <string name="agent_updated_relative">Mis à jour %1$s</string>
+    <string name="agent_updated_on">Mis à jour le %1$s</string>
+    <string name="agent_public">Public</string>
+    <string name="agent_try_asking">Essayez de demander</string>
+    <string name="agent_load_failed">Impossible de charger cet agent</string>
+    <string name="agent_delete_failed">Impossible de supprimer cet agent</string>
+    <string name="agent_duplicate_failed">Impossible de dupliquer cet agent</string>
+    <string name="agent_pin_failed">Impossible de mettre à jour vos épingles</string>
+    <string name="agent_contact_send_email">Envoyer un e-mail</string>
+    <plurals name="agent_pin_limit">
+        <item quantity="one">Vous pouvez épingler jusqu'à %1$d favori.</item>
+        <item quantity="other">Vous pouvez épingler jusqu'à %1$d favoris.</item>
+    </plurals>
 </resources>

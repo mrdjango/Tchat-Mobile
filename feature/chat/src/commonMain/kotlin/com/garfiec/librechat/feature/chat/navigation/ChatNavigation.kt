@@ -2,9 +2,11 @@ package com.garfiec.librechat.feature.chat.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.EntryProviderScope
@@ -12,11 +14,13 @@ import androidx.navigation3.runtime.NavKey
 import com.garfiec.librechat.core.data.datastore.ArtifactDisplayMode
 import com.garfiec.librechat.core.data.datastore.ArtifactDisplayPrefs
 import com.garfiec.librechat.core.data.datastore.SettingsDataStore
+import com.garfiec.librechat.feature.chat.components.LocalArtifactFileActions
 import com.garfiec.librechat.feature.chat.components.artifact.Artifact
 import com.garfiec.librechat.feature.chat.components.artifact.ArtifactPanel
 import com.garfiec.librechat.feature.chat.components.artifact.ArtifactViewerHandoff
 import com.garfiec.librechat.feature.chat.components.artifact.LocalOpenArtifact
 import com.garfiec.librechat.feature.chat.components.artifact.ProvideAddArtifactToHomeScreen
+import com.garfiec.librechat.feature.chat.components.rememberAttachmentFileActions
 import com.garfiec.librechat.feature.chat.prompts.PromptEditorScreen
 import com.garfiec.librechat.feature.chat.prompts.PromptsLibraryScreen
 import com.garfiec.librechat.feature.chat.screen.ArtifactFullscreenScreen
@@ -24,12 +28,17 @@ import com.garfiec.librechat.feature.chat.screen.ArtifactShortcutViewerScreen
 import com.garfiec.librechat.feature.chat.screen.ChatScreen
 import com.garfiec.librechat.feature.chat.screen.ConversationMediaScreen
 import com.garfiec.librechat.feature.chat.screen.NewChatScreen
+import com.garfiec.librechat.feature.chat.screen.SharedChatScreen
+import com.garfiec.librechat.feature.chat.viewmodel.ProjectLandingViewModel
 import com.garfiec.librechat.feature.chat.viewmodel.PromptInsertionHandoff
+import com.garfiec.librechat.feature.chat.viewmodel.chatHandoffKey
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
+import org.koin.core.parameter.parametersOf
 
 @Serializable sealed interface ChatRoute : NavKey
 
@@ -37,12 +46,14 @@ import org.koin.compose.koinInject
  *  starting a chat from an agent's detail/marketplace card so the new chat opens on
  *  that agent rather than falling back to last-used/first-agent/first-model.
  *  [endpoint]/[model] pre-select a concrete model instead (home-screen model shortcut /
- *  quick action); they ride on the route so a payload-carrying NewChat replaces a bare
- *  landing NewChat (dedup-by-value) and re-seeds even when already on the landing. */
+ *  quick action), with [spec] the spec it was recorded from; they ride on the route so a
+ *  payload-carrying NewChat replaces a bare landing NewChat (dedup-by-value) and re-seeds even
+ *  when already on the landing. */
 @Serializable data class NewChat(
     val agentId: String? = null,
     val endpoint: String? = null,
     val model: String? = null,
+    val spec: String? = null,
     /**
      * The account this landing belongs to — set when an account flip resets the back stack, and
      * otherwise unread. Load-bearing for identity alone: Nav3 keeps an entry's ViewModelStore until
@@ -52,7 +63,20 @@ import org.koin.compose.koinInject
      * A different value here is a different entry, and its store is discarded.
      */
     val accountScope: String? = null,
+    /**
+     * The project this new chat is filed into, and its name for the landing's "In <project>" chip.
+     * A project-scoped landing is pushed over the project rather than made the root, and is replaced
+     * by the chat once it starts, so Back from the chat returns to the project.
+     */
+    val chatProjectId: String? = null,
+    val chatProjectName: String? = null,
 ) : ChatRoute
+
+/** True for the landing a New chat tap would open: not filed into a project. */
+val NewChat.isPlainLanding: Boolean get() = chatProjectId == null
+
+/** The key this landing's server-file picks are addressed to; see [chatHandoffKey]. */
+val NewChat.handoffKey: String? get() = chatHandoffKey(conversationId = null, chatProjectId = chatProjectId)
 
 /**
  * [isTemporary] marks a conversation the user started as a temporary chat. It rides on the
@@ -60,7 +84,15 @@ import org.koin.compose.koinInject
  * Chat(id) entry re-initializes temp-aware and never persists the server-hidden conversation to
  * Room. SECURITY: this is the temp-chat data-at-rest guard for the handed-off / restored Chat VM.
  */
-@Serializable data class Chat(val conversationId: String? = null, val isTemporary: Boolean = false) : ChatRoute
+@Serializable data class Chat(
+    val conversationId: String? = null,
+    val isTemporary: Boolean = false,
+    /** Open at this message (a search hit): select its branch, scroll to it, highlight [highlightQuery]. */
+    val targetMessageId: String? = null,
+    val highlightQuery: String? = null,
+    /** The hit matched in the message's reasoning, so the jump lands on a match there. */
+    val targetInReasoning: Boolean = false,
+) : ChatRoute
 
 @Serializable data object PromptsLibrary : ChatRoute
 
@@ -82,28 +114,56 @@ import org.koin.compose.koinInject
  */
 @Serializable data class ArtifactShortcutViewer(val snapshotId: String) : ChatRoute
 
+/**
+ * The in-app viewer for one of the ACTIVE account's shared links, by [shareId]. A link on another
+ * signed-in account's server is pushed only after the switch to that account has reset the stack.
+ */
+@Serializable data class SharedChat(val shareId: String) : ChatRoute
+
 fun EntryProviderScope<NavKey>.chatEntries(
     onNavigate: (NavKey) -> Unit,
     onBack: () -> Unit,
+    /** Removes the given entry wherever it sits; for a screen closing itself, which may not be on top. */
+    onRemove: (NavKey) -> Unit,
     onNavigateToChat: (conversationId: String, isTemporary: Boolean) -> Unit,
     onOpenDrawer: (() -> Unit)? = null,
     /**
      * Deep-link target for the user-provided-key error CTA snackbar and
-     * the model-selector "Set API Key" CTA on greyed endpoint groups. The host navigates
+     * the model-selector "Add key" action on greyed endpoint groups. The host navigates
      * to Settings → Provider API Keys. When [endpointName] is non-null, the destination
      * screen auto-opens the Set Key bottom-sheet for that endpoint.
      */
     onNavigateToProviderKeys: (endpointName: String?) -> Unit,
     /** Navigates to the server-file picker; wired by the host to `navigator.navigate(FilesPicker)`. */
     onAttachFromServer: () -> Unit,
+    /**
+     * Opens the Memories page (owned by settings) from a memory card's Manage action; wired by the
+     * host to `navigator.navigate(Memories)`. The chat hides the action from a role that may not
+     * read memories.
+     */
+    onOpenMemories: () -> Unit,
     /** Opens What's new (owned by settings) from the update banner on an empty chat. */
     onOpenWhatsNew: () -> Unit = {},
 ) {
     entry<NewChat> { key ->
+        val projectName = key.chatProjectId?.let { projectId ->
+            val landing = koinViewModel<ProjectLandingViewModel> {
+                parametersOf(projectId, key.chatProjectName.orEmpty())
+            }
+            val project by landing.state.collectAsStateWithLifecycle()
+            val currentOnRemove by rememberUpdatedState(onRemove)
+            LaunchedEffect(project.deleted) {
+                if (project.deleted) currentOnRemove(key)
+            }
+            project.name
+        }
         NewChatScreen(
             initialAgentId = key.agentId,
             initialEndpoint = key.endpoint,
             initialModel = key.model,
+            initialSpec = key.spec,
+            chatProjectId = key.chatProjectId,
+            chatProjectName = projectName,
             onConversationStart = { conversationId, isTemporary ->
                 onNavigateToChat(conversationId, isTemporary)
             },
@@ -112,6 +172,7 @@ fun EntryProviderScope<NavKey>.chatEntries(
             onNavigateToProviderKeys = onNavigateToProviderKeys,
             onAttachFromServer = onAttachFromServer,
             onOpenWhatsNew = onOpenWhatsNew,
+            onOpenMemories = onOpenMemories,
         )
     }
     entry<Chat> { key ->
@@ -121,6 +182,9 @@ fun EntryProviderScope<NavKey>.chatEntries(
                 // A restored temp Chat(id) entry carries isTemporary=true so the VM re-initializes
                 // temp-aware (never persists the server-hidden conversation). See ChatViewModel.init.
                 isTemporaryRoute = key.isTemporary,
+                targetMessageId = key.targetMessageId,
+                highlightQuery = key.highlightQuery,
+                targetInReasoning = key.targetInReasoning,
                 onOpenDrawer = onOpenDrawer,
                 onNavigateToPromptsLibrary = { onNavigate(PromptsLibrary) },
                 onNavigateBack = onBack,
@@ -131,6 +195,7 @@ fun EntryProviderScope<NavKey>.chatEntries(
                 onNavigateToProviderKeys = onNavigateToProviderKeys,
                 onAttachFromServer = onAttachFromServer,
                 onOpenWhatsNew = onOpenWhatsNew,
+                onOpenMemories = onOpenMemories,
             )
         }
     }
@@ -142,14 +207,17 @@ fun EntryProviderScope<NavKey>.chatEntries(
             )
         }
     }
+    sharedChatEntry(onNavigate = onNavigate, onBack = onBack, onRemove = onRemove)
     entry<ArtifactFullscreen> { key ->
         // Provider present so the fullscreen viewer's toolbar can pin the artifact too.
         ProvideAddArtifactToHomeScreen {
-            ArtifactFullscreenScreen(
-                identifier = key.identifier,
-                version = key.version,
-                onBack = onBack,
-            )
+            ProvideAttachmentDownloader {
+                ArtifactFullscreenScreen(
+                    identifier = key.identifier,
+                    version = key.version,
+                    onBack = onBack,
+                )
+            }
         }
     }
     entry<ArtifactShortcutViewer> { key ->
@@ -183,6 +251,29 @@ fun EntryProviderScope<NavKey>.chatEntries(
 }
 
 /**
+ * The shared-chat viewer. Continue's copy takes its place, so Back from the copy returns to where the
+ * link was opened.
+ */
+private fun EntryProviderScope<NavKey>.sharedChatEntry(
+    onNavigate: (NavKey) -> Unit,
+    onBack: () -> Unit,
+    onRemove: (NavKey) -> Unit,
+) {
+    entry<SharedChat> { key ->
+        ProvideOpenArtifact(onNavigate) {
+            SharedChatScreen(
+                shareId = key.shareId,
+                onNavigateBack = onBack,
+                onOpenConversation = { conversationId ->
+                    onRemove(key)
+                    onNavigate(Chat(conversationId))
+                },
+            )
+        }
+    }
+}
+
+/**
  * Owns the screen-level artifact presentation and provides [LocalOpenArtifact] so artifacts
  * tapped deep in the message list just fire an event. Honoring the display-mode pref it either
  * pushes the [ArtifactFullscreen] route (payload staged in [ArtifactViewerHandoff]; real nav
@@ -190,7 +281,7 @@ fun EntryProviderScope<NavKey>.chatEntries(
  * not inline in the list, so it survives the tapped item scrolling off-screen.
  */
 @Composable
-private fun ProvideOpenArtifact(
+internal fun ProvideOpenArtifact(
     onNavigate: (NavKey) -> Unit,
     content: @Composable () -> Unit,
 ) {
@@ -226,13 +317,20 @@ private fun ProvideOpenArtifact(
             content()
         }
 
-        sheetRequest?.let { req ->
-            ArtifactPanel(
-                artifact = req.artifact,
-                versions = req.versions,
-                onDismiss = { sheetRequest = null },
-                onExpandFullscreen = openFullscreen,
-            )
+        ProvideAttachmentDownloader {
+            // Screen-lifetime, not the sheet's: a save picker's result or a download can land after
+            // the sheet closed, and the sheet itself doesn't survive an Activity recreation.
+            val fileActions = rememberAttachmentFileActions()
+            sheetRequest?.let { req ->
+                CompositionLocalProvider(LocalArtifactFileActions provides fileActions) {
+                    ArtifactPanel(
+                        artifact = req.artifact,
+                        versions = req.versions,
+                        onDismiss = { sheetRequest = null },
+                        onExpandFullscreen = openFullscreen,
+                    )
+                }
+            }
         }
     }
 }
@@ -246,5 +344,6 @@ val chatSerializersModule = SerializersModule {
         subclass(ConversationMedia::class, ConversationMedia.serializer())
         subclass(ArtifactFullscreen::class, ArtifactFullscreen.serializer())
         subclass(ArtifactShortcutViewer::class, ArtifactShortcutViewer.serializer())
+        subclass(SharedChat::class, SharedChat.serializer())
     }
 }

@@ -5,6 +5,7 @@ import androidx.compose.foundation.gestures.AnchoredDraggableDefaults
 import androidx.compose.foundation.gestures.AnchoredDraggableState
 import androidx.compose.foundation.gestures.DraggableAnchors
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.ScrollScope
 import androidx.compose.foundation.gestures.TargetedFlingBehavior
 import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.gestures.animateTo
@@ -12,6 +13,9 @@ import androidx.compose.foundation.gestures.animateToWithDecay
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.snapTo
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
@@ -27,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -93,17 +98,21 @@ internal class PullUpGesture {
 @Stable
 internal class ChatPullUpSheetState(
     val anchored: AnchoredDraggableState<PullUpAnchor>,
-    val flingBehavior: TargetedFlingBehavior,
+    /** The settle fling; the three [anchoredDraggable]s get it through [flingBehavior]. */
+    fling: TargetedFlingBehavior,
     /** Fling velocity above which a flick (rather than drag position) decides open/closed. */
     private val minFlingVelocityPx: Float,
     /** The whole screen, recorded for the sheet only while it shows. */
     val backdrop: GlassBackdrop?,
     private val height: MutableIntState,
     private val gesture: PullUpGesture,
+    /** Shared by the three [anchoredDraggable]s, so [isDragged] covers a finger on any of them. */
+    val interactionSource: MutableInteractionSource,
+    private val isDragged: State<Boolean>,
 ) {
     var heightPx: Int
         get() = height.intValue
-        set(value) {
+        private set(value) {
             height.intValue = value
         }
 
@@ -116,8 +125,105 @@ internal class ChatPullUpSheetState(
     /** Derived so readers recompose only on the open<->closed transition, not per drag frame. */
     val visible: Boolean by derivedStateOf { heightPx > 0 && isOpen }
 
-    suspend fun hide() {
+    /** Wrap every targeted animation this state starts in [ownAnimation], or the heal snaps it short. */
+    private var ownAnimations by mutableIntStateOf(0)
+
+    private suspend fun ownAnimation(block: suspend () -> Unit) {
+        ownAnimations++
+        try {
+            block()
+        } finally {
+            ownAnimations--
+        }
+    }
+
+    suspend fun hide() = ownAnimation {
         anchored.animateTo(PullUpAnchor.Hidden)
+    }
+
+    /**
+     * True when Compose reports an animation running that nothing is running (#542).
+     *
+     * `updateAnchors` (from [onHeightChanged]) can't snap while a drag or fling holds the lock, so it
+     * records `dragTarget` instead, and only a *targeted* anchoredDrag (animateTo/snapTo) clears that —
+     * or the next resize, by snapping to the stale target. The finger drag and the modifier's fling
+     * are untargeted, so a resize landing under either leaves `isAnimationRunning` true until then.
+     * Every [anchoredDraggable] here starts a drag on each pointer-down meanwhile
+     * (startDragImmediately) and consumes it, killing every tap beneath, and the pinned `targetValue`
+     * is what that next resize snaps to, which can close an open sheet.
+     * `ChatPullUpSheetStaleTargetTest` fails once Compose stops doing this.
+     *
+     * Not stale while a finger is down or one of this state's own animations is in flight: those
+     * either clear it themselves or are what the flag is for.
+     */
+    val hasStaleAnimationFlag: Boolean
+        get() = anchored.isAnimationRunning && !isDragged.value && ownAnimations == 0
+
+    /** Bumped each time a fling runs to completion; [healStaleAnimationFlag] runs on every bump. */
+    var flingsEnded by mutableIntStateOf(0)
+        private set
+
+    /**
+     * What the [anchoredDraggable]s fling with. Only a drag or fling can leave the flag stale, and
+     * every drag ends in a fling (on stop and on cancel alike), so the end of a fling is the one
+     * place to look. A resize mid-fling restarts it, cancelling the run in progress, so only the
+     * run that lands is counted.
+     */
+    val flingBehavior: TargetedFlingBehavior = object : TargetedFlingBehavior {
+        override suspend fun ScrollScope.performFling(
+            initialVelocity: Float,
+            onRemainingDistanceUpdated: (Float) -> Unit,
+        ): Float {
+            val left = with(fling) { performFling(initialVelocity, onRemainingDistanceUpdated) }
+            flingsEnded++
+            return left
+        }
+    }
+
+    /**
+     * Clears a stale flag with a snap to the anchor the landed fling rests on: no visible movement,
+     * and the targeted drag's cleanup clears it. Runs after the fling has released the lock. If a
+     * guard holds it off, the next gesture's fling comes back here.
+     */
+    suspend fun healStaleAnimationFlag() {
+        // Re-checked right before snapTo: it shares the finger drag's priority and would cancel one.
+        if (!hasStaleAnimationFlag) return
+        val o = anchored.offset
+        if (o.isNaN()) return
+        val restingOn = anchored.anchors.closestAnchor(o) ?: return
+        anchored.snapTo(restingOn)
+    }
+
+    /**
+     * The sheet surface measured [newHeight] (its content loading in, or changing).
+     *
+     * A sheet that is mid-way keeps its visible height, so its top edge stays under the finger.
+     * Without that, a resize under a nested-scroll pull (which holds no lock) snaps it fully open or
+     * closed, and one under a drag or fling shifts the top edge by the change. Resting sheets keep
+     * their anchor, and the sheet's own animations re-aim at the new anchors themselves.
+     */
+    fun onHeightChanged(newHeight: Int) {
+        val oldHeight = heightPx
+        if (newHeight == oldHeight) return
+        val oldOffset = anchored.offset
+        heightPx = newHeight
+        if (newHeight <= 0) return
+        // newTarget is load-bearing: the default is the anchor closest to the CURRENT offset, which
+        // is the old height. A sheet that more than doubles while hidden (its content loading after
+        // the first measure) is then nearer Revealed (0) than the new Hidden, and snaps open over the
+        // composer on its own. Keep its state.
+        anchored.updateAnchors(
+            DraggableAnchors {
+                PullUpAnchor.Hidden at newHeight.toFloat()
+                PullUpAnchor.Revealed at 0f
+            },
+            newTarget = anchored.targetValue,
+        )
+        val midway = oldHeight > 0 && !oldOffset.isNaN() && oldOffset > 0f && oldOffset < oldHeight
+        if (midway && ownAnimations == 0) {
+            val keepTopEdge = (oldOffset + (newHeight - oldHeight)).coerceIn(0f, newHeight.toFloat())
+            anchored.dispatchRawDelta(keepTopEdge - anchored.offset)
+        }
     }
 
     // Velocity-aware settle, only once the sheet is already partly open (so a fling that merely
@@ -134,7 +240,7 @@ internal class ChatPullUpSheetState(
             o < h * 0.6f -> PullUpAnchor.Revealed
             else -> PullUpAnchor.Hidden
         }
-        anchored.animateToWithDecay(target, velocity)
+        ownAnimation { anchored.animateToWithDecay(target, velocity) }
         return true
     }
 
@@ -239,6 +345,7 @@ internal class ChatPullUpSheetState(
     val landingModifier: Modifier = Modifier.anchoredDraggable(
         state = anchored,
         orientation = Orientation.Vertical,
+        interactionSource = interactionSource,
         flingBehavior = flingBehavior,
     )
 }
@@ -255,8 +362,15 @@ internal fun rememberChatPullUpSheetState(): ChatPullUpSheetState {
         animationSpec = tween(),
     )
     val backdrop = rememberGlassBackdrop()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isDragged = interactionSource.collectIsDraggedAsState()
     val state = remember(anchored, flingBehavior, minFlingVelocityPx, backdrop) {
-        ChatPullUpSheetState(anchored, flingBehavior, minFlingVelocityPx, backdrop, height, gesture)
+        ChatPullUpSheetState(
+            anchored, flingBehavior, minFlingVelocityPx, backdrop, height, gesture, interactionSource, isDragged,
+        )
+    }
+    LaunchedEffect(state) {
+        snapshotFlow { state.flingsEnded }.collect { state.healStaleAnimationFlag() }
     }
     // Dismiss the IME the moment the sheet starts to reveal (the screens' Scaffolds use imePadding()).
     val keyboardController by rememberUpdatedState(LocalSoftwareKeyboardController.current)
@@ -324,6 +438,7 @@ internal fun BoxScope.ChatPullUpSheetOverlay(
                 .anchoredDraggable(
                     state = state.anchored,
                     orientation = Orientation.Vertical,
+                    interactionSource = state.interactionSource,
                     flingBehavior = state.flingBehavior,
                 )
                 .pointerInput(state) {
@@ -351,25 +466,7 @@ internal fun BoxScope.ChatPullUpSheetOverlay(
             // measured height is still 0, so without this the sheet would place at offset 0
             // (fully revealed) and flash the whole menu open on every chat entry.
             .graphicsLayer { alpha = if (state.heightPx > 0) 1f else 0f }
-            .onSizeChanged { size ->
-                if (size.height != state.heightPx) {
-                    state.heightPx = size.height
-                    if (size.height > 0) {
-                        // newTarget is load-bearing: the default is the anchor closest to the
-                        // CURRENT offset, which is the old height. A sheet that more than doubles
-                        // while hidden (its content loading after the first measure) is then nearer
-                        // Revealed (0) than the new Hidden, and snaps open over the composer on its
-                        // own. Keep its state.
-                        state.anchored.updateAnchors(
-                            DraggableAnchors {
-                                PullUpAnchor.Hidden at size.height.toFloat()
-                                PullUpAnchor.Revealed at 0f
-                            },
-                            newTarget = state.anchored.targetValue,
-                        )
-                    }
-                }
-            }
+            .onSizeChanged { size -> state.onHeightChanged(size.height) }
             .offset {
                 val o = state.anchored.offset
                 IntOffset(0, if (o.isNaN()) state.heightPx else o.roundToInt())
@@ -377,6 +474,7 @@ internal fun BoxScope.ChatPullUpSheetOverlay(
             .anchoredDraggable(
                 state = state.anchored,
                 orientation = Orientation.Vertical,
+                interactionSource = state.interactionSource,
                 flingBehavior = state.flingBehavior,
             )
             // Lets a drag over the scrolling content move the surface. See sheetConnection.
@@ -388,7 +486,7 @@ internal fun BoxScope.ChatPullUpSheetOverlay(
                 enabledTools = uiState.effectiveEnabledTools,
                 onToggleTool = viewModel::toggleTool,
                 mcpServers = uiState.mcpServers,
-                selectedMcpServerNames = uiState.selectedMcpServerNames,
+                selectedMcpServerNames = uiState.effectiveMcpServerNames,
                 onToggleMcpServer = viewModel::toggleMcpServer,
                 onAttachFiles = onAttachFiles,
                 onTakePhoto = onTakePhoto,
@@ -403,14 +501,17 @@ internal fun BoxScope.ChatPullUpSheetOverlay(
                     hide()
                 },
                 selectedModelDisplay = selectedModelDisplay,
+                comparisonModels = comparisonModelLabels(uiState),
                 onDismiss = hide,
                 isCodeInterpreterAvailable = uiState.isCodeInterpreterAvailable,
-                webSearchEnabled = uiState.webSearchEnabled,
+                webSearchEnabled = uiState.webSearchAvailable,
+                webSearchKind = uiState.webSearchKind,
                 urlContextEnabled = uiState.urlContextProviderGate,
                 runCodeEnabled = uiState.runCodeEnabled,
                 fileSearchEnabled = uiState.fileSearchEnabled,
                 memoryEnabled = uiState.isMemoryToolAvailable,
                 imageGenEnabled = uiState.tchat.imageGenAvailable, // TCHAT
+                skillsEnabled = uiState.isSkillsToolAvailable,
                 mcpServersEnabled = uiState.mcpServersEnabled,
                 gates = uiState.chatInputGates,
                 contextGauge = uiState.contextGaugeDetails,

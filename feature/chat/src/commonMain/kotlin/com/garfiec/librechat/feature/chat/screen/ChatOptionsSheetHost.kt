@@ -10,6 +10,7 @@ import com.garfiec.librechat.core.model.paramsEndpointForOrNull
 import com.garfiec.librechat.feature.chat.components.ChatOptionsBottomSheet
 import com.garfiec.librechat.feature.chat.components.ChatOptionsSheetController
 import com.garfiec.librechat.feature.chat.components.ChatToolsPageParams
+import com.garfiec.librechat.feature.chat.components.ComparisonLane
 import com.garfiec.librechat.feature.chat.components.ModelParametersPageParams
 import com.garfiec.librechat.feature.chat.components.ModelSelectorPageParams
 import com.garfiec.librechat.feature.chat.components.localizedStreamError
@@ -41,6 +42,8 @@ internal fun ChatOptionsSheetHost(
     onAttachFromServer: () -> Unit,
     onNavigateToProviderKeys: (endpointName: String?) -> Unit,
     onShowSavePresetDialog: () -> Unit,
+    /** Compare setup's staged picks: during setup the Model page stages into them. */
+    compareSetupPick: CompareSetupPick,
 ) {
     // A send-block auto-opens the standalone selector; close this one so they can't stack. Gate on
     // the flag (not just its change) to also catch it being already true when this sheet opens.
@@ -61,6 +64,15 @@ internal fun ChatOptionsSheetHost(
     }
 
     val error = uiState.error?.let { localizedStreamError(it) }
+    val comparison = rememberComparisonSelectorRouting(
+        uiState = uiState,
+        initialTarget = if (isSecondaryTab) ComparisonLane.B else ComparisonLane.A,
+        onSelectPrimary = viewModel::onModelSelected,
+        onSelectSecondary = viewModel::setSecondaryModel,
+        setupPick = compareSetupPick,
+        onSelectPrimarySpec = viewModel::onSpecSelected,
+        onSelectSecondarySpec = viewModel::setSecondarySpec,
+    )
 
     // TCHAT: the selector page renders the Tchat picker for the active tab's selection.
     val tchatSelectedEndpoint = if (isSecondaryTab) uiState.comparisonState.secondaryEndpoint else uiState.selectedEndpoint
@@ -80,20 +92,23 @@ internal fun ChatOptionsSheetHost(
             enabledTools = uiState.effectiveEnabledTools,
             onToggleTool = viewModel::toggleTool,
             mcpServers = uiState.mcpServers,
-            selectedMcpServerNames = uiState.selectedMcpServerNames,
+            selectedMcpServerNames = uiState.effectiveMcpServerNames,
             onToggleMcpServer = viewModel::toggleMcpServer,
             onAttachFiles = onAttachFiles,
             onTakePhoto = onTakePhoto,
             onPickPhotos = onPickPhotos,
             onAttachFromServer = onAttachFromServer,
             selectedModelDisplay = selectedModelDisplay,
+            comparisonModels = comparisonModelLabels(uiState),
             isCodeInterpreterAvailable = uiState.isCodeInterpreterAvailable,
-            webSearchEnabled = uiState.webSearchEnabled,
+            webSearchEnabled = uiState.webSearchAvailable,
+            webSearchKind = uiState.webSearchKind,
             urlContextEnabled = uiState.urlContextProviderGate,
             runCodeEnabled = uiState.runCodeEnabled,
             fileSearchEnabled = uiState.fileSearchEnabled,
             memoryEnabled = uiState.isMemoryToolAvailable,
             imageGenEnabled = uiState.tchat.imageGenAvailable, // TCHAT
+            skillsEnabled = uiState.isSkillsToolAvailable,
             mcpServersEnabled = uiState.mcpServersEnabled,
             gates = uiState.chatInputGates,
             contextGauge = uiState.contextGaugeDetails,
@@ -104,28 +119,23 @@ internal fun ChatOptionsSheetHost(
             contextGaugeExpanded = uiState.contextGaugeExpanded,
             onContextGaugeExpandedChange = viewModel::setContextGaugeExpanded,
         ),
-        // Point the selector page at the active tab's model, so the sheet needs no comparison branch.
+        // While comparing, the page edits whichever lane its A/B pair picks, starting on the active
+        // tab's; the sheet itself needs no comparison branch.
         selector = ModelSelectorPageParams(
+            modelSelect = uiState.modelSelectEnabled,
+            modelSpecs = uiState.modelSpecs,
+            selectedSpec = comparison.selectedSpec,
+            onSpecSelect = comparison.onSpecSelect,
             endpointConfigs = uiState.endpointConfigs,
             availableModels = uiState.availableModels,
             agents = uiState.agents,
-            selectedEndpoint = if (isSecondaryTab) {
-                uiState.comparisonState.secondaryEndpoint
-            } else {
-                uiState.selectedEndpoint
-            },
-            selectedModel = if (isSecondaryTab) {
-                uiState.comparisonState.secondaryModel
-            } else {
-                uiState.selectedModel
-            },
+            agentsLoaded = uiState.agentsLoaded,
+            selectedEndpoint = comparison.selectedEndpoint,
+            selectedModel = comparison.selectedModel,
             // Neither branch clears the error: the sheet clears the selector's inline banner on
             // page-leave itself (see ChatOptionsBottomSheet), the only error that can flash.
-            onModelSelect = if (isSecondaryTab) {
-                viewModel::setSecondaryModel
-            } else {
-                viewModel::onModelSelected
-            },
+            onModelSelect = comparison.onModelSelect,
+            comparisonHeader = comparison.header,
             onSetApiKey = { name -> onNavigateToProviderKeys(name) },
             onSurfaced = viewModel::prepareModelSelector,
             // Inline because the Scaffold snackbar draws behind the sheet scrim.
@@ -134,8 +144,10 @@ internal fun ChatOptionsSheetHost(
             serverUrl = uiState.serverUrl,
             favoriteAgentIds = uiState.favoriteAgentIds,
             favoriteModelKeys = uiState.favoriteModelKeys,
+            favoriteSpecNames = uiState.favoriteSpecNames,
             onToggleAgentFavorite = viewModel::toggleAgentFavorite,
             onToggleModelFavorite = viewModel::toggleModelFavorite,
+            onToggleSpecFavorite = viewModel::toggleSpecFavorite,
             starredDisplay = uiState.starredModelsDisplay,
             endpointKeyStates = uiState.endpointKeyStates,
             tchatPicker = tchatPicker, // TCHAT
@@ -148,7 +160,7 @@ internal fun ChatOptionsSheetHost(
         // parameters, so there is nothing else to point this at (pre-existing; porting web's
         // per-addedConvo parameters would be the real fix).
         parameters = ModelParametersPageParams(
-            parameters = uiState.modelParameters,
+            parameters = uiState.selection.sendParameters,
             onParametersChange = viewModel::updateModelParameters,
             // TCHAT: the parameter set the endpoint declares (TensorGrid → openAI), not its name.
             selectedEndpoint = uiState.endpointConfigs.paramsEndpointFor(uiState.selectedEndpoint),
@@ -177,6 +189,7 @@ internal fun ChatOptionsSheetHost(
                 controller.close()
                 onShowSavePresetDialog()
             },
+            setBySpec = uiState.parametersSetBySpec,
         ),
     )
 }

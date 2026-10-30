@@ -1,14 +1,19 @@
 package com.garfiec.librechat.feature.settings.viewmodel
 
 import com.garfiec.librechat.core.common.AppInfo
+import com.garfiec.librechat.core.common.DistributionChannel
 import com.garfiec.librechat.core.common.datetime.ClockFormat
 import com.garfiec.librechat.core.common.datetime.DateFormatStyle
 import com.garfiec.librechat.core.common.datetime.DateTimeFormatPrefs
 import com.garfiec.librechat.core.common.datetime.TimestampStyle
+import com.garfiec.librechat.core.data.datastore.AppPreferences
 import com.garfiec.librechat.core.data.datastore.DateTimePrefsStore
+import com.garfiec.librechat.core.data.datastore.PreferenceStore
 import com.garfiec.librechat.core.data.datastore.ServerDataStore
 import com.garfiec.librechat.core.data.datastore.SettingsDataStore
 import com.garfiec.librechat.core.data.repository.ConfigRepository
+import com.garfiec.librechat.core.network.client.CertificateAuthority
+import com.garfiec.librechat.core.network.client.CertificateTrustRegistry
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -37,6 +42,10 @@ class GeneralSettingsViewModelTest {
     private val selectedLanguageFlow = MutableStateFlow(SettingsDataStore.DEFAULT_LANGUAGE)
     private val dateTimePrefsFlow = MutableStateFlow(DateTimeFormatPrefs())
     private val version = MutableStateFlow<String?>(null)
+    private val certificateTrust = CertificateTrustRegistry()
+    private val preferenceStore = mockk<PreferenceStore>(relaxed = true) {
+        every { observe(AppPreferences.AdvancedSearch) } returns MutableStateFlow(false)
+    }
 
     @Before
     fun setup() {
@@ -65,8 +74,26 @@ class GeneralSettingsViewModelTest {
             override val versionName = "0.1.0"
             override val versionCode = 1L
             override val gitSha = "testsha0"
+            override val channel = DistributionChannel.OPEN_SOURCE
         },
+        preferenceStore = preferenceStore,
+        certificateTrust = certificateTrust,
     )
+
+    @Test
+    fun `About notes a server trusted through a user-installed CA`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.serverTrustedViaUserCa).isFalse()
+
+        certificateTrust.record("chat.example.com", 443, CertificateAuthority.UserInstalled)
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.serverTrustedViaUserCa).isTrue()
+
+        certificateTrust.record("chat.example.com", 443, CertificateAuthority.System)
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.serverTrustedViaUserCa).isFalse()
+    }
 
     @Test
     fun `About shows the app build, server URL and detected version`() = runTest {

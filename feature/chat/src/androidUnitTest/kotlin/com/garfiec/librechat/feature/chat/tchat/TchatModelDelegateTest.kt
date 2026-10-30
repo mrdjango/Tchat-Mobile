@@ -17,6 +17,7 @@ import com.garfiec.librechat.feature.chat.viewmodel.ChatRequestBuilder
 import com.garfiec.librechat.feature.chat.viewmodel.ChatStateHandle
 import com.garfiec.librechat.feature.chat.viewmodel.ChatUiState
 import com.garfiec.librechat.feature.chat.viewmodel.ConversationMetaState
+import com.garfiec.librechat.feature.chat.viewmodel.ModelChoice
 import com.garfiec.librechat.feature.chat.viewmodel.ModelSelectionHandle
 import com.garfiec.librechat.feature.chat.viewmodel.ModelSelectionState
 import io.mockk.coEvery
@@ -43,7 +44,7 @@ class TchatModelDelegateTest {
                 list = listOf(
                     ModelSpec(
                         name = "tensorgrid-default",
-                        default = true,
+                        isDefault = true,
                         preset = Preset(endpoint = "TensorGrid", model = "gpt-6-luna"),
                     ),
                 ),
@@ -89,7 +90,7 @@ class TchatModelDelegateTest {
             tchatSettings = settings,
             selectModel = { endpoint, model ->
                 selected += endpoint to model
-                handle.update { selection = selection.copy(selectedEndpoint = endpoint, selectedModel = model) }
+                handle.update { selection = selection.copy(choice = ModelChoice.Raw(endpoint, model)) }
             },
             onRepaired = { repairs += it },
         )
@@ -100,8 +101,7 @@ class TchatModelDelegateTest {
     private fun chatOn(model: String, conversationId: String? = "convo-1") = ChatUiState(
         conversation = ConversationMetaState(conversationId = conversationId),
         selection = ModelSelectionState(
-            selectedEndpoint = "TensorGrid",
-            selectedModel = model,
+            choice = ModelChoice.Raw("TensorGrid", model),
             availableModels = mapOf("TensorGrid" to listOf("gpt-image-2-4k", "gpt-5.6-terra", "gpt-6-luna")),
         ),
     )
@@ -181,7 +181,10 @@ class TchatModelDelegateTest {
             assertEquals(JsonPrimitive("gemini-image"), builder.buildEphemeralAgent()?.imageGen)
 
             // Not sent for an agent: the server ignores ephemeral tools there.
-            state.value = state.value.copy(selection = state.value.selection.copy(selectedEndpoint = "agents"))
+            val selection = state.value.selection
+            state.value = state.value.copy(
+                selection = selection.copy(choice = ModelChoice.Raw("agents", selection.selectedModel)),
+            )
             assertNull(builder.buildEphemeralAgent())
         }
 

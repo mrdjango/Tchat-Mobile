@@ -47,7 +47,7 @@ actual fun rememberShareImage(): (url: String) -> Unit {
 private suspend fun shareImage(url: String) {
     val png = loadAsPng(url)
     if (png == null) {
-        shareUrl(url)
+        shareText(url)
         return
     }
     shareFile(png, filename = "image", mime = "image/png")
@@ -71,27 +71,13 @@ actual fun rememberShareFile(): (bytes: ByteArray, filename: String, mime: Strin
     }
 }
 
-private fun shareUrl(url: String) {
-    val viewController = currentTopmostViewController() ?: return
-    val activityVC = UIActivityViewController(
-        activityItems = listOf(url),
-        applicationActivities = null,
-    )
-    presentSheet(activityVC, from = viewController)
-}
-
 // Writes the downloaded bytes to a temp file and shares the file URL, so the user can open it in
 // another app / save to Files / AirDrop. Mirrors the diagnostic-log saver's NSData + temp-file
-// pattern (see feature/settings LogFileSaver.ios.kt and the project iOS cinterop gotchas).
+// pattern (see platform/TextFileSaver.ios.kt and the project iOS cinterop gotchas).
 // The NSData copy and disk write are sized by the file, so they run off the main thread; only the
 // UIKit presentation hops back to main.
-@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 private suspend fun shareFile(bytes: ByteArray, filename: String, mime: String?) {
-    val tempPath = NSTemporaryDirectory() + ensureExtension(sanitizeFilename(filename), mime)
-    val wrote = withContext(Dispatchers.Default) {
-        bytes.toNSData().writeToFile(tempPath, atomically = true)
-    }
-    if (!wrote) return
+    val tempPath = writeTempFile(bytes, filename, mime) ?: return
     withContext(Dispatchers.Main) {
         val viewController = currentTopmostViewController() ?: return@withContext
         val activityVC = UIActivityViewController(
@@ -100,6 +86,16 @@ private suspend fun shareFile(bytes: ByteArray, filename: String, mime: String?)
         )
         presentSheet(activityVC, from = viewController)
     }
+}
+
+/** Writes [bytes] to a temp file named for the file, off the main thread; its path, or null. */
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+internal suspend fun writeTempFile(bytes: ByteArray, filename: String, mime: String?): String? {
+    val tempPath = NSTemporaryDirectory() + ensureExtension(sanitizeFilename(filename), mime)
+    val wrote = withContext(Dispatchers.Default) {
+        bytes.toNSData().writeToFile(tempPath, atomically = true)
+    }
+    return tempPath.takeIf { wrote }
 }
 
 /** Strips path separators so a server-supplied filename can't escape the temp dir. */

@@ -14,6 +14,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -24,9 +25,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.garfiec.librechat.core.data.datastore.ChatFontSize
@@ -39,12 +44,22 @@ import com.garfiec.librechat.feature.chat.components.AskUserQuestionPanel
 import com.garfiec.librechat.feature.chat.components.ChatComposer
 import com.garfiec.librechat.feature.chat.components.ChatFloatingTopBar
 import com.garfiec.librechat.feature.chat.components.ChatRoot
+import com.garfiec.librechat.feature.chat.components.ComposerComparison
+import com.garfiec.librechat.feature.chat.components.ComposerComparisonHint
+import com.garfiec.librechat.feature.chat.components.LandingStarters
 import com.garfiec.librechat.feature.chat.components.ToolApprovalPanel
 import com.garfiec.librechat.feature.chat.components.UpdateAvailableBanner
 import com.garfiec.librechat.feature.chat.components.UploadRoutingSheet
 import com.garfiec.librechat.feature.chat.components.addToChatSelectionItem
 import com.garfiec.librechat.feature.chat.components.rememberChatAttachmentActions
 import com.garfiec.librechat.feature.chat.components.rememberChatOptionsSheetController
+import com.garfiec.librechat.feature.chat.components.veil.COMPOSER_SWELL
+import com.garfiec.librechat.feature.chat.components.veil.LocalComposerFlare
+import com.garfiec.librechat.feature.chat.components.veil.LocalModeVeil
+import com.garfiec.librechat.feature.chat.components.veil.VeilReaction
+import com.garfiec.librechat.feature.chat.components.veil.rememberModeVeilModifier
+import com.garfiec.librechat.feature.chat.components.veil.rememberModeVeilState
+import com.garfiec.librechat.feature.chat.components.veil.rememberVeilTarget
 import com.garfiec.librechat.feature.chat.prompts.components.VariableInputDialog
 import com.garfiec.librechat.feature.chat.tchat.ComposerTrayExtras
 import com.garfiec.librechat.feature.chat.tchat.composerEffortChip
@@ -57,6 +72,7 @@ import com.garfiec.librechat.feature.chat.viewmodel.isEmptyLanding
 import com.garfiec.librechat.feature.chat.viewmodel.neutralizeStreamingChurn
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 
@@ -71,7 +87,7 @@ import org.koin.core.parameter.parametersOf
 fun ChatScreen(
     /**
      * Deep-link CTA from the user-provided-key error snackbar and the
-     * model-selector "Set API Key" CTA on greyed endpoint groups. Tap navigates to
+     * model-selector "Add key" action on greyed endpoint groups. Tap navigates to
      * Settings → Provider API Keys. When [endpointName] is non-null, the destination
      * screen auto-opens the Set Key bottom-sheet for that endpoint.
      */
@@ -86,6 +102,15 @@ fun ChatScreen(
      *  home-screen model shortcut / quick action. Mutually exclusive with [initialAgentId]. */
     initialEndpoint: String? = null,
     initialModel: String? = null,
+    /** The spec that model shortcut was recorded from, if any. */
+    initialSpec: String? = null,
+    /** Opens the chat at this message, highlighting [highlightQuery] (a search hit). */
+    targetMessageId: String? = null,
+    highlightQuery: String? = null,
+    targetInReasoning: Boolean = false,
+    /** A new chat started from a project: filed into [chatProjectId], named by [chatProjectName]. */
+    chatProjectId: String? = null,
+    chatProjectName: String? = null,
     onConversationStart: ((conversationId: String, isTemporary: Boolean) -> Unit)? = null,
     onNavigateToConversation: ((String) -> Unit)? = null,
     onOpenDrawer: (() -> Unit)? = null,
@@ -98,10 +123,23 @@ fun ChatScreen(
     onAttachFromServer: () -> Unit = {},
     /** Opens What's new from the update banner shown on an empty chat. */
     onOpenWhatsNew: () -> Unit = {},
+    /** Opens the Memories page from a memory card's Manage action. Null hides the action. */
+    onOpenMemories: (() -> Unit)? = null,
 ) {
     val viewModel: ChatViewModel =
         koinViewModel {
-            parametersOf(conversationId, initialAgentId, isTemporaryRoute, initialEndpoint, initialModel)
+            parametersOf(
+                conversationId,
+                initialAgentId,
+                isTemporaryRoute,
+                initialEndpoint,
+                initialModel,
+                targetMessageId,
+                highlightQuery,
+                targetInReasoning,
+                chatProjectId,
+                initialSpec,
+            )
         }
     // Chrome-rate state; ChatContent collects at full rate. Never read a neutralized field here.
     val chromeFlow = remember(viewModel) {
@@ -134,6 +172,23 @@ fun ChatScreen(
     var showSavePresetDialog by remember { mutableStateOf(false) }
     var showSecondaryModelSheet by remember { mutableStateOf(false) }
     var activeComparisonTab by remember { mutableIntStateOf(0) }
+    val compareSetupPick = rememberCompareSetupPick(uiState.comparisonState.isSettingUp)
+    val compareSetupActions = remember(viewModel) { viewModel.compareSetupActions() }
+    // A wide setup's "Browse all models" opens the setup sheet over the panes; it closes with setup.
+    var showCompareBrowseAll by remember { mutableStateOf(false) }
+    LaunchedEffect(uiState.comparisonState.isSettingUp) {
+        if (!uiState.comparisonState.isSettingUp) showCompareBrowseAll = false
+    }
+    // The chat's own width (not the window's: a tablet sidebar takes some) decides whether Compare
+    // shows its panes side by side, and with it whether setup is a sheet or the empty second pane.
+    // Until onSizeChanged reports for this window size, the window's width stands in: a fold,
+    // unfold or rotation then lays out right from its first frame instead of flashing the other
+    // layout. Keyed on the window width so a measurement from the previous posture is never reused.
+    val windowWidthPx = LocalWindowInfo.current.containerSize.width
+    var chatWidthPx by remember(windowWidthPx) { mutableIntStateOf(0) }
+    val effectiveChatWidthPx = if (chatWidthPx > 0) chatWidthPx else windowWidthPx
+    val comparisonWide = with(LocalDensity.current) { effectiveChatWidthPx.toDp() } >= ComparisonWideBreakpoint
+    val setupInPanes = uiState.comparisonState.isSettingUp && uiState.showsComparisonPanes(comparisonWide)
 
     // Header/composer model labels (agent name vs model name, with the "never a raw
     // model string under agents" rule).
@@ -141,6 +196,8 @@ fun ChatScreen(
         selectedEndpoint = uiState.selectedEndpoint,
         selectedModel = uiState.selectedModel,
         agents = uiState.agents,
+        selectedSpec = uiState.selectedSpec,
+        modelSpecs = uiState.modelSpecs,
     )
 
     val onStartRecordingWithPermission = rememberChatStartRecording(
@@ -155,13 +212,54 @@ fun ChatScreen(
     // and the pull-up, hence the controller. Independent of uiState.showModelSheet (the standalone
     // selector), which keeps dismissing straight to the chat.
     val optionsController = rememberChatOptionsSheetController()
-    // On comparison tab 1 the composer edits the secondary model, so the selector page and label
-    // both follow the active tab.
-    val isSecondaryTab = uiState.comparisonState.isEnabled && activeComparisonTab == 1
+    // On a phone's comparison tab 1 the composer edits the secondary model, so the selector page and
+    // label both follow the active tab. Side by side there is no current tab (the remembered index
+    // can be stale from before an unfold), so it is never the secondary one.
+    val isSecondaryTab = uiState.comparisonState.isEnabled && activeComparisonTab == 1 && !comparisonWide
+    val secondaryModelLabel = if (uiState.comparisonState.isEnabled) {
+        comparisonLaneLabel(
+            uiState.comparisonState.secondaryEndpoint,
+            uiState.comparisonState.secondaryModel,
+            uiState.agents,
+            uiState.laneBSpec,
+            uiState.modelSpecs,
+        )
+    } else {
+        null
+    }
+    val composerComparisonHint = when {
+        uiState.comparisonState.isSettingUp -> ComposerComparisonHint.SETTING_UP
+        uiState.comparisonState.isEnabled -> ComposerComparisonHint.BOTH
+        else -> ComposerComparisonHint.NONE
+    }
+    // Both models, as the A·B badge pair inside the field, whose menu opens either model's selector.
+    // Compact on a phone, where the tab bar already names both models, and dots once a draft is typed.
+    // Lane A without a model reads "Select model", never B's name.
+    val primaryLaneLabel = comparisonLaneLabel(
+        uiState.selectedEndpoint,
+        uiState.selectedModel,
+        uiState.agents,
+        uiState.selectedSpec,
+        uiState.modelSpecs,
+    )
+    val composerComparison = remember(
+        secondaryModelLabel,
+        primaryLaneLabel,
+        comparisonWide,
+        viewModel,
+    ) {
+        secondaryModelLabel?.let { secondaryLabel ->
+            ComposerComparison(
+                primaryLabel = primaryLaneLabel,
+                secondaryLabel = secondaryLabel,
+                onChangePrimary = viewModel::openModelSheet,
+                onChangeSecondary = { showSecondaryModelSheet = true },
+                compact = !comparisonWide,
+            )
+        }
+    }
     val effectiveSelectedModelDisplay = if (isSecondaryTab) {
-        viewModel.getSecondaryModelDisplayName()
-            ?: uiState.comparisonState.secondaryModel
-            ?: displayModel
+        secondaryModelLabel ?: displayModel
     } else {
         displayModel
     }
@@ -176,6 +274,17 @@ fun ChatScreen(
         uiState.gates.dropParamsMap,
         isSecondaryTab,
     ) { if (isSecondaryTab) null else uiState.composerEffortChip() }
+    // The picker's skill rows, narrowed for this chat. Recomputed only when an input changes, not
+    // on every chrome emission.
+    val pickerSkills = remember(
+        uiState.skillCatalog,
+        uiState.canPickSkills,
+        uiState.activeSpecSkills,
+        uiState.selectedEndpoint,
+        uiState.selectedModel,
+        uiState.agents,
+        uiState.pendingManualSkills,
+    ) { uiState.pickerSkills }
     // One launcher set, registered here and shared by both the composer "+" sheet (ChatInput) and
     // the pull-up sheet: a launcher stays usable from descendant compositions while the one that
     // registered it (this screen) is alive, so a second registration would be redundant.
@@ -187,12 +296,12 @@ fun ChatScreen(
     // routing-to-text unreachable, with no file even pickable to route.
     val filePickerMimeTypes = remember(
         uiState.fileUploadConfig,
-        uiState.selectedEndpoint,
+        uiState.fileConfigEndpoint,
         uiState.isFileContextAvailable,
         uiState.gates.backendVersion,
     ) {
         uiState.fileUploadConfig?.pickerMimeTypes(
-            endpoint = uiState.selectedEndpoint,
+            endpoint = uiState.fileConfigEndpoint,
             includeTextRoute = uiState.isFileContextAvailable,
             serverVersion = uiState.gates.backendVersion,
         ).orEmpty()
@@ -214,7 +323,6 @@ fun ChatScreen(
     ChatScreenOutcomes(
         uiState = uiState,
         viewModel = viewModel,
-        snackbarHostState = snackbarHostState,
         onConversationStart = onConversationStart,
         onNavigateToConversation = onNavigateToConversation,
     )
@@ -226,17 +334,26 @@ fun ChatScreen(
         mermaidRenderCache = viewModel.mermaidRenderCache,
         parsedMarkdownCache = viewModel.parsedMarkdownCache,
         subagentProgress = uiState.subagentProgress,
+        previewOverrides = uiState.previewOverrides,
         conversationId = uiState.conversationId,
         subagentThreadsSupported = uiState.gates.subagentThreadsSupported,
         mediaPreview = uiState.mediaPreview,
         onOpenMedia = viewModel::openMedia,
         onCloseMedia = viewModel::closeMedia,
         onDownloadAttachment = viewModel::downloadFileBytes,
+        onFileNotice = { message ->
+            coroutineScope.launch {
+                snackbarHostState.currentSnackbarData?.dismiss()
+                snackbarHostState.showSnackbar(message)
+            }
+        },
         promptLibraryRevision = promptLibraryRevision,
         onRefreshPrompts = viewModel::refreshPromptsIfStale,
         siteIcons = prefs.siteIcons,
         onSiteIconsChoice = viewModel::setShowSiteIcons,
         onSiteIconsPromptDismiss = viewModel::dismissSiteIconPrompt,
+        onOpenMemories = onOpenMemories?.takeIf { uiState.gates.memoriesPageEnabled },
+        thinkingOpenByDefault = prefs.thinkingOpenByDefault,
     ) {
     Scaffold(
         modifier = modifier
@@ -259,234 +376,306 @@ fun ChatScreen(
         val bottomContentPadding = with(LocalDensity.current) {
             maxOf(160.dp, inputBarHeightPx.toDp() + 16.dp)
         }
+        // Side-by-side comparison panes are cards that stop above the composer, not lists that
+        // scroll under it, so they sit on the measured bar itself. The list floor above would
+        // leave a band of empty space, widest with the keyboard up (the bar loses its nav-bar inset).
+        val paneBottomInset = with(LocalDensity.current) {
+            if (inputBarHeightPx > 0) inputBarHeightPx.toDp() + 8.dp else bottomContentPadding
+        }
         // Floor the top inset at status bar + one chip row so content clears the bar on the first
         // frame (before onSizeChanged reports the real height), avoiding a content-under-bar flash
         // on each screen entry. Mirrors the bottomContentPadding floor.
         val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        val (fallbackToggleEnd, fallbackToggleBottom) = with(LocalDensity.current) {
+            NativeToggleFromEnd.toPx() to NativeToggleFromBottom.toPx()
+        }
         val topContentPadding = with(LocalDensity.current) {
             maxOf(statusBarTop + 56.dp, topBarHeightPx.toDp())
         }
         Box(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .onSizeChanged { chatWidthPx = it.width },
         ) {
             val pullUp = rememberChatPullUpSheetState()
-            Box(Modifier.fillMaxSize().glassBackdropSource(pullUp.backdrop.takeIf { pullUp.visible })) {
-                Column(
-                    // "Add to chat" on the selection toolbar (v0.8.7 quotes), contributed from above
-                    // every message's SelectionContainer — which is where foundation collects a
-                    // menu's components from. Gated: a pre-0.8.7 server ignores the request field and
-                    // would silently drop the excerpts.
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .addToChatSelectionItem(
-                            enabled = uiState.quoteCaptureAvailable,
-                            onAddToChat = viewModel::addPendingQuote,
-                        ),
-                ) {
-                    ChatContent(
-                        listPullUpModifier = pullUp.listModifier,
-                        pullUpModifier = pullUp.landingModifier,
-                        viewModel = viewModel,
-                        agentName = agentName,
-                        displayModel = displayModel,
-                        fontSizeMultiplier = fontSizeMultiplier,
-                        showImageDescriptions = showImageDescriptions,
-                        chatLayoutStyle = chatLayoutStyle,
-                        showAvatars = showAvatars,
-                        showBubbles = showBubbles,
-                        useKatex = useKatex,
-                        bottomContentPadding = bottomContentPadding,
-                        topContentPadding = topContentPadding,
-                        onShowSecondaryModelSheet = { showSecondaryModelSheet = true },
-                        onComparisonTabChange = { activeComparisonTab = it },
-                    )
-                }
-
-                // ChatInput overlays at the bottom so gradient shows content behind
-                val isAnyStreaming = uiState.isStreaming ||
-                    uiState.comparisonState.primaryIsStreaming ||
-                    uiState.comparisonState.secondaryIsStreaming
-                // A question pause takes the composer's place until it resolves (see
-                // AskUserQuestionPanel); a tool-approval pause docks above it (see ToolApprovalPanel).
-                // Everything here is measured together so the list's bottom inset clears it.
-                val askPause = uiState.renderablePendingAction?.takeIf { it.isAskUserQuestion }
-                val toolPause = uiState.renderablePendingAction?.takeIf { it.isToolApproval }
+            // Temporary chat's transition: the band and (Material) the retone draw over and behind
+            // the landing, the composer and the top bar, which all react to it through LocalModeVeil.
+            val modeVeil = rememberModeVeilState(uiState.isTemporaryChat)
+            CompositionLocalProvider(LocalModeVeil provides modeVeil) {
                 Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .onSizeChanged { inputBarHeightPx = it.height },
+                    Modifier
+                        .fillMaxSize()
+                        .glassBackdropSource(pullUp.backdrop.takeIf { pullUp.visible })
+                        .then(rememberModeVeilModifier(modeVeil)),
                 ) {
-                    Column {
-                        if (uiState.isEmptyLanding()) {
-                            updateBanner?.let { update ->
-                                UpdateAvailableBanner(
-                                    version = update.version,
-                                    onOpen = {
-                                        updateBannerViewModel.acknowledge(update)
-                                        onOpenWhatsNew()
-                                    },
-                                    onDismiss = { updateBannerViewModel.acknowledge(update) },
-                                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp),
+                    Column(
+                        // "Add to chat" on the selection toolbar (v0.8.7 quotes), contributed from above
+                        // every message's SelectionContainer — which is where foundation collects a
+                        // menu's components from. Gated: a pre-0.8.7 server ignores the request field and
+                        // would silently drop the excerpts.
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .addToChatSelectionItem(
+                                enabled = uiState.quoteCaptureAvailable,
+                                onAddToChat = viewModel::addPendingQuote,
+                            ),
+                    ) {
+                        ChatContent(
+                            listPullUpModifier = pullUp.listModifier,
+                            pullUpModifier = pullUp.landingModifier,
+                            viewModel = viewModel,
+                            agentName = agentName,
+                            fontSizeMultiplier = fontSizeMultiplier,
+                            showImageDescriptions = showImageDescriptions,
+                            chatLayoutStyle = chatLayoutStyle,
+                            showAvatars = showAvatars,
+                            showBubbles = showBubbles,
+                            useKatex = useKatex,
+                            bottomContentPadding = bottomContentPadding,
+                            paneBottomInset = paneBottomInset,
+                            topContentPadding = topContentPadding,
+                            onShowSecondaryModelSheet = { showSecondaryModelSheet = true },
+                            onComparisonTabChange = { activeComparisonTab = it },
+                            projectName = chatProjectName,
+                            comparisonWide = comparisonWide,
+                            compareSetupPick = compareSetupPick,
+                            compareSetupActions = compareSetupActions,
+                            primaryLaneLabel = primaryLaneLabel,
+                            onBrowseAllModels = { showCompareBrowseAll = true },
+                        )
+                    }
+
+                    // ChatInput overlays at the bottom so gradient shows content behind
+                    val isAnyStreaming = uiState.isStreaming ||
+                        uiState.comparisonState.primaryIsStreaming ||
+                        uiState.comparisonState.secondaryIsStreaming
+                    // A question pause takes the composer's place until it resolves (see
+                    // AskUserQuestionPanel); a tool-approval pause docks above it (see ToolApprovalPanel).
+                    // Everything here is measured together so the list's bottom inset clears it.
+                    val askPause = uiState.renderablePendingAction?.takeIf { it.isAskUserQuestion }
+                    val toolPause = uiState.renderablePendingAction?.takeIf { it.isToolApproval }
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            // The panels size their caps from the height they are given: only what the
+                            // floating top bar leaves visible. Before onSizeChanged, which measures content.
+                            .padding(top = topContentPadding)
+                            .onSizeChanged { inputBarHeightPx = it.height },
+                    ) {
+                        Column {
+                            if (uiState.isEmptyLanding()) {
+                                updateBanner?.let { update ->
+                                    UpdateAvailableBanner(
+                                        version = update.version,
+                                        onOpen = {
+                                            updateBannerViewModel.acknowledge(update)
+                                            onOpenWhatsNew()
+                                        },
+                                        onDismiss = { updateBannerViewModel.acknowledge(update) },
+                                        modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp),
+                                    )
+                                }
+                            }
+                            if (askPause == null && !uiState.showsComparisonPanes(comparisonWide)) {
+                                LandingStarters(
+                                    starters = uiState.landingStarters,
+                                    visible = uiState.showsLandingStarters,
+                                    onSend = viewModel::sendStarter,
+                                    onEdit = viewModel::editStarter,
                                 )
                             }
-                        }
-                        toolPause?.let { pause ->
-                            ToolApprovalPanel(
-                                pendingAction = pause,
-                                isResolving = uiState.isResolvingPendingAction,
-                                drafts = uiState.toolDecisionDrafts,
-                                activeCallId = uiState.toolActiveCallId,
-                                collapsed = uiState.toolPanelCollapsed,
-                                onDraftChange = viewModel::updateToolDecisionDraft,
-                                onPickDecision = viewModel::pickToolDecision,
-                                onSelectCall = viewModel::selectToolCall,
-                                onCollapsedChange = viewModel::setToolPanelCollapsed,
-                                onCancelAutoAdvance = viewModel::cancelPausePanelAutoAdvance,
-                                onSubmit = viewModel::resolveToolApproval,
-                                modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp),
-                            )
-                        }
-                        if (askPause != null) {
-                            AskUserQuestionPanel(
-                                pendingAction = askPause,
-                                isResolving = uiState.isResolvingPendingAction,
-                                drafts = uiState.askAnswerDrafts,
-                                activeQuestionId = uiState.askActiveQuestionId,
-                                collapsed = uiState.askPanelCollapsed,
-                                onDraftChange = viewModel::updateAskAnswerDraft,
-                                onPickOption = viewModel::pickAskOption,
-                                onSelectQuestion = viewModel::selectAskQuestion,
-                                onCollapsedChange = viewModel::setAskPanelCollapsed,
-                                onCancelAutoAdvance = viewModel::cancelPausePanelAutoAdvance,
-                                onSubmitAnswer = viewModel::answerPendingQuestion,
-                                onSubmitAnswers = viewModel::answerPendingQuestions,
-                                // The composer's Stop is hidden with it, and the run stays live across the pause.
-                                onStop = viewModel::stopGeneration.takeIf { isAnyStreaming },
-                                resumeFailed = uiState.pendingActionResumeFailed,
-                                modifier = Modifier
-                                    .navigationBarsPadding()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                            )
-                        } else {
-                            ChatComposer(
-                                inputText = uiState.inputText,
-                                isStreaming = isAnyStreaming,
-                                onInputChange = viewModel::onInputChanged,
-                                onSend = {
-                                    viewModel.sendMessage()
-                                    if (dismissKeyboardOnSend) {
-                                        keyboardController?.hide()
+                            toolPause?.let { pause ->
+                                ToolApprovalPanel(
+                                    pendingAction = pause,
+                                    isResolving = uiState.isResolvingPendingAction,
+                                    drafts = uiState.toolDecisionDrafts,
+                                    activeCallId = uiState.toolActiveCallId,
+                                    collapsed = uiState.toolPanelCollapsed,
+                                    onDraftChange = viewModel::updateToolDecisionDraft,
+                                    onPickDecision = viewModel::pickToolDecision,
+                                    onSelectCall = viewModel::selectToolCall,
+                                    onCollapsedChange = viewModel::setToolPanelCollapsed,
+                                    onCancelAutoAdvance = viewModel::cancelPausePanelAutoAdvance,
+                                    onSubmit = viewModel::resolveToolApproval,
+                                    // Weighted, so the composer below is measured first and the panel
+                                    // gets only the height it leaves.
+                                    modifier = Modifier
+                                        .weight(1f, fill = false)
+                                        .padding(start = 12.dp, end = 12.dp, top = 8.dp),
+                                )
+                            }
+                            if (askPause != null) {
+                                AskUserQuestionPanel(
+                                    pendingAction = askPause,
+                                    isResolving = uiState.isResolvingPendingAction,
+                                    drafts = uiState.askAnswerDrafts,
+                                    activeQuestionId = uiState.askActiveQuestionId,
+                                    collapsed = uiState.askPanelCollapsed,
+                                    onDraftChange = viewModel::updateAskAnswerDraft,
+                                    onPickOption = viewModel::pickAskOption,
+                                    onSelectQuestion = viewModel::selectAskQuestion,
+                                    onCollapsedChange = viewModel::setAskPanelCollapsed,
+                                    onCancelAutoAdvance = viewModel::cancelPausePanelAutoAdvance,
+                                    onSubmitAnswer = viewModel::answerPendingQuestion,
+                                    onSubmitAnswers = viewModel::answerPendingQuestions,
+                                    // The composer's Stop is hidden with it, and the run stays live across the pause.
+                                    onStop = viewModel::stopGeneration.takeIf { isAnyStreaming },
+                                    resumeFailed = uiState.pendingActionResumeFailed,
+                                    modifier = Modifier
+                                        .navigationBarsPadding()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                )
+                            } else {
+                                val composerVeil = rememberVeilTarget(
+                                    isTemporary = uiState.isTemporaryChat,
+                                    reaction = VeilReaction.NUDGE,
+                                    swell = COMPOSER_SWELL,
+                                )
+                                Box(composerVeil.modifier) {
+                                    CompositionLocalProvider(LocalComposerFlare provides composerVeil.flare) {
+                                        ChatComposer(
+                                            inputText = uiState.inputText,
+                                            isStreaming = isAnyStreaming,
+                                            onInputChange = viewModel::onInputChanged,
+                                            onSend = {
+                                                viewModel.sendMessage()
+                                                if (dismissKeyboardOnSend) {
+                                                    keyboardController?.hide()
+                                                }
+                                            },
+                                            onStop = viewModel::stopGeneration,
+                                            onOpenTools = { optionsController.open() },
+                                            // The mid-stream send button: the ViewModel resolves steer-vs-queue from the
+                                            // user's preference and what this run can actually take, so the composer never
+                                            // has to. `onQueue` stays the picker's explicit "add to queue".
+                                            onDuringRunSend = {
+                                                viewModel.sendDuringRun()
+                                                if (dismissKeyboardOnSend) {
+                                                    keyboardController?.hide()
+                                                }
+                                            },
+                                            onQueue = {
+                                                viewModel.queueMessage()
+                                                if (dismissKeyboardOnSend) {
+                                                    keyboardController?.hide()
+                                                }
+                                            },
+                                            canQueue = uiState.canQueueFollowUp,
+                                            // Explicit "steer this one", from the during-run picker or the send button when
+                                            // steering is the standing default.
+                                            onSteer = {
+                                                viewModel.steerMessage()
+                                                if (dismissKeyboardOnSend) {
+                                                    keyboardController?.hide()
+                                                }
+                                            },
+                                            canSteer = uiState.canSteerNow,
+                                            duringRunAction = uiState.effectiveDuringRunAction,
+                                            duringRunSendTarget = uiState.duringRunSendTarget,
+                                            pendingSteers = uiState.pendingSteers,
+                                            pendingQuotes = uiState.pendingQuotes,
+                                            onRemoveQuote = viewModel::removePendingQuote,
+                                            pendingManualSkills = uiState.pendingManualSkills,
+                                            onRemoveManualSkill = viewModel::removePendingManualSkill,
+                                            onCancelSteer = viewModel::cancelSteer,
+                                            onSetDuringRunAction = viewModel::setDuringRunAction,
+                                            attachedFiles = attachedFiles,
+                                            onRemoveFile = viewModel::removeFile,
+                                            onPasteFiles = viewModel::onFilesSelected,
+                                            pasteScope = coroutineScope,
+                                            promptSuggestions = uiState.availablePrompts,
+                                            skillSuggestions = pickerSkills,
+                                            isLoadingSkills = uiState.isLoadingSkills && uiState.canPickSkills,
+                                            skillsLoadFailed = uiState.skillsLoadFailed && uiState.canPickSkills,
+                                            canPickSkills = uiState.canPickSkills,
+                                            onRetrySkills = viewModel::retrySkillCatalog,
+                                            onPickerSelect = viewModel::selectPickerItem,
+                                            isRecording = uiState.isRecording,
+                                            isTranscribing = uiState.isTranscribing,
+                                            onStartRecording = onStartRecordingWithPermission,
+                                            onStopRecording = viewModel::stopRecording,
+                                            enabledTools = uiState.effectiveEnabledTools,
+                                            pinnedToolKeys = uiState.pinnedToolChips,
+                                            onToggleTool = viewModel::toggleTool,
+                                            // TCHAT: Image Gen and the active tools share one tray above the field.
+                                            toolTray = ComposerTrayExtras(
+                                                imageLabel = uiState.imageGenIndicatorLabel,
+                                                onOpenImage = viewModel::openModelSheetOnImageGen,
+                                                onTurnOffImage = viewModel::turnOffImageGen,
+                                                onOpenTools = { optionsController.open() },
+                                                onToggleMcpServer = viewModel::toggleMcpServer,
+                                                imageOptions = imageOptionItems(
+                                                    uiState.tchat.activeImage.takeIf { uiState.imageGenIndicatorLabel != null },
+                                                    uiState.tchat.activeImageChoice,
+                                                ),
+                                                onImageChoice = viewModel::setImageChoice,
+                                                effort = effortChip,
+                                                onEffort = { value ->
+                                                    effortChip?.let {
+                                                        viewModel.updateModelParameters(it.applyTo(uiState.modelParameters, value))
+                                                    }
+                                                },
+                                            ),
+                                            mcpServers = uiState.mcpServers,
+                                            selectedMcpServerNames = uiState.effectiveMcpServerNames,
+                                            selectedModelDisplay = effectiveSelectedModelDisplay,
+                                            isCodeInterpreterAvailable = uiState.isCodeInterpreterAvailable,
+                                            gates = uiState.chatInputGates,
+                                            contextGauge = uiState.contextGaugeDetails,
+                                            contextUsageEnabled = uiState.contextUsageEnabled,
+                                            onCompact = viewModel::compactConversation.takeIf { uiState.canCompactNow },
+                                            onSnoozeCompact = viewModel::snoozeCompactNudge,
+                                            compactSuggested = uiState.compactNudgeOnToolsButton,
+                                            contextBarPlacement = uiState.contextBarPlacement,
+                                            // After a Stop/error pause, the queue waits for an explicit nudge.
+                                            queuedPausedCount = uiState.pausedQueueCount,
+                                            queueHeldForRefusal = uiState.isQueueHeldForRefusal,
+                                            // The band, not the flag, tints the composer: it turns violet as the band reaches it.
+                                            isTemporaryChat = composerVeil.crossed,
+                                            onSendQueuedMessages = viewModel::sendQueuedNow,
+                                            isEditingQueued = uiState.isEditingQueued,
+                                            onCommitEdit = viewModel::commitQueuedEdit,
+                                            onCancelEdit = viewModel::cancelQueuedEdit,
+                                            isAwaitingUploadSend = uiState.isAwaitingUploadSend,
+                                            arePicksUnsettled = uiState.arePicksUnsettled,
+                                            comparison = composerComparison,
+                                            comparisonHint = composerComparisonHint,
+                                            onCancelPendingSend = viewModel::cancelPendingUploadSend,
+                                            queuedMessages = uiState.messageQueue,
+                                            onEditQueuedMessage = viewModel::editQueued,
+                                            onCancelQueuedMessage = viewModel::cancelQueued,
+                                            onReorderQueuedMessages = viewModel::reorderQueue,
+                                            fontSizeMultiplier = fontSizeMultiplier,
+                                        )
                                     }
-                                },
-                                onStop = viewModel::stopGeneration,
-                                onOpenTools = { optionsController.open() },
-                                // The mid-stream send button: the ViewModel resolves steer-vs-queue from the
-                                // user's preference and what this run can actually take, so the composer never
-                                // has to. `onQueue` stays the picker's explicit "add to queue".
-                                onDuringRunSend = {
-                                    viewModel.sendDuringRun()
-                                    if (dismissKeyboardOnSend) {
-                                        keyboardController?.hide()
-                                    }
-                                },
-                                onQueue = {
-                                    viewModel.queueMessage()
-                                    if (dismissKeyboardOnSend) {
-                                        keyboardController?.hide()
-                                    }
-                                },
-                                canQueue = uiState.canQueueFollowUp,
-                                // Explicit "steer this one", from the during-run picker or the send button when
-                                // steering is the standing default.
-                                onSteer = {
-                                    viewModel.steerMessage()
-                                    if (dismissKeyboardOnSend) {
-                                        keyboardController?.hide()
-                                    }
-                                },
-                                canSteer = uiState.canSteerNow,
-                                duringRunAction = uiState.effectiveDuringRunAction,
-                                duringRunSendTarget = uiState.duringRunSendTarget,
-                                pendingSteers = uiState.pendingSteers,
-                                pendingQuotes = uiState.pendingQuotes,
-                                onRemoveQuote = viewModel::removePendingQuote,
-                                onCancelSteer = viewModel::cancelSteer,
-                                onSetDuringRunAction = viewModel::setDuringRunAction,
-                                attachedFiles = attachedFiles,
-                                onRemoveFile = viewModel::removeFile,
-                                onPasteFiles = viewModel::onFilesSelected,
-                                pasteScope = coroutineScope,
-                                promptSuggestions = uiState.availablePrompts,
-                                onSlashCommandSelect = viewModel::handleSlashCommand,
-                                isRecording = uiState.isRecording,
-                                isTranscribing = uiState.isTranscribing,
-                                onStartRecording = onStartRecordingWithPermission,
-                                onStopRecording = viewModel::stopRecording,
-                                enabledTools = uiState.effectiveEnabledTools,
-                                pinnedToolKeys = uiState.pinnedToolChips,
-                                onToggleTool = viewModel::toggleTool,
-                                // TCHAT: Image Gen and the active tools share one tray above the field.
-                                toolTray = ComposerTrayExtras(
-                                    imageLabel = uiState.imageGenIndicatorLabel,
-                                    onOpenImage = viewModel::openModelSheetOnImageGen,
-                                    onTurnOffImage = viewModel::turnOffImageGen,
-                                    onOpenTools = { optionsController.open() },
-                                    onToggleMcpServer = viewModel::toggleMcpServer,
-                                    imageOptions = imageOptionItems(
-                                        uiState.tchat.activeImage.takeIf { uiState.imageGenIndicatorLabel != null },
-                                        uiState.tchat.activeImageChoice,
-                                    ),
-                                    onImageChoice = viewModel::setImageChoice,
-                                    effort = effortChip,
-                                    onEffort = { value ->
-                                        effortChip?.let { viewModel.updateModelParameters(it.applyTo(uiState.modelParameters, value)) }
-                                    },
-                                ),
-                                mcpServers = uiState.mcpServers,
-                                selectedMcpServerNames = uiState.selectedMcpServerNames,
-                                selectedModelDisplay = effectiveSelectedModelDisplay,
-                                isCodeInterpreterAvailable = uiState.isCodeInterpreterAvailable,
-                                gates = uiState.chatInputGates,
-                                contextGauge = uiState.contextGaugeDetails,
-                                contextUsageEnabled = uiState.contextUsageEnabled,
-                                onCompact = viewModel::compactConversation.takeIf { uiState.canCompactNow },
-                                onSnoozeCompact = viewModel::snoozeCompactNudge,
-                                compactSuggested = uiState.compactNudgeOnToolsButton,
-                                contextBarPlacement = uiState.contextBarPlacement,
-                                // After a Stop/error pause, the queue waits for an explicit nudge.
-                                queuedPausedCount = uiState.pausedQueueCount,
-                                onSendQueuedMessages = viewModel::sendQueuedNow,
-                                isEditingQueued = uiState.isEditingQueued,
-                                onCommitEdit = viewModel::commitQueuedEdit,
-                                onCancelEdit = viewModel::cancelQueuedEdit,
-                                isAwaitingUploadSend = uiState.isAwaitingUploadSend,
-                                arePicksUnsettled = uiState.arePicksUnsettled,
-                                onCancelPendingSend = viewModel::cancelPendingUploadSend,
-                                queuedMessages = uiState.messageQueue,
-                                onEditQueuedMessage = viewModel::editQueued,
-                                onCancelQueuedMessage = viewModel::cancelQueued,
-                                onReorderQueuedMessages = viewModel::reorderQueue,
-                                fontSizeMultiplier = fontSizeMultiplier,
-                            )
+                                }
+                            }
                         }
                     }
-                }
 
-                // Floating top bar overlays the message list (drawn last so it sits above content),
-                // measured so ChatContent can reserve a matching scrollable top inset.
-                ChatFloatingTopBar(
-                    uiState = uiState,
-                    viewModel = viewModel,
-                    onLoadPreset = { showPresetPicker = true },
-                    onSavePreset = { showSavePresetDialog = true },
-                    onRename = viewModel::showRenameDialog,
-                    onOpenDrawer = onOpenDrawer,
-                    onShowAllMedia = onShowAllMedia,
-                    onOpenPromptsLibrary = onNavigateToPromptsLibrary,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .onSizeChanged { topBarHeightPx = it.height },
-                )
+                    // Floating top bar overlays the message list (drawn last so it sits above content),
+                    // measured so ChatContent can reserve a matching scrollable top inset.
+                    ChatFloatingTopBar(
+                        uiState = uiState,
+                        viewModel = viewModel,
+                        onLoadPreset = { showPresetPicker = true },
+                        onSavePreset = { showSavePresetDialog = true },
+                        onRename = viewModel::showRenameDialog,
+                        onOpenDrawer = onOpenDrawer,
+                        onShowAllMedia = onShowAllMedia,
+                        onOpenPromptsLibrary = onNavigateToPromptsLibrary,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .onSizeChanged { topBarHeightPx = it.height }
+                            .onGloballyPositioned { bar ->
+                                // The native iOS bar's toggle has no Compose layout: aim at its usual slot.
+                                val bounds = bar.boundsInRoot()
+                                modeVeil.reportFallbackOrigin(
+                                    Offset(bounds.right - fallbackToggleEnd, bounds.bottom - fallbackToggleBottom),
+                                )
+                            },
+                    )
+                }
             }
 
             ChatPullUpSheetOverlay(
@@ -527,6 +716,7 @@ fun ChatScreen(
         onAttachFromServer = onAttachFromServer,
         onNavigateToProviderKeys = onNavigateToProviderKeys,
         onShowSavePresetDialog = { showSavePresetDialog = true },
+        compareSetupPick = compareSetupPick,
     )
 
     ChatScreenDialogs(
@@ -540,6 +730,17 @@ fun ChatScreen(
         onSetShowSavePresetDialog = { showSavePresetDialog = it },
         onSetShowSecondaryModelSheet = { showSecondaryModelSheet = it },
         onNavigateToProviderKeys = onNavigateToProviderKeys,
+        // The sheet whenever the panes can't hold setup (narrow, or a wide chat still loading or
+        // failed to load), and over them for "Browse all models".
+        showCompareSetupSheet = uiState.comparisonState.isSettingUp && (!setupInPanes || showCompareBrowseAll),
+        onCompareSetupSheetDismiss = if (setupInPanes) {
+            { showCompareBrowseAll = false }
+        } else {
+            null
+        },
+        compareSetupPick = compareSetupPick,
+        primaryModelLabel = primaryLaneLabel,
+        compareSetupActions = compareSetupActions,
     )
 
     LaunchedEffect(Unit) { viewModel.consumePendingPromptInsertion() }
@@ -572,7 +773,8 @@ fun ChatScreen(
  * [ChatScreen] with no conversation id. When a conversation starts streaming, [onConversationStart]
  * gets its id so the caller can navigate to the full chat route. [initialAgentId], when non-null,
  * pre-selects that agent (set when starting from an agent detail/card); [initialEndpoint] and
- * [initialModel] pre-select a concrete model (home-screen shortcut).
+ * [initialModel] pre-select a concrete model (home-screen shortcut), and [initialSpec] the spec it
+ * was recorded from.
  */
 @Composable
 fun NewChatScreen(
@@ -582,21 +784,33 @@ fun NewChatScreen(
     initialAgentId: String? = null,
     initialEndpoint: String? = null,
     initialModel: String? = null,
+    initialSpec: String? = null,
+    chatProjectId: String? = null,
+    chatProjectName: String? = null,
     onOpenDrawer: (() -> Unit)? = null,
     onNavigateToPromptsLibrary: (() -> Unit)? = null,
     onAttachFromServer: () -> Unit = {},
     onOpenWhatsNew: () -> Unit = {},
+    onOpenMemories: (() -> Unit)? = null,
 ) {
     ChatScreen(
         modifier = modifier,
         initialAgentId = initialAgentId,
         initialEndpoint = initialEndpoint,
         initialModel = initialModel,
+        initialSpec = initialSpec,
+        chatProjectId = chatProjectId,
+        chatProjectName = chatProjectName,
         onConversationStart = onConversationStart,
         onOpenDrawer = onOpenDrawer,
         onNavigateToPromptsLibrary = onNavigateToPromptsLibrary,
         onNavigateToProviderKeys = onNavigateToProviderKeys,
         onAttachFromServer = onAttachFromServer,
         onOpenWhatsNew = onOpenWhatsNew,
+        onOpenMemories = onOpenMemories,
     )
 }
+
+/** The native iOS bar's toggle centre, from the bar's bottom-end corner: before the ⋯ button. */
+private val NativeToggleFromEnd = 82.dp
+private val NativeToggleFromBottom = 28.dp

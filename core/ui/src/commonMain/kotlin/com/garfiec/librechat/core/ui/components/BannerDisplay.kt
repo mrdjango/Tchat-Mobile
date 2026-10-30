@@ -5,13 +5,17 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -20,15 +24,23 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.garfiec.librechat.core.model.Banner
 import com.garfiec.librechat.core.ui.resources.Res
 import com.garfiec.librechat.core.ui.resources.banner_dismiss
+import com.garfiec.librechat.core.ui.resources.banner_show_less
+import com.garfiec.librechat.core.ui.resources.banner_show_more
 import com.garfiec.librechat.core.ui.theme.LocalStatusColors
 import org.jetbrains.compose.resources.stringResource
 
@@ -105,12 +117,43 @@ private fun BannerCard(
                 tint = LocalStatusColors.current.onWarningContainer,
             )
             Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = message,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
-                color = LocalStatusColors.current.onWarningContainer,
-            )
+            // Capped so a long banner can't fill a small screen (a persistable one has no dismiss);
+            // a tap opens it in full. Only clickable while there is more to show.
+            var expanded by remember(message) { mutableStateOf(false) }
+            var truncated by remember(message) { mutableStateOf(false) }
+            val toggleLabel = stringResource(if (expanded) Res.string.banner_show_less else Res.string.banner_show_more)
+            val expandable = expanded || truncated
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .then(
+                        if (expandable) {
+                            Modifier.clickable(onClickLabel = toggleLabel, role = Role.Button) { expanded = !expanded }
+                        } else {
+                            Modifier
+                        },
+                    ),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Text(
+                    text = message,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LocalStatusColors.current.onWarningContainer,
+                    maxLines = if (expanded) Int.MAX_VALUE else COLLAPSED_LINES,
+                    overflow = TextOverflow.Ellipsis,
+                    onTextLayout = { if (!expanded) truncated = it.hasVisualOverflow },
+                )
+                if (expandable) {
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        // The click label says what a tap does.
+                        contentDescription = null,
+                        tint = LocalStatusColors.current.onWarningContainer,
+                        modifier = Modifier.padding(start = 4.dp).size(20.dp),
+                    )
+                }
+            }
             if (dismissId != null) {
                 IconButton(onClick = { onDismiss(dismissId) }) {
                     Icon(
@@ -123,3 +166,5 @@ private fun BannerCard(
         }
     }
 }
+
+private const val COLLAPSED_LINES = 3

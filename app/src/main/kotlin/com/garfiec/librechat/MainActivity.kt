@@ -1,9 +1,11 @@
 package com.garfiec.librechat
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -24,8 +26,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
-import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +45,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import co.touchlab.kermit.Logger
+import com.garfiec.librechat.core.common.identity.ShareLinkMatcher
 import com.garfiec.librechat.core.common.network.ConnectivityObserver
 import com.garfiec.librechat.core.data.datastore.DateTimePrefsStore
 import com.garfiec.librechat.core.data.datastore.SettingsDataStore
@@ -56,6 +57,7 @@ import com.garfiec.librechat.feature.chat.ShareIntentConsumer
 import com.garfiec.librechat.feature.chat.SharedContent
 import com.garfiec.librechat.navigation.LibreChatNavHost
 import com.garfiec.librechat.navigation.toDeepLinkUri
+import com.garfiec.librechat.shared.navigation.AppShortcuts
 import com.garfiec.librechat.shared.navigation.DeepLinkResolution
 import com.garfiec.librechat.shared.navigation.DeepLinks
 import com.garfiec.librechat.shortcuts.ModelShortcuts
@@ -64,6 +66,7 @@ import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 
 private const val KEY_PENDING_DEEP_LINK = "pending_deep_link"
+private const val KEY_PENDING_SHARED_LINK = "pending_shared_link"
 
 class MainActivity : ComponentActivity() {
 
@@ -74,8 +77,11 @@ class MainActivity : ComponentActivity() {
 
     private var deepLinkUri by mutableStateOf<Uri?>(null)
 
+    /** Shared-in text that is exactly one `/share/` link, waiting for the nav host to route it. */
+    private var sharedLinkText by mutableStateOf<String?>(null)
+
     @Suppress("LongMethod") // debt: 101 lines
-    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class, ExperimentalComposeUiApi::class)
+    @OptIn(ExperimentalComposeUiApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -90,6 +96,7 @@ class MainActivity : ComponentActivity() {
             handleIntent(intent)
         } else {
             deepLinkUri = savedInstanceState.getString(KEY_PENDING_DEEP_LINK)?.toUri()
+            sharedLinkText = savedInstanceState.getString(KEY_PENDING_SHARED_LINK)
         }
 
         // Keep home-screen model shortcuts in sync with the account's most-used models. The flow
@@ -107,7 +114,6 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            val windowSizeClass = calculateWindowSizeClass(this)
             val isConnected by connectivityObserver.isConnected.collectAsStateWithLifecycle(initialValue = true)
             // Hold off drawing themed content until the persisted theme has resolved, so a
             // dark-mode user on a light-system device never sees a one-frame flash of the wrong
@@ -184,9 +190,10 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             LibreChatNavHost(
-                                windowSizeClass = windowSizeClass,
                                 deepLinkUri = deepLinkUri,
                                 onDeepLinkConsume = { deepLinkUri = null },
+                                sharedLinkText = sharedLinkText,
+                                onSharedLinkConsume = { sharedLinkText = null },
                                 appLocaleTag = appLocale,
                                 modifier = Modifier
                                     .weight(1f)
@@ -210,6 +217,18 @@ class MainActivity : ComponentActivity() {
         // Preserve a link that hasn't been placed on the back stack yet, so a recreation during the
         // warm-up gate doesn't drop it (restored in onCreate). A consumed link is already null.
         deepLinkUri?.let { outState.putString(KEY_PENDING_DEEP_LINK, it.toString()) }
+        sharedLinkText?.let { outState.putString(KEY_PENDING_SHARED_LINK, it) }
+    }
+
+    // Ctrl/⌘+Shift+F is caught here, before Compose, which misses it while nothing holds focus (see AppShortcuts).
+    // RestrictedApi: overriding dispatchKeyEvent is public Activity API; lint resolves the super call to
+    // androidx.core's ComponentActivity override, which is marked library-group only.
+    @SuppressLint("RestrictedApi")
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val searchShortcut = event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
+            event.keyCode == KeyEvent.KEYCODE_F && event.isShiftPressed && (event.isCtrlPressed || event.isMetaPressed)
+        if (searchShortcut && AppShortcuts.openSearch?.invoke() == true) return true
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -253,6 +272,14 @@ class MainActivity : ComponentActivity() {
         }
 
         val fileUris = if (sharedUri != null) listOf(sharedUri) else emptyList()
+
+        // Text that is exactly one shared-chat link goes to the nav host: only it can tell whether a
+        // signed-in account is on that server, and it sends anything it can't open to the composer.
+        if (sharedText != null && fileUris.isEmpty() && ShareLinkMatcher.parse(sharedText) != null) {
+            Logger.d { "Share intent received: a shared-chat link" }
+            sharedLinkText = sharedText
+            return
+        }
 
         if (sharedText != null || fileUris.isNotEmpty()) {
             Logger.d { "Share intent received: text=${sharedText != null}, uris=${fileUris.size}" }

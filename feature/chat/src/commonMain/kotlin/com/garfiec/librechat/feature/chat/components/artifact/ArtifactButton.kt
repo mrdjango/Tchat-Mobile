@@ -30,9 +30,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.garfiec.librechat.core.model.artifactTypeLabel
+import com.garfiec.librechat.core.ui.components.artifactTypeLabel
 import com.garfiec.librechat.feature.chat.resources.*
 import com.garfiec.librechat.feature.chat.resources.Res
 import org.jetbrains.compose.resources.stringResource
@@ -44,6 +45,8 @@ fun ArtifactButton(
     modifier: Modifier = Modifier,
     versionCount: Int = 1,
     onAddToHomeScreen: (() -> Unit)? = null,
+    /** Replaces the type label under the title. */
+    subtitle: String? = null,
 ) {
     Card(
         onClick = onClick,
@@ -75,17 +78,21 @@ fun ArtifactButton(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = artifactTypeLabel(artifact.type),
+                    text = subtitle ?: artifactTypeLabel(artifact.type),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             if (versionCount > 1) {
                 Spacer(modifier = Modifier.width(8.dp))
+                // As tall as the count's line, so the circle grows with a large font.
+                val badgeStyle = MaterialTheme.typography.labelSmall // TCHAT: label-sm, 12sp (was a 10sp override)
+                val badgeSize = with(LocalDensity.current) { badgeStyle.lineHeight.toDp() }
                 Box(
                     modifier = Modifier
-                        .size(20.dp)
+                        .size(maxOf(20.dp, badgeSize))
                         .background(
                             color = MaterialTheme.colorScheme.primary,
                             shape = CircleShape,
@@ -94,7 +101,7 @@ fun ArtifactButton(
                 ) {
                     Text(
                         text = "$versionCount",
-                        style = MaterialTheme.typography.labelSmall, // TCHAT: label-sm, 12sp (was a 10sp override)
+                        style = badgeStyle,
                         color = MaterialTheme.colorScheme.onPrimary,
                     )
                 }
@@ -120,7 +127,7 @@ fun ArtifactButton(
     }
 }
 
-private fun artifactTypeIcon(type: String): ImageVector =
+internal fun artifactTypeIcon(type: String): ImageVector =
     when (ArtifactType.from(type)) {
         ArtifactType.MERMAID -> Icons.Default.AccountTree
         ArtifactType.REACT -> Icons.Default.Widgets

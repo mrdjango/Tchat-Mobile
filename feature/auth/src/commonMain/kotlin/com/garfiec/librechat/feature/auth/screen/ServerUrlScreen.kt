@@ -5,12 +5,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -47,6 +49,7 @@ import com.garfiec.librechat.core.ui.resources.server_headers_load_error
 import com.garfiec.librechat.core.ui.resources.server_headers_no_server
 import com.garfiec.librechat.core.ui.resources.server_headers_save_error
 import com.garfiec.librechat.core.ui.resources.server_headers_unverified_delete
+import com.garfiec.librechat.feature.auth.diagnostics.DiagnosticLogLink
 import com.garfiec.librechat.feature.auth.resources.*
 import com.garfiec.librechat.feature.auth.resources.Res
 import com.garfiec.librechat.feature.auth.viewmodel.HeaderFieldError
@@ -103,7 +106,9 @@ fun ServerUrlScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .imePadding()
+                // No scaffold here: the screen keeps itself clear of the system bars and the keyboard.
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .then(if (onBack != null) Modifier.padding(top = BackAffordanceClearance) else Modifier)
                 .verticalScroll(rememberScrollState())
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -113,6 +118,7 @@ fun ServerUrlScreen(
                 text = stringResource(Res.string.connect_to_librechat),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center,
                 modifier = Modifier.semantics { heading() },
             )
 
@@ -122,6 +128,7 @@ fun ServerUrlScreen(
                 text = stringResource(Res.string.enter_server_url_hint),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -194,6 +201,11 @@ fun ServerUrlScreen(
                 } else {
                     Text(stringResource(Res.string.server_url_connect))
                 }
+            }
+
+            if (uiState.error != null && !uiState.isLoading) {
+                Spacer(modifier = Modifier.height(8.dp))
+                DiagnosticLogLink()
             }
         }
 
@@ -315,7 +327,7 @@ private fun HeaderRejection.toRowError(): CustomHeaderRowError = when (this) {
 }
 
 @Composable
-private fun HttpWarningDialog(
+internal fun HttpWarningDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {

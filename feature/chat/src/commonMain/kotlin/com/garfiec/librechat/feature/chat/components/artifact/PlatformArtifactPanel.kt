@@ -3,6 +3,7 @@ package com.garfiec.librechat.feature.chat.components.artifact
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -18,8 +19,10 @@ import androidx.compose.material.icons.automirrored.filled.AddToHomeScreen
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,16 +43,22 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.garfiec.librechat.core.model.Attachment
+import com.garfiec.librechat.core.ui.components.AdaptiveDropdownMenu
 import com.garfiec.librechat.core.ui.components.AdaptiveModalBottomSheet
 import com.garfiec.librechat.core.ui.components.LowProfileDragHandle
+import com.garfiec.librechat.core.ui.media.FileActionsMenu
 import com.garfiec.librechat.core.ui.theme.isSurfaceDark
 import com.garfiec.librechat.feature.chat.components.CodeBlock
+import com.garfiec.librechat.feature.chat.components.LocalArtifactFileActions
+import com.garfiec.librechat.feature.chat.components.rememberAttachmentFileActions
 import com.garfiec.librechat.feature.chat.resources.Res
 import com.garfiec.librechat.feature.chat.resources.artifact_view_preview
 import com.garfiec.librechat.feature.chat.resources.artifact_view_source
 import com.garfiec.librechat.feature.chat.resources.cd_add_artifact_to_home_screen
 import com.garfiec.librechat.feature.chat.resources.cd_close
 import com.garfiec.librechat.feature.chat.resources.cd_fullscreen
+import com.garfiec.librechat.feature.chat.resources.cd_more_options
 import com.garfiec.librechat.feature.chat.resources.cd_share_artifact
 import org.jetbrains.compose.resources.stringResource
 
@@ -209,47 +218,59 @@ private fun ArtifactViewerBody(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
-        // Compact single-row header: [close] title  [version nav]  [action buttons]
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = if (isFullscreen) 4.dp else 16.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (isFullscreen) {
-                IconButton(onClick = onClose) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = stringResource(Res.string.cd_close),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-            }
-            Text(
-                text = artifact.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            if (versionCount > 1) {
+        // Compact header: [close] title  [version nav]  [action buttons]
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            // On a narrow phone the version nav takes a row of its own and pin and share go into a
+            // menu, or the title is squeezed out.
+            val narrow = maxWidth < NARROW_HEADER_BELOW
+            val versionNav: @Composable (Modifier) -> Unit = { navModifier ->
                 ArtifactVersionNav(
                     currentIndex = currentVersionIndex,
                     totalVersions = versionCount,
                     onPrevious = onPreviousVersion,
                     onNext = onNextVersion,
+                    modifier = navModifier,
                 )
             }
-            ArtifactActionButtons(
-                isPreviewable = isPreviewable,
-                selectedTab = selectedTab,
-                onSelectTab = onSelectTab,
-                canExpand = canExpand,
-                onExpand = onExpand,
-                onShare = onShare,
-                onAddToHomeScreen = onAddToHomeScreen,
-            )
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = if (isFullscreen) 4.dp else 16.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (isFullscreen) {
+                        IconButton(onClick = onClose) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = stringResource(Res.string.cd_close),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                    Text(
+                        text = artifact.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (versionCount > 1 && !narrow) versionNav(Modifier)
+                    ArtifactActionButtons(
+                        fileSource = artifact.source,
+                        isPreviewable = isPreviewable,
+                        selectedTab = selectedTab,
+                        onSelectTab = onSelectTab,
+                        canExpand = canExpand,
+                        onExpand = onExpand,
+                        onShare = onShare,
+                        onAddToHomeScreen = onAddToHomeScreen,
+                        collapseActions = narrow,
+                    )
+                }
+                if (versionCount > 1 && narrow) versionNav(Modifier.padding(start = if (isFullscreen) 8.dp else 12.dp))
+            }
         }
 
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
@@ -288,6 +309,7 @@ private fun ArtifactViewerBody(
 
 @Composable
 private fun RowScope.ArtifactActionButtons(
+    fileSource: ArtifactFileSource?,
     isPreviewable: Boolean,
     selectedTab: ArtifactTab,
     onSelectTab: (ArtifactTab) -> Unit,
@@ -295,6 +317,7 @@ private fun RowScope.ArtifactActionButtons(
     onExpand: () -> Unit,
     onShare: () -> Unit,
     onAddToHomeScreen: (() -> Unit)?,
+    collapseActions: Boolean,
 ) {
     val tint = MaterialTheme.colorScheme.onSurfaceVariant
     // Source/preview toggle for previewable artifacts.
@@ -310,21 +333,43 @@ private fun RowScope.ArtifactActionButtons(
             )
         }
     }
-    if (onAddToHomeScreen != null) {
-        IconButton(onClick = onAddToHomeScreen) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.AddToHomeScreen,
-                contentDescription = stringResource(Res.string.cd_add_artifact_to_home_screen),
+    if (fileSource == null && collapseActions && onAddToHomeScreen != null) {
+        ArtifactMoreMenu(onShare = onShare, onAddToHomeScreen = onAddToHomeScreen)
+    } else {
+        if (onAddToHomeScreen != null) {
+            IconButton(onClick = onAddToHomeScreen) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.AddToHomeScreen,
+                    contentDescription = stringResource(Res.string.cd_add_artifact_to_home_screen),
+                    tint = tint,
+                )
+            }
+        }
+        if (fileSource != null) {
+            // A generated file: Open in, Save and Share act on the original file, not the text shown.
+            val fileActions = LocalArtifactFileActions.current ?: rememberAttachmentFileActions()
+            val attachment = remember(fileSource) {
+                Attachment(
+                    fileId = fileSource.fileId,
+                    filepath = fileSource.filepath,
+                    filename = fileSource.filename,
+                    type = fileSource.mime,
+                )
+            }
+            FileActionsMenu(
+                onAction = { action -> fileActions.run(attachment, action) },
+                busy = fileActions.busyAction(attachment) != null,
                 tint = tint,
             )
+        } else {
+            IconButton(onClick = onShare) {
+                Icon(
+                    imageVector = Icons.Default.Share,
+                    contentDescription = stringResource(Res.string.cd_share_artifact),
+                    tint = tint,
+                )
+            }
         }
-    }
-    IconButton(onClick = onShare) {
-        Icon(
-            imageVector = Icons.Default.Share,
-            contentDescription = stringResource(Res.string.cd_share_artifact),
-            tint = tint,
-        )
     }
     if (canExpand) {
         IconButton(onClick = onExpand) {
@@ -336,6 +381,41 @@ private fun RowScope.ArtifactActionButtons(
         }
     }
 }
+
+/** Pin and share, behind one button. */
+@Composable
+private fun ArtifactMoreMenu(onShare: () -> Unit, onAddToHomeScreen: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = stringResource(Res.string.cd_more_options),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        AdaptiveDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(Res.string.cd_add_artifact_to_home_screen)) },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.AddToHomeScreen, contentDescription = null) },
+                onClick = {
+                    expanded = false
+                    onAddToHomeScreen()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(Res.string.cd_share_artifact)) },
+                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                onClick = {
+                    expanded = false
+                    onShare()
+                },
+            )
+        }
+    }
+}
+
+private val NARROW_HEADER_BELOW = 360.dp
 
 /**
  * Intercepts all vertical scroll and manually dispatches it to the given [ScrollState],

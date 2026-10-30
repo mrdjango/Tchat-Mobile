@@ -5,9 +5,11 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.room.Room
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import com.garfiec.librechat.core.common.ChannelPolicy
 import com.garfiec.librechat.core.common.di.KoinQualifiers
 import com.garfiec.librechat.core.data.datastore.CommonTokenDataStore
 import com.garfiec.librechat.core.data.datastore.IosTokenDataStore
+import com.garfiec.librechat.core.data.datastore.PreferenceMigrationRunner
 import com.garfiec.librechat.core.data.datastore.ServerUrlKeychainFallback
 import com.garfiec.librechat.core.data.db.LibreChatDatabase
 import com.garfiec.librechat.core.data.db.migration.MIGRATION_3_4
@@ -26,7 +28,7 @@ import com.garfiec.librechat.core.data.update.AppInstallSource
 import com.garfiec.librechat.core.data.update.AppUpdateRepository
 import com.garfiec.librechat.core.data.update.AppUpdateRepositoryImpl
 import com.garfiec.librechat.core.data.update.NoopAppInstallSource
-import com.garfiec.librechat.core.network.client.ImageCookieCredentials
+import com.garfiec.librechat.core.network.client.RefreshCookieCredentials
 import com.garfiec.librechat.core.network.client.TokenManager
 import io.ktor.client.HttpClient
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -54,7 +56,14 @@ actual val dataPlatformModule: Module = module {
     single<PdfNormalizer> { PdfKitPdfNormalizer() }
     single<AppInstallSource> { NoopAppInstallSource() }
     single<AppUpdateRepository> {
-        AppUpdateRepositoryImpl(isSupported = false, api = get(), store = get(), appInfo = get())
+        // iOS has no self-update path on any channel; the open-source IPA still offers release notes.
+        AppUpdateRepositoryImpl(
+            isSupported = false,
+            releaseNotesSupported = get<ChannelPolicy>().releaseNotes,
+            api = get(),
+            store = get(),
+            appInfo = get(),
+        )
     }
 
     // --- Database ---
@@ -75,6 +84,7 @@ actual val dataPlatformModule: Module = module {
         val path = "$datastoreDir/$DATASTORE_FILE_NAME.preferences_pb"
         PreferenceDataStoreFactory.createWithPath(
             corruptionHandler = settingsCorruptionHandler(),
+            migrations = listOf(PreferenceMigrationRunner(get())),
             produceFile = { path.toPath() },
         )
     }
@@ -89,9 +99,9 @@ actual val dataPlatformModule: Module = module {
         // deliberately not part of the TokenManager contract.
     } binds arrayOf(
         TokenManager::class,
-        // The image-cookie seam (see ImageCookiePlugin): per-account refresh-token reads, kept off
+        // The refresh-cookie seam (ImageCookiePlugin, logout): per-account refresh-token reads, kept off
         // TokenManager so the six fakes that implement it don't gain a second credential.
-        ImageCookieCredentials::class,
+        RefreshCookieCredentials::class,
         ServerUrlKeychainFallback::class,
         CommonTokenDataStore::class,
     )

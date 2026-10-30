@@ -1,6 +1,8 @@
 package com.garfiec.librechat.feature.chat.viewmodel.delegate
 
 import com.garfiec.librechat.core.common.EndpointConstants
+import com.garfiec.librechat.feature.chat.util.blocksSelection
+import com.garfiec.librechat.feature.chat.util.requiresSpec
 import com.garfiec.librechat.feature.chat.viewmodel.ChatUiState
 import com.garfiec.librechat.feature.chat.viewmodel.SendBlockReason
 import com.garfiec.librechat.feature.chat.viewmodel.SendReadinessHandle
@@ -44,6 +46,12 @@ class SendReadinessDelegate(
      */
     fun runWhenSendReady(onRefused: () -> Unit, action: () -> Unit) {
         val current = handle.state
+        // Compare setup: nothing starts a run until it ends (see ChatUiState.canStartRun). The
+        // controls already show why, so there is nothing to surface.
+        if (!current.canStartRun) {
+            onRefused()
+            return
+        }
         preflightSendBlockReason(current)?.let { reason ->
             surfaceModelSheet(reason)
             onRefused()
@@ -55,7 +63,9 @@ class SendReadinessDelegate(
         }
         handle.scope.launch {
             if (awaitSendReady()) {
-                action()
+                // A setup that began during the wait refuses it too; the caller's onRefused puts
+                // back whatever it was holding.
+                if (handle.state.canStartRun) action() else onRefused()
             } else {
                 surfaceModelSheet(sendReadinessTimeoutReason(handle.state))
                 onRefused()
@@ -70,6 +80,18 @@ class SendReadinessDelegate(
      * instantaneous instead of waiting out the readiness timeout.
      */
     private fun preflightSendBlockReason(state: ChatUiState): SendBlockReason? {
+        // The server rejects a send naming no spec, `addedEndpoints` or not.
+        if (state.modelSpecs.requiresSpec && state.selectedSpec.isNullOrBlank()) {
+            return SendBlockReason.SelectModel
+        }
+        // The server checks only the primary, but Compare offers lane B no raw models under
+        // `enforce` either; a reopened lane whose spec can't be read back asks here instead.
+        val comparison = state.comparisonState
+        if (state.modelSpecs.requiresSpec && comparison.isEnabled &&
+            comparison.secondaryEndpoint != EndpointConstants.AGENTS && state.laneBSpec.isNullOrBlank()
+        ) {
+            return SendBlockReason.SelectSecondaryModel
+        }
         if (state.selectedModel == null) {
             return if (state.selectedEndpoint == EndpointConstants.AGENTS) {
                 SendBlockReason.SelectAgent
@@ -79,6 +101,13 @@ class SendReadinessDelegate(
         }
         if (state.selectedEndpoint == EndpointConstants.AGENTS && !state.agentsEnabled) {
             return SendBlockReason.AgentsUnavailable
+        }
+        // As web's `useRequiresKey`: the server would refuse it with `no_user_key`. A key state
+        // still loading (or never fetched) lets the send through, as the picker does.
+        if (state.endpointKeyStates[state.selectedEndpoint].blocksSelection()) {
+            // The name the picker shows for the endpoint, not its config key.
+            val label = state.endpointConfigs[state.selectedEndpoint]?.modelDisplayLabel ?: state.selectedEndpoint
+            return SendBlockReason.ApiKeyRequired(label)
         }
         return null
     }

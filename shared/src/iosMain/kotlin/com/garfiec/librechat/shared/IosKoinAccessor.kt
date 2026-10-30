@@ -1,6 +1,8 @@
 package com.garfiec.librechat.shared
 
 import com.garfiec.librechat.core.common.lifecycle.DeferredWorkWindow
+import com.garfiec.librechat.core.data.datastore.AppPreferences
+import com.garfiec.librechat.core.data.datastore.PreferenceStore
 import com.garfiec.librechat.core.data.datastore.ServerDataStore
 import com.garfiec.librechat.core.data.datastore.SettingsDataStore
 import com.garfiec.librechat.core.data.prefetch.PrefetchBackgroundRunner
@@ -58,10 +60,13 @@ object IosKoinAccessor {
     suspend fun currentTopModels(limit: Int): List<ModelRef> =
         koin.get<SettingsDataStore>().topUsedModels(limit).first()
 
-    /** Routes a tapped quick action into the shared navigation host — opens a new chat on the model. */
+    /**
+     * Routes a tapped quick action into the shared navigation host — opens a new chat on the model,
+     * or on [spec] when the quick action was recorded from one.
+     */
     @Throws(Exception::class)
-    fun requestModelShortcut(endpoint: String, model: String) {
-        koin.get<ModelShortcutBus>().request(endpoint, model)
+    fun requestModelShortcut(endpoint: String, model: String, spec: String?) {
+        koin.get<ModelShortcutBus>().request(endpoint, model, spec)
     }
 
     /**
@@ -103,13 +108,13 @@ object IosKoinAccessor {
     /**
      * Queues the next occurrence, unless this run found the conditions the coordinator schedules on
      * to be unmet. Re-queueing on either verdict resurrects work the coordinator has just cancelled —
-     * and `prefetchEnabled` is global rather than account-scoped, so nothing would ever cancel it
+     * and `AppPreferences.PrefetchEnabled` is global rather than account-scoped, so nothing would ever cancel it
      * again and a signed-out device would keep waking every few hours indefinitely.
      */
     private suspend fun rescheduleAfter(outcome: PrefetchRunOutcome) {
         if (outcome == PrefetchRunOutcome.DISABLED || outcome == PrefetchRunOutcome.NO_SESSION) return
         koin.get<PrefetchScheduler>()
-            .ensureScheduled(koin.get<SettingsDataStore>().prefetchOnMeteredEnabled.first())
+            .ensureScheduled(koin.get<PreferenceStore>().observe(AppPreferences.PrefetchOnMetered).first())
     }
 
     /**

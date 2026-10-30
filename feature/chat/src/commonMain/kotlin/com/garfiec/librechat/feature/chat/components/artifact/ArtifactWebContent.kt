@@ -44,11 +44,13 @@ object ArtifactWebContent {
             // WebView+mermaid runtime so it keeps mermaid's default htmlLabels=true for
             // label fidelity (bold/italic, <br/>, nested spans).
             ArtifactType.MERMAID -> MermaidWebContent.buildHtml(content, isDarkTheme, inline, htmlLabels = !inline)
-            ArtifactType.MARKDOWN, ArtifactType.PLAIN -> MarkdownWebContent.buildHtml(content, isDarkTheme, inline)
+            ArtifactType.MARKDOWN -> MarkdownWebContent.buildHtml(content, isDarkTheme, inline)
+            // Escaped, never through marked: marked hands raw HTML in the text straight to
+            // innerHTML, so a file's or a reply's "plain text" would render as live markup.
+            ArtifactType.PLAIN, ArtifactType.CODE -> buildPlainHtml(content, bgColor, fgColor, inline)
             ArtifactType.REACT -> buildReactHtml(content, bgColor, fgColor)
             ArtifactType.SVG -> buildSvgHtml(content, bgColor, inline)
             ArtifactType.HTML -> buildEnhancedHtml(content, bgColor, fgColor)
-            ArtifactType.CODE -> buildPlainHtml(content, bgColor, fgColor, inline)
         }
     }
 
@@ -61,6 +63,9 @@ object ArtifactWebContent {
      * the content is plain text and is rendered through the escaping monospace
      * path — it is NEVER injected as HTML. Upstream's `TFile.textFormat` doc
      * explicitly warns against injecting the `text` format as HTML.
+     *
+     * The HTML is passed through [localizeOfficePreviewHtml] first: the server's document loads
+     * its renderers from a CDN, which F-Droid forbids, so they are pointed at vendored copies.
      */
     fun buildOfficePreviewHtml(
         text: String,
@@ -71,7 +76,7 @@ object ArtifactWebContent {
         val bgColor = if (isDarkTheme) "#1C1B1F" else "#FFFBFE"
         val fgColor = if (isDarkTheme) "#E6E1E5" else "#1C1B1F"
         return if (textFormat == TextFormat.HTML) {
-            buildEnhancedHtml(text, bgColor, fgColor)
+            buildEnhancedHtml(localizeOfficePreviewHtml(text), bgColor, fgColor)
         } else {
             buildPlainHtml(text, bgColor, fgColor, inline)
         }
@@ -85,8 +90,10 @@ object ArtifactWebContent {
             content.contains("<!DOCTYPE", ignoreCase = true)
 
         if (hasHtmlTag) {
+            // font-src: an office preview carries this policy beside its own, and both are enforced,
+            // so without it docx-preview's embedded (blob:) fonts fall to default-src and are blocked.
             val themeStyle = """
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' file:; style-src 'unsafe-inline'; img-src data: blob: https:;">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' file:; style-src 'unsafe-inline'; img-src data: blob: https:; font-src data: blob:; form-action 'none';">
                 <style>:root { --bg: $bgColor; --fg: $fgColor; } html, body { max-width: 100%; overflow-x: hidden; } body { background: var(--bg); color: var(--fg); margin: 0; padding: 0; } img, svg, video, iframe { max-width: 100%; height: auto; }</style>
                 <script src="tailwind/tailwind.min.js"></script>
             """.trimIndent()
@@ -112,7 +119,7 @@ object ArtifactWebContent {
             <html>
             <head>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' file:; style-src 'unsafe-inline'; img-src data: blob: https:;">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' file:; style-src 'unsafe-inline'; img-src data: blob: https:; form-action 'none';">
                 <script src="tailwind/tailwind.min.js"></script>
                 <style>
                     :root { --bg: $bgColor; --fg: $fgColor; }
@@ -263,7 +270,7 @@ object ArtifactWebContent {
             <html>
             <head>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: file:; style-src 'unsafe-inline'; img-src data: blob: https:; font-src data: file:;">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: file:; style-src 'unsafe-inline'; img-src data: blob: https:; font-src data: file:; form-action 'none';">
                 <script src="react/react.production.min.js"></script>
                 <script src="react-dom/react-dom.production.min.js"></script>
                 <script src="babel/babel.min.js"></script>

@@ -3,6 +3,8 @@ package com.garfiec.librechat.core.data.datastore
 import com.garfiec.librechat.core.common.identity.AccountId
 import com.garfiec.librechat.core.common.identity.AccountState
 import com.garfiec.librechat.core.common.identity.InMemoryActiveAccountProvider
+import com.garfiec.librechat.core.common.identity.deriveAccountId
+import com.garfiec.librechat.core.common.identity.deriveServerId
 import com.garfiec.librechat.core.logging.redact.LogRedactor
 import com.garfiec.librechat.core.network.client.LibreChatHttpClient
 import com.garfiec.librechat.core.network.client.ServerUrlProvider
@@ -48,7 +50,9 @@ import kotlin.time.Clock
 class RefreshBurstThroughClientTest {
 
     private companion object {
-        const val ACCOUNT = "acctA"
+        val ACCOUNT = deriveAccountId(
+            deriveServerId(TEST_SERVER), "user-a",
+        ).value
         const val FAN_OUT = 7
 
         /** LibreChat's own dead-credential answer: terminal, drops the slot. */
@@ -122,7 +126,7 @@ class RefreshBurstThroughClientTest {
             tokenManager = store,
             serverUrlProvider = FixedUrlProvider(),
             redactor = LogRedactor(),
-            imageCookieCredentials = { null },
+            refreshCookieCredentials = { null },
             switchGate = gate,
         )
         return Harness(client, store)

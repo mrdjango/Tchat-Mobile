@@ -47,9 +47,21 @@ interface ConversationRepository {
     ): Result<ConversationPage>
 
     /**
+     * Fetches a cursor page of the chats carrying the bookmark [tag] (exact name), newest first.
+     * Returned directly, like [getConversationsForProject]: the list endpoint omits each chat's tags,
+     * so Room can't filter by them. The page warms the cache with the tag-preserving upsert.
+     */
+    suspend fun getConversationsForTag(
+        tag: String,
+        cursor: String? = null,
+        limit: Int = 25,
+    ): Result<ConversationPage>
+
+    /**
      * Fetches [id] from the server and upserts it into the cache, bypassing
      * [getConversation]'s cache-first read. Use when the local row is known to be
-     * stale (e.g. picking up a server-generated title).
+     * stale (e.g. picking up a server-generated title). This is the full document, so its
+     * tags replace the cached ones (the list endpoints omit tags and keep them).
      */
     suspend fun refreshConversation(id: String, originAccount: AccountId?): Result<Conversation>
     suspend fun updateTitle(id: String, title: String): Result<Conversation>
@@ -76,6 +88,5 @@ interface ConversationRepository {
      */
     suspend fun archiveAll(): Result<Int>
     suspend fun saveConversation(conversation: Conversation, originAccount: AccountId?)
-    suspend fun updateConversationTagsLocal(id: String, tags: List<String>)
     suspend fun syncFavoritesFromServer(): Result<Unit>
 }

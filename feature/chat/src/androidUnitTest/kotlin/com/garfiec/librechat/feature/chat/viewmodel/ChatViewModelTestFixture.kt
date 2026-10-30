@@ -1,21 +1,27 @@
 package com.garfiec.librechat.feature.chat.viewmodel
 
+import com.garfiec.librechat.core.common.ToolConstants
 import com.garfiec.librechat.core.common.identity.AccountId
 import com.garfiec.librechat.core.common.identity.AccountState
 import com.garfiec.librechat.core.common.identity.ActiveAccountProvider
 import com.garfiec.librechat.core.common.identity.InMemoryActiveAccountProvider
 import com.garfiec.librechat.core.common.network.ConnectivityObserver
 import com.garfiec.librechat.core.common.result.Result
+import com.garfiec.librechat.core.data.datastore.AppPreferences
 import com.garfiec.librechat.core.data.datastore.ChatFontSize
 import com.garfiec.librechat.core.data.datastore.ChatHeaderAlignment
 import com.garfiec.librechat.core.data.datastore.ChatHeaderContent
 import com.garfiec.librechat.core.data.datastore.ContextBarPlacement
+import com.garfiec.librechat.core.data.datastore.ConversationWebSearchStore
 import com.garfiec.librechat.core.data.datastore.DuringRunAction
+import com.garfiec.librechat.core.data.datastore.PreferenceStore
 import com.garfiec.librechat.core.data.datastore.ServerDataStore
 import com.garfiec.librechat.core.data.datastore.SettingsDataStore
 import com.garfiec.librechat.core.data.datastore.StarredModelsDisplay
 import com.garfiec.librechat.core.data.datastore.TchatSettingsStore
+import com.garfiec.librechat.core.data.datastore.WebSearchPreference
 import com.garfiec.librechat.core.data.repository.AgentRepository
+import com.garfiec.librechat.core.data.repository.AgentToolsRepository
 import com.garfiec.librechat.core.data.repository.ChatRepository
 import com.garfiec.librechat.core.data.repository.ConfigRepository
 import com.garfiec.librechat.core.data.repository.ConversationRepository
@@ -25,6 +31,7 @@ import com.garfiec.librechat.core.data.repository.FavoritesRepository
 import com.garfiec.librechat.core.data.repository.FileRepository
 import com.garfiec.librechat.core.data.repository.KeyRepository
 import com.garfiec.librechat.core.data.repository.McpRepository
+import com.garfiec.librechat.core.data.repository.MemoryRepository
 import com.garfiec.librechat.core.data.repository.MessageRepository
 import com.garfiec.librechat.core.data.repository.PresetRepository
 import com.garfiec.librechat.core.data.repository.PromptRepository
@@ -32,10 +39,16 @@ import com.garfiec.librechat.core.data.repository.QueuedTurnRepository
 import com.garfiec.librechat.core.data.repository.ResumePinStore
 import com.garfiec.librechat.core.data.repository.RoleRepository
 import com.garfiec.librechat.core.data.repository.ShareRepository
+import com.garfiec.librechat.core.data.repository.SkillsRepository
+import com.garfiec.librechat.core.data.repository.TagRepository
 import com.garfiec.librechat.core.data.repository.TchatModelCatalogRepository
 import com.garfiec.librechat.core.data.repository.TraceRepository
 import com.garfiec.librechat.core.data.repository.UserRepository
+import com.garfiec.librechat.core.data.repository.WebSearchReadinessRepository
+import com.garfiec.librechat.core.data.share.ShareLinkControllerFactory
 import com.garfiec.librechat.core.data.util.PermissionGate
+import com.garfiec.librechat.core.model.ToolAuthResult
+import com.garfiec.librechat.core.model.User
 import com.garfiec.librechat.core.model.queuedturn.QueuedTurnOutcome
 import com.garfiec.librechat.core.model.usage.ContextDetailPreset
 import com.garfiec.librechat.core.model.usage.DEFAULT_COMPACT_NUDGE_THRESHOLD
@@ -47,7 +60,10 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
+import kotlin.time.Clock
 
 /**
  * The collaborators of a [ChatViewModel] under test, and the stubs it cannot be constructed
@@ -80,20 +96,63 @@ internal class ChatViewModelTestFixture {
     val presetRepository = mockk<PresetRepository>(relaxed = true)
     val promptRepository = mockk<PromptRepository>(relaxed = true)
     val queuedTurnRepository = mockk<QueuedTurnRepository>(relaxed = true)
-    val shareRepository = mockk<ShareRepository>(relaxed = true)
+
+    // A real revision flow: the link-active lookup collects it, and a relaxed StateFlow can't be collected.
+    val shareRepository = mockk<ShareRepository>(relaxed = true).also {
+        every { it.revision } returns MutableStateFlow(0L)
+    }
+    val shareLinkControllerFactory = mockk<ShareLinkControllerFactory>(relaxed = true)
+
+    // Real flows: the bookmark icon collects the cached tags and the checklist's tag list.
+    val tagRepository = mockk<TagRepository>(relaxed = true).also {
+        every { it.observeConversationTags(any()) } returns flowOf(emptyList())
+        every { it.observeTags() } returns flowOf(emptyList())
+    }
     val traceRepository = mockk<TraceRepository>(relaxed = true)
     val mcpRepository = mockk<McpRepository>(relaxed = true)
+    val skillsRepository = mockk<SkillsRepository>(relaxed = true)
     val userRepository = mockk<UserRepository>(relaxed = true)
     val roleRepository = mockk<RoleRepository>(relaxed = true)
+    val memoryRepository = mockk<MemoryRepository>(relaxed = true)
+    val agentToolsRepository = mockk<AgentToolsRepository>(relaxed = true)
+
+    /** The web-search key check's answer (`GET /api/agents/tools/web_search/auth`). */
+    var webSearchAuthenticated = true
+
+    /** Settings → Chat's web-search order. */
+    val webSearchFirst = MutableStateFlow(WebSearchPreference.LIBRECHAT_FIRST)
+
+    /** Each conversation's remembered web-search switch; nothing stored unless a test says so. */
+    val conversationWebSearchStore = mockk<ConversationWebSearchStore>(relaxed = true)
+
+    /** Shared by every ViewModel this fixture builds, like the app's single, so its cache carries over. */
+    private var webSearchReadiness: WebSearchReadinessRepository? = null
+
+    /** The shared memory opt-out; null until a test publishes one, as before any fetch. */
+    val memoriesEnabled = MutableStateFlow<Boolean?>(null)
+
+    /** Moves on every [toggleMemoriesInSettings], like MemoryRepositoryImpl's write generation. */
+    private var memoryPreferenceWrites = 0
+
+    /** A Settings toggle: a preference write the stubbed profile read must not undo. */
+    fun toggleMemoriesInSettings(enabled: Boolean) {
+        memoryPreferenceWrites++
+        memoriesEnabled.value = enabled
+    }
     val permissionGate = mockk<PermissionGate>(relaxed = true)
     val connectivityObserver = mockk<ConnectivityObserver>(relaxed = true)
     val serverDataStore = mockk<ServerDataStore>(relaxed = true)
     val settingsDataStore = mockk<SettingsDataStore>(relaxed = true)
+    val preferenceStore = mockk<PreferenceStore>(relaxed = true)
     val platformDelegateFactory = mockk<PlatformDelegateFactory>(relaxed = true)
     val serverFileSelectionHandoff = mockk<ServerFileSelectionHandoff>(relaxed = true)
 
     val selectionHandoff = NewChatSelectionHandoff()
     val siteIconPromptSession = SiteIconPromptSession()
+    val promptInsertionHandoff = PromptInsertionHandoff()
+
+    /** The per-conversation Skills toggle store, by slot (a conversation id, `new` or `__defaults__`). */
+    val skillsToggles = MutableStateFlow<Map<String, Boolean>>(emptyMap())
 
     // TCHAT: the model catalog never answers in these tests, so nothing is repaired or tagged.
     val tchatModelCatalogRepository = mockk<TchatModelCatalogRepository>(relaxed = true) {
@@ -113,6 +172,17 @@ internal class ChatViewModelTestFixture {
         every { configRepository.endpointConfigs } returns MutableStateFlow(emptyMap())
         every { configRepository.availableModels } returns MutableStateFlow(emptyMap())
         every { roleRepository.userPermissions } returns MutableStateFlow(null)
+        every { memoryRepository.memoriesEnabled } returns memoriesEnabled
+        // The real repository's contract: run the caller's profile GET and publish the opt-out it
+        // carries, unless a preference write happened while it was in flight.
+        coEvery { memoryRepository.fetchUserPublishingPreference(any()) } coAnswers {
+            val generation = memoryPreferenceWrites
+            val result = firstArg<suspend () -> Result<User>>().invoke()
+            if (result is Result.Success && memoryPreferenceWrites == generation) {
+                memoriesEnabled.value = result.data.personalization?.memories ?: true
+            }
+            result
+        }
         every { favoritesRepository.favorites } returns MutableStateFlow(emptyList())
         every { keyRepository.keyInvalidations } returns MutableSharedFlow()
         every { agentRepository.revision } returns MutableStateFlow(0L)
@@ -145,8 +215,23 @@ internal class ChatViewModelTestFixture {
         every { settingsDataStore.effectiveContextSections } returns MutableStateFlow(ContextDetailPreset.STANDARD.sections)
         every { settingsDataStore.compactNudgeThreshold } returns MutableStateFlow(DEFAULT_COMPACT_NUDGE_THRESHOLD)
         every { settingsDataStore.compactNudgeSnoozes } returns MutableStateFlow(emptyMap())
-        every { settingsDataStore.siteIconsChoice } returns MutableStateFlow(null)
+        every { preferenceStore.observe(AppPreferences.SiteIcons) } returns MutableStateFlow(null)
+        every { preferenceStore.observe(AppPreferences.PreferLastUsedModel) } returns MutableStateFlow(false)
+        every { preferenceStore.initial(AppPreferences.SiteIcons) } returns null
+        every { preferenceStore.observe(AppPreferences.WebSearchFirst) } returns webSearchFirst
+        coEvery { conversationWebSearchStore.get(any()) } returns null
+        coEvery { agentToolsRepository.verifyToolAuth(ToolConstants.WEB_SEARCH) } answers {
+            Result.Success(ToolAuthResult(authenticated = webSearchAuthenticated))
+        }
         every { settingsDataStore.duringRunAction } returns MutableStateFlow(DuringRunAction.QUEUE)
+        // A real slot map rather than a relaxed Flow, so a toggle written here reads back.
+        every { settingsDataStore.skillsToggle(any()) } answers {
+            val slot = firstArg<String>()
+            skillsToggles.map { it[slot] }
+        }
+        coEvery { settingsDataStore.setSkillsToggle(any(), any()) } answers {
+            skillsToggles.value = skillsToggles.value + (firstArg<String>() to secondArg<Boolean>())
+        }
     }
 
     fun build(
@@ -154,12 +239,15 @@ internal class ChatViewModelTestFixture {
         initialConversationId: String? = null,
         initialAgentId: String? = null,
         initialIsTemporary: Boolean = false,
+        initialChatProjectId: String? = null,
         activeAccountProvider: ActiveAccountProvider =
             InMemoryActiveAccountProvider(AccountState.Resolved(AccountId("srv:user-1"))),
+        clock: Clock = Clock.System,
     ): ChatViewModel = ChatViewModel(
         initialConversationId = initialConversationId,
         initialAgentId = initialAgentId,
         initialIsTemporary = initialIsTemporary,
+        initialChatProjectId = initialChatProjectId,
         agentRepository = agentRepository,
         chatRepository = chatRepository,
         messageRepository = messageRepository,
@@ -177,10 +265,17 @@ internal class ChatViewModelTestFixture {
         promptRepository = promptRepository,
         queuedTurnRepository = queuedTurnRepository,
         shareRepository = shareRepository,
+        shareLinkControllerFactory = shareLinkControllerFactory,
+        tagRepository = tagRepository,
         traceRepository = traceRepository,
         mcpRepository = mcpRepository,
+        skillsRepository = skillsRepository,
         userRepository = userRepository,
         roleRepository = roleRepository,
+        memoryRepository = memoryRepository,
+        webSearchReadiness = webSearchReadiness
+            ?: WebSearchReadinessRepository(agentToolsRepository, activeAccountProvider).also { webSearchReadiness = it },
+        conversationWebSearchStore = conversationWebSearchStore,
         permissionGate = permissionGate,
         connectivityObserver = connectivityObserver,
         serverDataStore = serverDataStore,
@@ -190,8 +285,10 @@ internal class ChatViewModelTestFixture {
         defaultDispatcher = defaultDispatcher,
         selectionHandoff = selectionHandoff,
         serverFileSelectionHandoff = serverFileSelectionHandoff,
-        promptInsertionHandoff = PromptInsertionHandoff(),
+        promptInsertionHandoff = promptInsertionHandoff,
         siteIconPromptSession = siteIconPromptSession,
+        preferenceStore = preferenceStore,
         activeAccountProvider = activeAccountProvider,
+        clock = clock,
     )
 }

@@ -16,8 +16,6 @@
     <string name="close">关闭</string>
 
     <!-- Content descriptions -->
-    <string name="cd_create_agent">创建智能体</string>
-    <string name="cd_search">搜索</string>
     <string name="cd_back">返回</string>
     <string name="cd_more_actions">更多操作</string>
     <string name="cd_more_options">更多选项</string>
@@ -34,11 +32,26 @@
     <!-- Marketplace screen -->
     <string name="search_agents_hint">搜索智能体…</string>
     <string name="no_agents_found">未找到智能体</string>
-    <string name="no_agents_available">没有可用的智能体</string>
     <string name="agents_not_available_title">智能体不可用</string>
     <string name="agents_not_available_description">你的服务器管理员已为你的账户禁用智能体。</string>
     <string name="try_different_search">尝试其他搜索关键词</string>
     <string name="check_back_later">稍后再来看看新的智能体</string>
+    <string name="agents_chip_top_picks">精选</string>
+    <string name="agents_chip_all">全部</string>
+    <string name="agents_chip_editable">可编辑</string>
+    <string name="agents_top_pick">精选</string>
+    <string name="agents_new_agent">新建智能体</string>
+    <string name="agent_unnamed">未命名智能体</string>
+    <string name="agents_clear_search">清除搜索</string>
+    <string name="agents_no_matches_in">%1$s 中没有匹配项</string>
+    <string name="agents_none_in">%1$s 中没有智能体</string>
+    <string name="agents_search_all">搜索全部智能体</string>
+    <string name="agents_show_all">显示全部智能体</string>
+    <string name="agents_empty_title">还没有智能体</string>
+    <string name="agents_empty_description_create">创建一个拥有自己的指令、模型和工具的智能体。</string>
+    <string name="agents_load_failed">无法加载智能体</string>
+    <string name="agents_load_more_failed">无法加载更多智能体</string>
+    <string name="agents_retry">重试</string>
     <string name="error_unknown">发生未知错误</string>
     <string name="unknown_author">未知</string>
 
@@ -47,12 +60,8 @@
     <string name="delete_agent">删除智能体</string>
     <string name="delete_agent_confirm">确定要删除 "%1$s" 吗？此操作无法撤销。</string>
     <string name="delete_this_agent">此智能体</string>
-    <string name="by_author">作者：%1$s</string>
-    <string name="label_description">描述</string>
-    <string name="no_description">无描述</string>
     <string name="label_category">类别</string>
     <string name="label_model">模型</string>
-    <string name="default_value">默认</string>
     <string name="label_tools">工具</string>
     <string name="label_conversation_starters">对话开场白</string>
 
@@ -236,13 +245,20 @@
     <string name="acl_public_label">公开</string>
     <string name="acl_public_description">允许任何能访问服务器的人</string>
     <string name="acl_role">角色</string>
-    <string name="acl_revoke">吊销</string>
+    <string name="acl_revoke_principal">吊销 %1$s 的访问权限</string>
     <string name="acl_search_hint">搜索用户或群组…</string>
     <string name="acl_search_empty">无匹配项</string>
+    <string name="acl_search_failed">目前无法搜索。</string>
+    <string name="acl_search_unavailable">你的角色无法搜索用户或群组。请让管理员为你的角色开启人员选择器。</string>
+    <string name="acl_roles_failed">无法加载角色，暂时无法添加任何人。</string>
+    <string name="acl_load_failed">无法加载有访问权限的人员。</string>
+    <string name="acl_share_check_failed">无法检查你是否可以共享此智能体。</string>
+    <string name="acl_retry">重试</string>
     <string name="acl_grant_dialog_title">添加用户或群组</string>
     <string name="acl_principal_user">用户</string>
     <string name="acl_principal_group">群组</string>
     <string name="acl_principal_role">角色</string>
+    <string name="acl_principal_unknown">未知</string>
     <string name="acl_create_mode_notice">分享与访问控制在智能体保存后可用。</string>
 
     <!-- Tool select dialog -->
@@ -306,5 +322,36 @@
     <string name="builtin_file_context_desc">将附加的完整文件放入智能体的上下文。</string>
     <string name="builtin_ask_user">询问用户</string>
     <string name="builtin_ask_user_desc">暂停运行，向你提出澄清问题。</string>
-    <string name="agent_contact_title">联系方式</string>
+    <string name="agent_category_hr">人力资源</string>
+    <string name="agent_category_rd">研发</string>
+    <string name="agent_category_finance">财务</string>
+    <string name="agent_category_it">IT</string>
+    <string name="agent_category_sales">销售</string>
+    <string name="agent_category_aftersales">售后</string>
+    <string name="agent_category_idea">创意</string>
+    <string name="agent_category_travel">旅行</string>
+    <string name="agent_category_learning">学习</string>
+    <string name="agent_category_writing">写作</string>
+    <string name="agent_category_shopping">购物</string>
+    <string name="agent_category_code">代码</string>
+    <string name="agent_category_misc">其他</string>
+    <string name="agent_category_roleplay">角色扮演</string>
+    <string name="visibility_team">团队</string>
+    <string name="agent_contact_line">联系人：%1$s</string>
+    <string name="agent_pin">固定到模型菜单</string>
+    <string name="agent_unpin">从模型菜单取消固定</string>
+    <string name="agent_copy_link">复制链接</string>
+    <string name="agent_link_copied">链接已复制</string>
+    <string name="agent_updated_relative">更新于 %1$s</string>
+    <string name="agent_updated_on">更新于 %1$s</string>
+    <string name="agent_public">公开</string>
+    <string name="agent_try_asking">试着问问</string>
+    <string name="agent_load_failed">无法加载此智能体</string>
+    <string name="agent_delete_failed">无法删除此智能体</string>
+    <string name="agent_duplicate_failed">无法复制此智能体</string>
+    <string name="agent_pin_failed">无法更新你的固定项</string>
+    <string name="agent_contact_send_email">发送邮件</string>
+    <plurals name="agent_pin_limit">
+        <item quantity="other">最多可固定 %1$d 个收藏。</item>
+    </plurals>
 </resources>
