@@ -1,7 +1,9 @@
-- Full-text message search, offline and on the server
-- Prefetch conversations by default
-- Model predictive back on the system's cross-activity animation
-- Size server requests to the caller, read offline as offline, land jumps on the message
-- Drop the author user ID from marketplace agent cards
-- Upload profile pictures to the files avatar route
-- Fit markdown tables to the screen and render cell markdown
+- Fold the footer links into a Workspace tray with pinning
+- Animate the temporary chat toggle with a sweeping band
+- Swipe between tabs in Files, Search and the Media page
+- Add Bookmarks screens and keep web-set tags on every write
+- Overhaul Provider API Keys
+- Render search citations as source pills, with web-parity search sources
+- Drop the overflow menu from server cards
+- Scroll grid screens under the status bar and top bar
+- And 86 more; see the release notes on GitHub.
