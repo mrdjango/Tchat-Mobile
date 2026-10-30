@@ -10,6 +10,7 @@
     <string name="action_insert">إدراج</string>
     <string name="action_open">فتح</string>
     <string name="action_share">مشاركة</string>
+    <string name="action_share_link_active">مشاركة · الرابط نشط</string>
     <string name="action_search">بحث</string>
     <string name="action_archive">أرشفة</string>
     <string name="action_duplicate">تكرار</string>
@@ -19,7 +20,17 @@
     <string name="new_chat">محادثة جديدة</string>
     <string name="load_preset">تحميل إعداد مسبق</string>
     <string name="save_as_preset">الحفظ كإعداد مسبق</string>
-    <string name="save_and_submit">حفظ وإرسال</string>
+    <string name="saving">جارٍ الحفظ…</string>
+    <string name="rerun">إعادة التشغيل</string>
+    <string name="update_and_rerun">تحديث وإعادة التشغيل</string>
+    <string name="edit_part_response">الرد</string>
+    <string name="edit_part_thoughts">التفكير</string>
+    <string name="edit_status_part_empty">لا يمكن أن يكون أي جزء من الرسالة فارغًا.</string>
+    <string name="edit_status_save_before_rerun">احفظ تغييراتك قبل إعادة التشغيل.</string>
+    <string name="edit_status_unsaved_changes">تغييرات غير محفوظة.</string>
+    <string name="edit_status_rerun_discards_changes">إعادة التشغيل تُنشئ هذا الرد من جديد وتتجاهل تغييراتك.</string>
+    <string name="edit_status_rerun_needs_user_turn">تتطلب إعادة التشغيل رسالة مستخدم لإعادة إرسالها.</string>
+    <string name="notice_message_save_failed">لم يتم حفظ تعديلك.</string>
     <string name="preset_name_label">اسم الإعداد المسبق</string>
     <string name="code">الكود</string>
     <string name="preview">معاينة</string>
@@ -29,7 +40,24 @@
     <!-- Neutral label for the active agent when its name hasn't resolved yet (never a model string). -->
     <string name="chat_agent_fallback_label">وكيل</string>
     <string name="compare_models">مقارنة النماذج</string>
+    <string name="compare_with">قارن مع</string>
+    <string name="compare_start">ابدأ</string>
+    <string name="compare_setup_hint">تُرسل كل رسالة إلى النموذجين. انقر على A أو B لاختيار نموذجه.</string>
+    <string name="compare_same_model">النموذج نفسه، إجابة ثانية</string>
+    <string name="compare_pick_below">اختر أدناه</string>
+    <string name="compare_message_both">راسل النموذجين</string>
+    <string name="compare_pick_to_send">اختر النموذج B للإرسال</string>
+    <string name="compare_not_picked">لم يُختر بعد</string>
+    <string name="compare_empty_lane">أرسل رسالة لترى إجابته هنا.</string>
+    <string name="compare_empty_pick_right">اختر نموذجًا على اليسار للمقارنة به.</string>
+    <string name="compare_empty_ready">اضغط «ابدأ»، ثم أرسل رسالة. يجيب النموذجان جنبًا إلى جنب.</string>
+    <string name="compare_browse_all">تصفح كل النماذج</string>
+    <string name="compare_pick_second_model">اختر النموذج الثاني</string>
+    <string name="cd_change_compared_models">تغيير النماذج المقارنة</string>
+    <string name="compare_lane_a">A</string>
+    <string name="compare_lane_b">B</string>
     <string name="how_can_i_help">كيف يمكنني مساعدتك اليوم؟</string>
+    <string name="chat_in_project">في %1$s</string>
     <string name="recording">جارٍ التسجيل…</string>
     <string name="hint_message_model">رسالة إلى %1$s</string>
     <string name="hint_message">رسالة…</string>
@@ -61,6 +89,9 @@
     <string name="cd_more_options">خيارات إضافية</string>
     <string name="cd_scroll_to_bottom">التمرير إلى الأسفل</string>
     <string name="cd_select_model">اختيار النموذج</string>
+    <string name="cd_starter_send">إرسال</string>
+    <string name="cd_starter_edit">تعديل قبل الإرسال</string>
+    <string name="starters_try_asking">جرّب أن تسأل</string>
     <string name="cd_librechat">Switchboard</string>
     <string name="cd_comparison_enabled">المقارنة مُفعّلة</string>
 
@@ -100,7 +131,6 @@
     <string name="cd_code_execution_result">نتيجة تنفيذ الكود</string>
     <string name="cd_exit_code_success">رمز الخروج 0 (نجاح)</string>
     <string name="cd_exit_code_failure">رمز الخروج %1$d (فشل)</string>
-    <string name="exit_code">خروج %1$d</string>
     <string name="label_code">الكود</string>
     <string name="label_output">المخرجات:</string>
     <string name="label_error">خطأ:</string>
@@ -179,8 +209,6 @@
     <string name="trace_error_unsupported">لا يمكن لخدمة التتبّع في هذا الخادم إرجاع التتبّعات.</string>
 
     <!-- Office-doc preview attachments (deferred preview, v0.8.6+) -->
-    <string name="office_preview_preparing">جارٍ تحضير معاينة %1$s…</string>
-    <string name="office_preview_failed">تعذّرت معاينة %1$s (%2$s)</string>
     <string name="office_preview_unavailable">%1$s — المعاينة غير متاحة</string>
 
     <!-- Content descriptions - Tool calls -->
@@ -200,8 +228,15 @@
     <string name="tool_model">النموذج</string>
     <string name="tool_model_parameters">معاملات النموذج</string>
     <string name="tool_model_parameters_desc">ضبط درجة الحرارة والرموز والمزيد</string>
+    <string name="param_set_by_spec">يحدد الخادم إعدادات هذا النموذج، ولا يمكن تغييرها هنا.</string>
+    <string name="tool_set_by_spec">فعّله الخادم لهذا النموذج</string>
     <string name="tool_web_search">البحث على الويب</string>
     <string name="tool_web_search_desc">البحث على الويب عن المعلومات</string>
+    <string name="web_search_librechat">بحث LibreChat</string>
+    <string name="web_search_checking">جارٍ التحقق من بحث LibreChat…</string>
+    <string name="web_search_built_in">البحث المدمج في %1$s</string>
+    <string name="web_search_built_in_plain">البحث المدمج</string>
+    <string name="web_search_set_by_spec">%1$s، فعّله الخادم لهذا النموذج</string>
     <string name="web_searched">تم البحث على الويب</string>
     <string name="tool_url_context">سياق URL</string>
     <string name="tool_url_context_desc">السماح للنموذج بقراءة عناوين URL ومقاطع YouTube التي تشير إليها</string>
@@ -254,8 +289,16 @@
     <string name="audio_decode_failed">فشل فك ترميز الصوت</string>
 
     <!-- Citation -->
-    <string name="citation_number">الاستشهاد %1$d</string>
-    <string name="cd_open_citation_url">فتح رابط الاستشهاد</string>
+    <string name="citation_sources_title">المصادر</string>
+    <string name="cd_citation">المصدر: %1$s</string>
+    <plurals name="cd_citation_more">
+        <item quantity="zero">المصدر: %1$s و%2$d غيره</item>
+        <item quantity="one">المصدر: %1$s و%2$d غيره</item>
+        <item quantity="two">المصدر: %1$s و%2$d غيره</item>
+        <item quantity="few">المصدر: %1$s و%2$d غيره</item>
+        <item quantity="many">المصدر: %1$s و%2$d غيره</item>
+        <item quantity="other">المصدر: %1$s و%2$d غيره</item>
+    </plurals>
 
     <!-- Fork options -->
     <string name="fork_conversation">تفريع المحادثة</string>
@@ -286,18 +329,39 @@
     <string name="cd_mcp_resource">مورد MCP: %1$s</string>
 
     <!-- Memory artifact -->
-    <string name="cd_memory_artifact">عنصر الذاكرة: %1$s</string>
-    <string name="memory_artifact_untitled">بدون عنوان</string>
     <string name="label_memory">الذاكرة</string>
-    <string name="cd_memory_artifacts">تحديثات الذاكرة: %1$d</string>
-    <string name="memory_updated">تم تحديث الذاكرة المحفوظة</string>
+    <string name="memory_manage">إدارة</string>
+    <string name="cd_memory_manage">إدارة الذكريات</string>
+    <plurals name="cd_memory_artifacts_summary">
+        <item quantity="zero">%1$s، %2$s تغيير</item>
+        <item quantity="one">%1$s، تغيير واحد</item>
+        <item quantity="two">%1$s، تغييران</item>
+        <item quantity="few">%1$s، %2$s تغييرات</item>
+        <item quantity="many">%1$s، %2$s تغييرًا</item>
+        <item quantity="other">%1$s، %2$s تغيير</item>
+    </plurals>
+    <string name="memory_updated">تم تحديث الذكرى المحفوظة</string>
     <string name="memory_error">خطأ في الذاكرة</string>
     <string name="memory_updated_items">الذكريات المحدّثة</string>
     <string name="memory_deleted_items">الذكريات المحذوفة</string>
-    <string name="memory_deleted">تم حذف الذاكرة</string>
-    <string name="memory_storage_full">مساحة الذاكرة ممتلئة</string>
-    <string name="memory_already_exceeded">مساحة الذاكرة ممتلئة بالفعل — تم تجاوزها بمقدار %1$d رمز. احذف ذكريات موجودة قبل إضافة ذكريات جديدة.</string>
-    <string name="memory_would_exceed">تعذّر الحفظ — سيتم تجاوز الحد بمقدار %1$d رمز. احذف ذكريات موجودة لإفساح المجال.</string>
+    <string name="memory_deleted">تم حذف الذكرى</string>
+    <string name="memory_storage_full">مساحة الذكريات ممتلئة</string>
+    <plurals name="memory_already_exceeded">
+        <item quantity="zero">مساحة الذكريات ممتلئة بالفعل — تم تجاوزها بمقدار %1$s رمز. احذف ذكريات موجودة قبل إضافة ذكريات جديدة.</item>
+        <item quantity="one">مساحة الذكريات ممتلئة بالفعل — تم تجاوزها بمقدار رمز واحد. احذف ذكريات موجودة قبل إضافة ذكريات جديدة.</item>
+        <item quantity="two">مساحة الذكريات ممتلئة بالفعل — تم تجاوزها بمقدار رمزين. احذف ذكريات موجودة قبل إضافة ذكريات جديدة.</item>
+        <item quantity="few">مساحة الذكريات ممتلئة بالفعل — تم تجاوزها بمقدار %1$s رموز. احذف ذكريات موجودة قبل إضافة ذكريات جديدة.</item>
+        <item quantity="many">مساحة الذكريات ممتلئة بالفعل — تم تجاوزها بمقدار %1$s رمزًا. احذف ذكريات موجودة قبل إضافة ذكريات جديدة.</item>
+        <item quantity="other">مساحة الذكريات ممتلئة بالفعل — تم تجاوزها بمقدار %1$s رمز. احذف ذكريات موجودة قبل إضافة ذكريات جديدة.</item>
+    </plurals>
+    <plurals name="memory_would_exceed">
+        <item quantity="zero">تعذّر الحفظ — سيتم تجاوز الحد بمقدار %1$s رمز. احذف ذكريات موجودة لإفساح المجال.</item>
+        <item quantity="one">تعذّر الحفظ — سيتم تجاوز الحد بمقدار رمز واحد. احذف ذكريات موجودة لإفساح المجال.</item>
+        <item quantity="two">تعذّر الحفظ — سيتم تجاوز الحد بمقدار رمزين. احذف ذكريات موجودة لإفساح المجال.</item>
+        <item quantity="few">تعذّر الحفظ — سيتم تجاوز الحد بمقدار %1$s رموز. احذف ذكريات موجودة لإفساح المجال.</item>
+        <item quantity="many">تعذّر الحفظ — سيتم تجاوز الحد بمقدار %1$s رمزًا. احذف ذكريات موجودة لإفساح المجال.</item>
+        <item quantity="other">تعذّر الحفظ — سيتم تجاوز الحد بمقدار %1$s رمز. احذف ذكريات موجودة لإفساح المجال.</item>
+    </plurals>
     <string name="files_searched">تم البحث في ملفاتك</string>
     <string name="cd_file_search_source">مصدر البحث في الملفات: %1$s</string>
     <string name="file_search_relevance">%1$d%%</string>
@@ -318,10 +382,7 @@
     <!-- Message files -->
     <string name="file_fallback">ملف</string>
     <string name="attachment_fallback">مرفق</string>
-    <string name="pdf_document">مستند PDF</string>
     <string name="pdf_load_failed">تعذّر تحميل ملف PDF</string>
-    <string name="cd_share_pdf">مشاركة PDF</string>
-    <string name="cd_open_pdf">فتح PDF</string>
     <string name="retry">إعادة المحاولة</string>
     <string name="messages_unavailable_title">الرسائل غير متاحة</string>
     <string name="messages_unavailable_body">تعذّر تحميل هذه المحادثة ولا توجد نسخة محفوظة للاستخدام دون اتصال على هذا الجهاز.</string>
@@ -333,8 +394,12 @@
     <string name="cd_unpin_favorite">إلغاء تثبيت المفضلة</string>
     <string name="cd_collapse_section">طي %1$s</string>
     <string name="cd_expand_section">توسيع %1$s</string>
-    <string name="set_api_key_action">تعيين مفتاح API</string>
-    <string name="cd_set_api_key">إعداد مفتاح API لـ %1$s</string>
+    <string name="set_api_key_action">إضافة مفتاح</string>
+    <string name="cd_set_api_key">إضافة مفتاح لـ %1$s</string>
+    <!-- Under an endpoint or spec name in the model picker when its key is missing. -->
+    <string name="model_selector_needs_key">يحتاج إلى مفتاحك</string>
+    <!-- Same place, in the minute before the server deletes an expired key. -->
+    <string name="model_selector_key_expired">انتهت صلاحية المفتاح</string>
 
     <!-- Preset picker -->
     <string name="select_preset">اختيار إعداد مسبق</string>
@@ -446,22 +511,31 @@
     <string name="dialog_title_fill_variables">تعبئة المتغيرات</string>
 
     <!-- Comparison mode -->
-    <string name="continue_with_response">المتابعة بهذا الرد</string>
-    <string name="waiting_for_response">في انتظار الرد…</string>
+    <string name="keep_this_answer">الاحتفاظ بهذه الإجابة</string>
+    <string name="reply_stopped">تم الإيقاف</string>
+    <string name="action_continue_reply">متابعة</string>
+    <string name="action_keep_and_continue">الاحتفاظ والمتابعة</string>
 
     <!-- Provider Keys chat-time errors. -->
     <string name="provider_keys_chat_error_no_key">لم يتم العثور على مفتاح. يرجى تقديم مفتاح والمحاولة مرة أخرى.</string>
-    <!-- {0} = endpoint name, {1} = expiredAt (server-locale string, NOT ISO) -->
+    <!-- {0} = endpoint name, {1} = expiry date and time, already formatted in the user's locale -->
     <string name="provider_keys_chat_error_expired">انتهت صلاحية المفتاح المقدّم لـ %1$s في %2$s. يرجى تقديم مفتاح جديد والمحاولة مرة أخرى.</string>
     <string name="provider_keys_chat_error_invalid">المفتاح المقدّم غير صالح. يرجى تقديم مفتاح صالح والمحاولة مرة أخرى.</string>
-    <!-- Snackbar action label that deep-links to Settings → Provider Keys -->
-    <string name="provider_keys_chat_error_cta">فتح إعدادات المفاتيح</string>
+    <string name="provider_keys_chat_error_no_key_for">لم يتم العثور على مفتاح لـ %1$s. يرجى تقديم مفتاح والمحاولة مرة أخرى.</string>
+    <string name="provider_keys_chat_error_invalid_for">المفتاح المقدّم لـ %1$s غير صالح. يرجى تقديم مفتاح صالح والمحاولة مرة أخرى.</string>
+    <string name="provider_keys_chat_error_expired_no_label">انتهت صلاحية المفتاح المقدّم في %1$s. يرجى تقديم مفتاح جديد والمحاولة مرة أخرى.</string>
+    <string name="provider_keys_chat_error_no_base_url">لم يتم العثور على عنوان URL أساسي. يرجى تقديم عنوان والمحاولة مرة أخرى.</string>
+    <string name="provider_keys_chat_error_no_base_url_for">لم يتم العثور على عنوان URL أساسي لـ %1$s. يرجى تقديم عنوان والمحاولة مرة أخرى.</string>
+    <string name="provider_keys_chat_error_invalid_base_url">يشير عنوان URL الأساسي الذي قدّمته إلى عنوان مقيّد. يرجى استخدام عنوان URL خارجي صالح والمحاولة مرة أخرى.</string>
+    <string name="provider_keys_chat_error_invalid_base_url_for">يشير عنوان URL الأساسي الذي قدّمته لـ %1$s إلى عنوان مقيّد. يرجى استخدام عنوان URL خارجي صالح والمحاولة مرة أخرى.</string>
     <string name="queued_messages_dropped_account_switch">حُذفت الرسائل في قائمة الانتظار بعد تبديل الحساب</string>
 
     <!-- Send block reasons (shown in error snackbar when send can't proceed) -->
     <string name="send_block_select_agent">اختر وكيلًا قبل إرسال رسالتك.</string>
     <string name="send_block_select_model">اختر نموذجًا قبل إرسال رسالتك.</string>
+    <string name="send_block_select_second_model">اختر النموذج B من القائمة قبل الإرسال.</string>
     <string name="send_block_agents_unavailable">الوكلاء غير متاحين على هذا الخادم. يرجى اختيار نموذج مختلف.</string>
+    <string name="send_block_api_key_required">أضف مفتاح API الخاص بك لـ %1$s لإرسال الرسائل.</string>
     <string name="send_block_agent_not_available">الوكيل المحدد غير متاح على هذا الخادم. يرجى اختيار وكيل مختلف.</string>
     <string name="send_block_model_not_available">النموذج المحدد غير متاح على هذا الخادم. يرجى اختيار نموذج مختلف.</string>
     <string name="send_block_model_load_failed">تعذّر تحميل النموذج المحدد بعد. يرجى المحاولة مرة أخرى أو اختيار نموذج مختلف.</string>
@@ -544,6 +618,9 @@
     <string name="error_auth_banned">هذا الحساب أو هذه الشبكة محظوران من تسجيل الدخول. تواصل مع المسؤول.</string>
     <string name="error_auth_cross_origin">رفض الخادم تسجيل الدخول باعتباره صادرًا من موقع آخر. أبلغ عن ذلك — إنه خلل في التطبيق وليس مشكلة في كلمة المرور.</string>
     <string name="error_share_limit">طلبات روابط مشاركة كثيرة جدًا. انتظر قليلًا وحاول مرة أخرى.</string>
+    <string name="error_message_limit">لقد بلغت حد الرسائل على هذا الخادم. انتظر قليلًا ثم حاول مرة أخرى.</string>
+    <string name="error_ban">هذا الحساب مقيّد مؤقتًا على هذا الخادم. حاول لاحقًا أو تواصل مع مسؤول الخادم.</string>
+    <string name="error_convo_access">تنتمي هذه المحادثة إلى حساب آخر، لذا لا يمكن متابعتها من هنا.</string>
     <string name="ask_user_question_record_asked">طُرح السؤال</string>
     <string name="ask_user_question_record_asking">يسأل</string>
     <string name="ask_user_question_record_answer_label">إجابتك:</string>
@@ -557,6 +634,21 @@
     <string name="cd_collapse_ask_user_question">طي تفاصيل السؤال</string>
     <string name="tool_memory">الذاكرة</string>
     <string name="tool_memory_desc">السماح للمساعد بتذكر تفاصيل من هذه المحادثة</string>
+    <string name="tool_skills">المهارات</string>
+    <string name="tool_skills_desc">السماح للمساعد باستخدام مهاراتك في هذه المحادثة</string>
+    <string name="cd_skills_enabled">المهارات مُفعّلة</string>
+    <string name="picker_type_prompt">مطالبة</string>
+    <string name="picker_type_skill">مهارة</string>
+    <string name="picker_no_matches">لا توجد نتائج مطابقة</string>
+    <string name="picker_loading_skills">جارٍ تحميل المهارات…</string>
+    <string name="picker_skills_failed">تعذّر تحميل المهارات</string>
+    <string name="cd_pending_skills">مهارات للرسالة التالية</string>
+    <string name="cd_remove_skill">إزالة المهارة %1$s</string>
+    <string name="cd_skill_always_applied">مهارة مطبّقة دائمًا: %1$s</string>
+    <string name="cd_skill_used">المهارة المستخدمة: %1$s</string>
+    <string name="skill_call_running">جارٍ تشغيل %1$s</string>
+    <string name="skill_call_finished">تم تشغيل %1$s</string>
+    <string name="skill_call_fallback_name">مهارة</string>
     <string name="cd_steer_message">توجيه هذا الرد</string>
     <string name="cd_cancel_steer">إلغاء التوجيه</string>
     <string name="cd_during_run_options">اختر ما يفعله الإرسال الآن</string>
@@ -564,6 +656,8 @@
     <string name="during_run_queue">إضافة إلى قائمة الانتظار</string>
     <string name="during_run_always_steer">التوجيه دائمًا أثناء الإنشاء</string>
     <string name="during_run_always_queue">الإضافة إلى قائمة الانتظار دائمًا أثناء الإنشاء</string>
+    <string name="steer_pending_hint">تنضم إلى الرد في خطوة الأداة التالية. إذا انتهى الرد أولًا، فستُرسل بعده.</string>
+    <string name="steer_queued_as_follow_up">تعذّر ضم رسالتك إلى هذا الرد، لذا أُضيفت إلى قائمة الانتظار لتُرسل بعده.</string>
     <string name="system_event_label">النظام</string>
     <string name="wakeup_explainer">أيقظت هذه النتيجة الدائمة الوكيل لمواصلة المحادثة.</string>
     <string name="wakeup_subagent_completed">اكتملت مهمة الوكيل الفرعي</string>
@@ -636,21 +730,228 @@
     <string name="compact_confirm_not_now">ليس الآن</string>
     <string name="compact_confirm_action">ضغط</string>
     <string name="cd_temporary_chat">محادثة مؤقتة</string>
+    <string name="temporary_chat_title">محادثة مؤقتة</string>
+    <string name="temporary_chat_subtitle">لن تُحفظ هذه المحادثة في سجلك</string>
     <string name="notice_rename_failed">تعذّرت إعادة تسمية المحادثة</string>
     <string name="notice_delete_failed">تعذّر حذف المحادثة</string>
     <string name="notice_archive_failed">تعذّرت أرشفة المحادثة</string>
     <string name="notice_duplicate_failed">تعذّر تكرار المحادثة</string>
-    <string name="notice_share_link_failed">تعذّر إنشاء رابط المشاركة</string>
     <string name="notice_preset_save_failed">تعذّر حفظ الإعداد المسبق</string>
     <string name="notice_preset_delete_failed">تعذّر حذف الإعداد المسبق</string>
     <string name="notice_preset_update_failed">تعذّر تحديث الإعداد المسبق</string>
     <string name="notice_continue_response_failed">تعذّرت المتابعة بالرد المحدد</string>
     <string name="notice_favorites_limit">يمكنك تثبيت ما يصل إلى %1$d من المفضلة.</string>
     <string name="notice_favorites_update_failed">تعذّر تحديث المفضلة.</string>
+    <string name="notice_bookmark_update_failed">تعذّر تحديث الإشارات المرجعية. حاول مرة أخرى.</string>
+    <string name="notice_bookmark_create_failed">تعذّر إنشاء الإشارة المرجعية. حاول مرة أخرى.</string>
+    <string name="notice_bookmarks_load_failed">تعذّر تحميل الإشارات المرجعية لهذه المحادثة</string>
     <string name="notice_upload_failed">تعذّر رفع %1$s: %2$s</string>
     <string name="notice_upload_failed_unknown">تعذّر رفع %1$s: خطأ غير معروف</string>
     <string name="notice_upload_unreadable">تعذّر رفع %1$s: تعذّرت قراءة الملف</string>
     <string name="notice_upload_too_large">حجم %1$s أكبر من الحد الأقصى للخادم وهو %2$s.</string>
     <string name="notice_speech_permission_denied">تم رفض إذن التعرّف على الكلام</string>
     <string name="notice_speech_unavailable">التعرّف على الكلام غير متاح. تحقّق من الإعدادات &gt; الخصوصية &gt; التعرّف على الكلام.</string>
+    <string name="notice_send_refused">رفض الخادم هذه الرسالة.</string>
+    <string name="notice_skills_not_sent">لا يمكن استخدام بعض المهارات في هذه المحادثة ولم تُرسَل.</string>
+    <string name="notice_skills_removed_from_queued">لا يمكن استخدام بعض المهارات في هذه المحادثة وأُزيلت من الرسالة في قائمة الانتظار.</string>
+    <plurals name="notice_message_limit_retry_minutes">
+        <item quantity="zero">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد %1$d دقيقة.</item>
+        <item quantity="one">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد دقيقة.</item>
+        <item quantity="two">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد دقيقتين.</item>
+        <item quantity="few">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد %1$d دقائق.</item>
+        <item quantity="many">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد %1$d دقيقة.</item>
+        <item quantity="other">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد %1$d دقيقة.</item>
+    </plurals>
+    <plurals name="notice_message_limit_retry_hours">
+        <item quantity="zero">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد %1$d ساعة.</item>
+        <item quantity="one">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد ساعة.</item>
+        <item quantity="two">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد ساعتين.</item>
+        <item quantity="few">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد %1$d ساعات.</item>
+        <item quantity="many">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد %1$d ساعة.</item>
+        <item quantity="other">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد %1$d ساعة.</item>
+    </plurals>
+    <plurals name="notice_message_limit_retry_days">
+        <item quantity="zero">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد %1$d يوم.</item>
+        <item quantity="one">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد يوم.</item>
+        <item quantity="two">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد يومين.</item>
+        <item quantity="few">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد %1$d أيام.</item>
+        <item quantity="many">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد %1$d يومًا.</item>
+        <item quantity="other">لقد بلغت حد الرسائل على هذا الخادم. حاول مرة أخرى بعد %1$d يوم.</item>
+    </plurals>
+    <string name="queue_held_after_refusal">رفض الخادم رسالتك. إنها تنتظر في قائمة الانتظار ولن تُرسل تلقائيًا. اضغط «إرسال قائمة الانتظار» عندما تكون مستعدًا.</string>
+    <string name="jump_message_not_found">لم تعد هذه الرسالة موجودة في هذه المحادثة.</string>
+    <string name="jump_branch_switched">تم التبديل إلى الرد %1$d من %2$d، الفرع الذي يحتوي على هذه الرسالة.</string>
+    <string name="load_image_from_host">تحميل الصورة من %1$s</string>
+    <string name="workspace_changes">تغييرات مساحة العمل</string>
+    <plurals name="n_files_changed">
+        <item quantity="zero">لم يتغير أي ملف</item>
+        <item quantity="one">تغيّر ملف واحد</item>
+        <item quantity="two">تغيّر ملفان</item>
+        <item quantity="few">تغيّرت %1$d ملفات</item>
+        <item quantity="many">تغيّر %1$d ملفًا</item>
+        <item quantity="other">تغيّر %1$d ملف</item>
+    </plurals>
+    <string name="file_created">جديد</string>
+    <string name="file_updated">معدّل</string>
+    <string name="show_all_n">عرض الكل (%1$d)</string>
+    <string name="cd_download_file">تنزيل %1$s</string>
+    <string name="cd_open_file">فتح %1$s</string>
+    <string name="preview_preparing">جارٍ تحضير المعاينة…</string>
+    <string name="preview_failed_download">المعاينة غير متاحة · نزّل الملف لعرضه</string>
+    <plurals name="text_n_lines">
+        <item quantity="zero">لا أسطر</item>
+        <item quantity="one">سطر واحد</item>
+        <item quantity="two">سطران</item>
+        <item quantity="few">%1$d أسطر</item>
+        <item quantity="many">%1$d سطرًا</item>
+        <item quantity="other">%1$d سطر</item>
+    </plurals>
+    <string name="sandbox_starting">جارٍ تشغيل بيئة الحماية</string>
+    <string name="analyzing">جارٍ التحليل</string>
+    <string name="analyzing_finished">اكتمل التحليل</string>
+    <plurals name="show_all_n_lines">
+        <item quantity="zero">عرض كل الأسطر (%1$d)</item>
+        <item quantity="one">عرض كل الأسطر (%1$d)</item>
+        <item quantity="two">عرض كل الأسطر (%1$d)</item>
+        <item quantity="few">عرض كل الأسطر (%1$d)</item>
+        <item quantity="many">عرض كل الأسطر (%1$d)</item>
+        <item quantity="other">عرض كل الأسطر (%1$d)</item>
+    </plurals>
+    <string name="cd_copy_output">نسخ المخرجات</string>
+    <string name="expired">منتهي الصلاحية</string>
+    <string name="expired_explainer">تُحفظ ملفات بيئة تشغيل الشيفرة لمدة 24 ساعة. انتهت صلاحية هذا الملف ولم يعد من الممكن تنزيله.</string>
+    <string name="file_download_failed">تعذّر تنزيل %1$s</string>
+    <plurals name="files_count_summary">
+        <item quantity="zero">%1$d ملف</item>
+        <item quantity="one">ملف واحد</item>
+        <item quantity="two">ملفان</item>
+        <item quantity="few">%1$d ملفات</item>
+        <item quantity="many">%1$d ملفًا</item>
+        <item quantity="other">%1$d ملف</item>
+    </plurals>
+    <plurals name="plus_n_more">
+        <item quantity="zero">+%1$d أخرى</item>
+        <item quantity="one">+%1$d آخر</item>
+        <item quantity="two">+%1$d آخران</item>
+        <item quantity="few">+%1$d أخرى</item>
+        <item quantity="many">+%1$d أخرى</item>
+        <item quantity="other">+%1$d أخرى</item>
+    </plurals>
+    <string name="greeting_late_night">سهرة سعيدة</string>
+    <string name="greeting_early_morning">صباح الخير باكرًا</string>
+    <string name="greeting_morning">صباح الخير</string>
+    <string name="greeting_afternoon">طاب مساؤك</string>
+    <string name="greeting_evening">مساء الخير</string>
+    <string name="greeting_weekend_morning">صباح عطلة سعيد</string>
+    <string name="greeting_weekend_afternoon">ظهيرة عطلة سعيدة</string>
+    <string name="greeting_weekend_evening">مساء عطلة سعيد</string>
+    <string name="diagram_error_prefix">خطأ في المخطط:</string>
+    <string name="stt_mic_permission_required">يلزم إذن الميكروفون للإدخال الصوتي</string>
+    <string name="stt_speak_now">تحدّث الآن…</string>
+    <string name="stt_recognition_unavailable">التعرف على الكلام غير متاح على هذا الجهاز</string>
+    <string name="artifact_preview_failed">تعذّر تحميل المعاينة</string>
+    <string name="cd_mcp_server_enabled">خادم MCP %1$s مفعّل</string>
+    <string name="cd_code_block">كتلة شيفرة</string>
+    <string name="cd_code_block_language">كتلة شيفرة %1$s</string>
+    <string name="log_output_title">مخرجات السجل</string>
+    <string name="cd_attached_image">صورة مرفقة</string>
+    <string name="model_selector_search">البحث عن النماذج…</string>
+    <string name="model_selector_my_agents">وكلائي</string>
+    <string name="model_selector_spec_only_note">لا يقبل هذا الخادم إلا الخيارات المدرجة أعلاه.</string>
+    <string name="agent_handoff_to">الوكيل %1$s</string>
+    <string name="agent_handoff_run">التشغيل: %1$s</string>
+    <string name="sibling_position">الرد %1$d من %2$d</string>
+    <string name="cd_assistant_responding">المساعد يرد: %1$s</string>
+    <string name="tool_call_fallback">استدعاء أداة</string>
+    <string name="prompt_filter_title">التصفية والفرز</string>
+    <string name="prompt_sort_recent">الأحدث</string>
+    <string name="prompt_sort_popular">الأكثر شيوعًا</string>
+    <string name="prompt_sort_alphabetical">أبجديًا</string>
+    <string name="prompt_editor_create_title">إنشاء موجه</string>
+    <string name="prompt_editor_edit_title">تعديل الموجه</string>
+    <string name="prompt_command_placeholder">my-command</string>
+    <string name="prompt_variables_hint">استخدم {{variable_name}} لإضافة متغيرات</string>
+    <string name="prompt_editor_create">إنشاء</string>
+    <string name="prompts_load_failed">تعذّر تحميل الموجهات</string>
+    <string name="prompts_empty_category">لا توجد موجهات في هذه الفئة</string>
+    <string name="prompts_empty">لا توجد موجهات بعد</string>
+    <string name="prompts_empty_category_hint">جرّب فئة أخرى أو امسح عامل التصفية</string>
+    <string name="prompts_empty_hint">انقر على + لإنشاء واحد</string>
+    <string name="prompt_shared">مُشارك</string>
+    <string name="prompt_private">خاص</string>
+    <string name="prompt_permission_view_only">عرض فقط</string>
+    <string name="prompt_permission_can_edit">يمكنه التعديل</string>
+    <string name="prompt_preview_placeholder">أدخل قيم المتغيرات لرؤية المعاينة</string>
+    <string name="cd_sync_scroll_on">تتمرّر اللوحتان معًا. إلغاء الربط</string>
+    <string name="cd_sync_scroll_off">تتمرّر اللوحتان كلٌّ على حدة. ربط</string>
+    <!-- Shared chat viewer -->
+    <string name="shared_chat_title_fallback">محادثة مشتركة</string>
+    <string name="shared_chat_subtitle">محادثة مشتركة · %1$s</string>
+    <string name="shared_chat_continue">متابعة هذه المحادثة</string>
+    <string name="shared_chat_open_in_browser">فتح في المتصفح</string>
+    <string name="shared_chat_langfuse">عرض الجلسة في Langfuse</string>
+    <string name="shared_chat_link_updated">تم تحديث هذا الرابط. يتم الآن عرض أحدث إصدار.</string>
+    <string name="shared_chat_continue_rate_limited">طلبات كثيرة جدًا لمتابعة المحادثات. حاول مرة أخرى لاحقًا.</string>
+    <string name="shared_chat_continue_failed">تعذّرت متابعة هذه المحادثة</string>
+    <string name="shared_chat_continue_unsupported">لا يدعم هذا الخادم متابعة المحادثات المشتركة</string>
+    <string name="shared_chat_refresh_failed">تعذّر تحديث هذه المحادثة المشتركة</string>
+    <string name="shared_chat_continue_blocked">منع الخادم نسخ هذه المحادثة</string>
+    <string name="shared_chat_continue_blocked_reason">منع الخادم نسخ هذه المحادثة: %1$s</string>
+    <string name="shared_chat_not_found">لم يتم العثور على الرابط المشترك</string>
+    <string name="shared_chat_not_found_description">ربما تم حذفه، أو أن الرابط غير صحيح.</string>
+    <string name="shared_chat_no_access">لا يمكنك فتح هذه المحادثة المشتركة</string>
+    <string name="shared_chat_no_access_description">لم تتم مشاركتها مع هذا الحساب.</string>
+    <string name="shared_chat_rate_limited">طلبات كثيرة جدًا للروابط المشتركة</string>
+    <string name="shared_chat_rate_limited_description">حاول مرة أخرى بعد قليل.</string>
+    <string name="shared_chat_blocked">حظر الخادم هذه المحادثة المشتركة</string>
+    <string name="shared_chat_load_failed">تعذّر تحميل هذه المحادثة المشتركة</string>
+    <string name="shared_chat_user">المستخدم</string>
+    <string name="shared_chat_file_failed">تعذّر فتح هذا الملف</string>
+
+    <!-- Web and file search sources -->
+    <string name="web_searching">جارٍ البحث في الويب</string>
+    <string name="web_searching_again">جارٍ البحث في الويب مرة أخرى</string>
+    <string name="web_search_processing">جارٍ معالجة النتائج</string>
+    <string name="web_search_reading">جارٍ قراءة النتائج</string>
+    <string name="web_search_details">تفاصيل البحث</string>
+    <string name="web_search_query">الاستعلام</string>
+    <string name="web_search_images">نتائج الصور</string>
+    <string name="web_search_shopping">نتائج التسوق</string>
+    <string name="web_search_places">الأماكن</string>
+    <string name="files_searching">جارٍ البحث في ملفاتك</string>
+    <string name="searching_web_and_files">جارٍ البحث في الويب والملفات</string>
+    <string name="searched_web_and_files">تم البحث في الويب والملفات</string>
+    <string name="search_cancelled">أُلغي</string>
+    <string name="sources_tab_all">الكل</string>
+    <string name="sources_tab_news">الأخبار</string>
+    <string name="sources_tab_images">الصور</string>
+    <string name="sources_tab_files">الملفات</string>
+    <string name="sources_agent_files">ملفات الوكيل</string>
+    <string name="sources_agent_file">مستند المصدر</string>
+    <string name="web_search_load_images">تحميل الصور</string>
+    <string name="cd_open_cited_file">فتح %1$s</string>
+    <plurals name="web_search_sources">
+        <item quantity="zero">%1$d مصادر</item>
+        <item quantity="one">%1$d مصدر</item>
+        <item quantity="two">%1$d مصادر</item>
+        <item quantity="few">%1$d مصادر</item>
+        <item quantity="many">%1$d مصادر</item>
+        <item quantity="other">%1$d مصادر</item>
+    </plurals>
+    <plurals name="sources_more">
+        <item quantity="zero">+%1$d مصادر</item>
+        <item quantity="one">+%1$d مصدر</item>
+        <item quantity="two">+%1$d مصادر</item>
+        <item quantity="few">+%1$d مصادر</item>
+        <item quantity="many">+%1$d مصادر</item>
+        <item quantity="other">+%1$d مصادر</item>
+    </plurals>
+    <plurals name="files_more">
+        <item quantity="zero">+%1$d ملفات</item>
+        <item quantity="one">+%1$d ملف</item>
+        <item quantity="two">+%1$d ملفات</item>
+        <item quantity="few">+%1$d ملفات</item>
+        <item quantity="many">+%1$d ملفات</item>
+        <item quantity="other">+%1$d ملفات</item>
+    </plurals>
 </resources>

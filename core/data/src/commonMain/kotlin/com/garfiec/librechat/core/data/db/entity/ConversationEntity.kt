@@ -38,4 +38,5 @@ data class ConversationEntity(
      * account. Reads filter on this; writes stamp it from the active session's immutable id.
      */
     val accountId: String? = null,
+    val spec: String? = null,
 )

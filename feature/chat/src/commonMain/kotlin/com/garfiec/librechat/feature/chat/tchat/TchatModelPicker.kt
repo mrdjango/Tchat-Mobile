@@ -122,6 +122,8 @@ fun TchatModelPickerSheet(
     serverUrl: String = "",
     errorMessage: String? = null,
     onErrorDismiss: () -> Unit = {},
+    /** Under the sheet's top edge; the comparison A/B pair while comparing. */
+    header: (@Composable () -> Unit)? = null,
 ) {
     AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -138,6 +140,7 @@ fun TchatModelPickerSheet(
             serverUrl = serverUrl,
             errorMessage = errorMessage,
             onErrorDismiss = onErrorDismiss,
+            header = header,
             modifier = Modifier.fillMaxSize(),
         )
     }

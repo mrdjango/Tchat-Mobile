@@ -21,7 +21,30 @@ data class FeatureGatesState(
     val mcpServersEnabled: Boolean = true,
     val multiConvoEnabled: Boolean = true,
     val temporaryChatEnabled: Boolean = true,
+    /** LibreChat search allowed: `WEB_SEARCH.USE` AND `interface.webSearch`. */
     val webSearchEnabled: Boolean = true,
+    /**
+     * The provider's built-in search allowed: `WEB_SEARCH.USE` alone. The server strips the built-in
+     * search for a role without it, but `interface.webSearch` is a web interface flag, and web's
+     * parameters panel offers the built-in switch whatever it says.
+     */
+    val webSearchPermitted: Boolean = true,
+    /**
+     * Whether LibreChat's own web search is set up: `/api/config` serves `webSearch` (only when a
+     * search provider is configured) and the server's key check passes
+     * (`GET /api/agents/tools/web_search/auth`). Fails closed: false until there is an answer
+     * (`ChatConfigDelegate.loadWebSearchReadiness`). Keys each user must enter read as not set up
+     * (web asks for them; mobile has no screen for that), so those chats use the provider's built-in
+     * search. Not caught: a key that is present but wrong, or a provider that is down. Read with
+     * [webSearchEnabled] through `ChatUiState.webSearchRoute`.
+     */
+    val librechatSearchReady: Boolean = false,
+    /**
+     * The key check behind [librechatSearchReady] is out (or retrying) for a config that names a
+     * search provider. A send that would run LibreChat search runs none meanwhile
+     * (`WebSearchRoute.CHECKING`) instead of switching to the built-in one.
+     */
+    val librechatSearchChecking: Boolean = false,
     val runCodeEnabled: Boolean = true,
     val fileSearchEnabled: Boolean = true,
     val bookmarksEnabled: Boolean = true,
@@ -66,6 +89,18 @@ data class FeatureGatesState(
      */
     val memoryEnabled: Boolean = false,
     /**
+     * The memory card's Manage action, which opens the Memories page. = MEMORIES USE+READ
+     * (permissive), the same gate as the Data tab row that opens that page. Independent of the
+     * user's own opt-out: the page is where they turn memories back on.
+     */
+    val memoriesPageEnabled: Boolean = false,
+    /**
+     * Role half of the composer Skills toggle and the skill picker: SKILLS.USE, permissive until
+     * the role loads (the drawer's shape). The agents `skills` capability half is folded in at
+     * read time (`ChatUiState.isSkillsToolAvailable`), fail-closed.
+     */
+    val skillsEnabled: Boolean = true,
+    /**
      * Mid-run steering (v0.8.8): whether `POST /api/agents/chat/steer` exists on this server.
      *
      * Fails closed, and unlike the HITL pause this one *can* fail closed safely. A pause is
@@ -106,6 +141,16 @@ data class FeatureGatesState(
      */
     val serverQueueSupported: Boolean = false,
     /**
+     * Whether the server validates a saved agent's upload under the agent's provider rather than
+     * `agents` (`resolveUploadEndpoint`, v0.8.8-rc3, #15763). Read by
+     * [ChatUiState.fileConfigEndpoint].
+     *
+     * **Fail-open to `agents`**: only PRESENT turns it on. Resolving under the provider on a server
+     * that still validates under `agents` refuses uploads the server would accept; the reverse
+     * only lets through a file the server then rejects.
+     */
+    val providerScopedUploadsSupported: Boolean = false,
+    /**
      * The conversation whose trace `/availability` confirmed readable (v0.8.8-rc3).
      *
      * Held as the id rather than a Boolean so the entry point cannot survive a conversation
@@ -127,14 +172,19 @@ data class FeatureGatesState(
  * Feature gates that flow into the composer ([ChatInput] → [ChatToolsSheetContent]),
  * bundled so they thread as one value across Android and iOS. Each defaults to true
  * (shown) so a default-constructed bundle is fully permissive. Built by
- * [ChatUiState.chatInputGates]; see [ChatUiState.modelSelectEnabled] /
- * [ChatUiState.parametersEnabled] / [ChatUiState.showEphemeralTools] /
+ * [ChatUiState.chatInputGates]; see [ChatUiState.modelPickerShown] /
+ * [ChatUiState.parametersEnabled] / [ChatUiState.toolbarShown] /
  * [ChatUiState.fileUploadEnabled] for the individual gating rules.
  */
 @Immutable
 data class ChatInputGates(
-    val modelSelectEnabled: Boolean = true,
+    val modelPickerShown: Boolean = true,
     val parametersEnabled: Boolean = true,
+    /** Whether the tool controls show ([ChatUiState.toolbarShown]). */
     val showEphemeralTools: Boolean = true,
     val fileUploadEnabled: Boolean = true,
+    /** Tools the active model spec turns on: shown on, and not switchable ([ChatUiState.lockedTools]). */
+    val lockedTools: Set<String> = emptySet(),
+    /** MCP servers the active model spec adds, likewise ([ChatUiState.lockedMcpServers]). */
+    val lockedMcpServers: Set<String> = emptySet(),
 )

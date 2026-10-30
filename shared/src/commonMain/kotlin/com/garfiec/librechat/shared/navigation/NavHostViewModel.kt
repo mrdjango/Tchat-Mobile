@@ -19,6 +19,7 @@ import com.garfiec.librechat.core.data.repository.BackgroundTaskRepository
 import com.garfiec.librechat.core.data.repository.BannerRepository
 import com.garfiec.librechat.core.data.repository.ConfigRepository
 import com.garfiec.librechat.core.data.repository.EndpointTokenRepository
+import com.garfiec.librechat.core.data.repository.FailoverResult
 import com.garfiec.librechat.core.data.repository.FileRepository
 import com.garfiec.librechat.core.data.repository.ResumePinStore
 import com.garfiec.librechat.core.data.repository.ToolFavoritesRepository
@@ -28,20 +29,44 @@ import com.garfiec.librechat.core.model.media.resolveAvatarUrl
 import com.garfiec.librechat.core.network.client.AccountReadyGate
 import com.garfiec.librechat.core.network.client.ServerUrlProvider
 import com.garfiec.librechat.core.network.client.SessionEndReason
+import com.garfiec.librechat.core.network.client.SessionHealth
 import com.garfiec.librechat.core.network.client.TokenManager
 import com.garfiec.librechat.feature.conversations.drawer.AccountUiModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+/**
+ * An unannounced sign-out, or a ban. [accountLabel] is blank when the account can't be named;
+ * [switchedTo] is the account the app moved to instead of signing out, or null when it routed to
+ * sign-in. [banned] marks a ban, which moves nothing: the user stays where they are until the server
+ * ends the session itself.
+ */
+data class SessionExpiredNotice(
+    val accountLabel: String,
+    val switchedTo: String? = null,
+    val banned: Boolean = false,
+)
+
+/** Where a session change sends the app: sign-in, or the chat of the account now active. */
+enum class SessionRoute { SignIn, Chat }
 
 /**
  * Navigation-shell ViewModel: auth/session routing, account identity + hygiene, banners, version
@@ -91,13 +116,65 @@ class NavHostViewModel(
 
     val banner: StateFlow<Banner?> = bannerStateHolder.banner
 
-    val sessionExpired: SharedFlow<SessionEndReason> = tokenManager.sessionExpiredFlow
+    // The one owner of session-driven routing: nothing else may route on the token store's signal, or
+    // it sends the user to auth past a failover. A channel, not the replay-0 signal: a send while no
+    // NavHost is composed waits for it.
+    private val _sessionRoute = Channel<SessionRoute>(Channel.CONFLATED)
+    val sessionRoute: Flow<SessionRoute> = _sessionRoute.receiveAsFlow()
 
-    /** The account label to report an unannounced sign-out for, or null when there is nothing to
-     *  report. Set only for [SessionEndReason.EXPIRED] — see [SessionEndReason]. Empty string means
-     *  "expired, but the account could not be named". */
-    private val _sessionExpiredNotice = MutableStateFlow<String?>(null)
-    val sessionExpiredNotice: StateFlow<String?> = _sessionExpiredNotice.asStateFlow()
+    /** The unannounced sign-out or ban to report, or null when there is nothing to report. Set for
+     *  [SessionEndReason.EXPIRED] and [SessionEndReason.BANNED] — see [SessionEndReason]. */
+    private val _sessionExpiredNotice = MutableStateFlow<SessionExpiredNotice?>(null)
+    val sessionExpiredNotice: StateFlow<SessionExpiredNotice?> = _sessionExpiredNotice.asStateFlow()
+
+    /**
+     * True while the ACTIVE account's session is kept but cannot renew — its refresh is being refused
+     * by something that is not LibreChat (see [SessionHealth]). Every request is 401ing meanwhile, so
+     * the shell shows a banner with the one action that helps: [signInAgain]. Scoped to the active
+     * account the way the expiry signal is: a straggler block on a switched-away account must not
+     * banner the live one, and a switch clears it by itself.
+     */
+    val sessionRenewalBlocked: StateFlow<Boolean> =
+        combine(tokenManager.sessionHealth, activeAccountProvider.state) { health, account ->
+            val blocked = health as? SessionHealth.RenewalBlocked ?: return@combine false
+            val activeId = (account as? AccountState.Resolved)?.id?.value
+            blocked.accountId == null || blocked.accountId == activeId
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /**
+     * The user's answer to [sessionRenewalBlocked]: end the active session and go to sign-in. Not
+     * the hard-expiry path — no failover and no "signed out" dialog, because the user asked for THIS
+     * account and chose this. The roster entry and cached data stay, so signing back in restores
+     * everything, as it does after an expiry. Under [sessionDecision] so a concurrent expiry report
+     * cannot fail over from underneath it.
+     */
+    fun signInAgain() {
+        viewModelScope.launch {
+            sessionDecision.withLock {
+                tokenManager.endSessionForReauth(activeAccountId())
+                sessionRevision.update { it + 1 }
+                // Lowered before the route event goes out, as in [onSessionEnded].
+                _isLoggedIn.value = false
+                _sessionRoute.trySend(SessionRoute.SignIn)
+            }
+        }
+    }
+
+    // Re-reads which roster accounts still hold a session. The roster does not change on a hard
+    // expiry (the entry stays, only its token slot empties), so the account list has to be told.
+    private val sessionRevision = MutableStateFlow(0)
+
+    // Serializes the cold-start route with expiry handling. Both read the active account and may fail
+    // over from it; interleaved, one acts on the account the other has already left.
+    private val sessionDecision = Mutex()
+
+    // The account the last failover landed on. An expiry handled while it is active and still live was
+    // reported for the account it replaced. Guarded by [sessionDecision].
+    private var failoverTarget: String? = null
+
+    // The account a ban was last announced for. Every request to a ban-checked route reports the ban
+    // again, so without this the dialog would come back each time the user dismissed it.
+    private var banAnnouncedFor: String? = null
 
     fun dismissSessionExpiredNotice() {
         _sessionExpiredNotice.value = null
@@ -114,7 +191,11 @@ class NavHostViewModel(
     // stay in the nav shell; only the drawer *renders* this list ([AccountUiModel] lives with the
     // drawer feature, hence the cross-module type reference).
     val accounts: StateFlow<List<AccountUiModel>> =
-        combine(accountRoster.entriesFlow(), activeAccountProvider.state) { entries, accountState ->
+        combine(
+            accountRoster.entriesFlow(),
+            activeAccountProvider.state,
+            sessionRevision,
+        ) { entries, accountState, _ ->
             val activeId = (accountState as? AccountState.Resolved)?.id?.value
             entries
                 .sortedWith(
@@ -133,9 +214,13 @@ class NavHostViewModel(
                         // re-pointed server URL heals on the next read.
                         avatarUrl = resolveAvatarUrl(entry.avatarUrl, entry.serverUrl),
                         isActive = entry.accountId == activeId,
+                        needsSignIn = !accountSwitcher.hasSession(entry.accountId),
                     )
                 }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        }
+            // hasSession reads a non-active account's slot through the encrypted store.
+            .flowOn(Dispatchers.IO)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Seeded `null` (= "not resolved yet") and warmed up by the Eagerly-started collector, never a
     // synchronous read — Koin instantiates the VM on the Main thread. The nullable seed lets
@@ -153,20 +238,6 @@ class NavHostViewModel(
     val tabletSidebarGestureEnabled: StateFlow<Boolean> = settingsDataStore.tabletSidebarGestureEnabled
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
-    private val _sidebarMode = MutableStateFlow<SidebarMode>(SidebarMode.Conversations)
-    val sidebarMode: StateFlow<SidebarMode> = _sidebarMode.asStateFlow()
-
-    private val _selectedSettingsCategory = MutableStateFlow<SettingsCategory?>(null)
-    val selectedSettingsCategory: StateFlow<SettingsCategory?> = _selectedSettingsCategory.asStateFlow()
-
-    fun setSidebarMode(mode: SidebarMode) {
-        _sidebarMode.value = mode
-    }
-
-    fun selectSettingsCategory(category: SettingsCategory) {
-        _selectedSettingsCategory.value = category
-    }
-
     init {
         @Suppress("TooGenericExceptionCaught") // a failed startup check must not crash the root ViewModel
         viewModelScope.launch {
@@ -180,8 +251,7 @@ class NavHostViewModel(
                 // (possibly crash-diverged) mirror; without this gate a divergence would flash the
                 // wrong screen. The gate's seed also drives the server URL, so this is ordered first.
                 accountReadyGate.awaitReady()
-                val loggedIn = authRepository.isLoggedIn()
-                _isLoggedIn.value = loggedIn
+                val loggedIn = sessionDecision.withLock { resolveStartupSession() }
                 if (loggedIn) {
                     // Upgrade safety net: establish the active account before any tenant reads/writes
                     // when an already-logged-in user came from a pre-tenancy build (no login fires).
@@ -211,14 +281,7 @@ class NavHostViewModel(
         // and the first-frame routing after an Activity recreation still believes the user is signed in.
         viewModelScope.launch {
             tokenManager.sessionExpiredFlow.collect { reason ->
-                val wasLoggedIn = _isLoggedIn.value
-                _isLoggedIn.value = false
-                // Only announce an expiry to someone the app believed was signed in. A logged-out cold
-                // start still fires requests (banners, the drawer); each 401s with no token to refresh
-                // and settles as expired, so dropping [wasLoggedIn] puts the dialog on every launch.
-                if (reason == SessionEndReason.EXPIRED && wasLoggedIn) {
-                    _sessionExpiredNotice.value = expiredAccountLabel().orEmpty()
-                }
+                if (reason == SessionEndReason.BANNED) onBanned() else onSessionEnded(reason)
             }
         }
         // The active account changed underneath this Activity-scoped VM (switch / add-completion /
@@ -228,8 +291,6 @@ class NavHostViewModel(
         // its own independent accountTransitions() subscription.
         viewModelScope.launch {
             activeAccountProvider.accountTransitions().collect { transition ->
-                _sidebarMode.value = SidebarMode.Conversations
-                _selectedSettingsCategory.value = null
                 endpointTokenRepository.clear()
                 // Tool favorites are process-lifetime in-memory state, and refresh() deliberately
                 // keeps the old set on any non-404 error, so without this drop a flaky incoming
@@ -271,16 +332,133 @@ class NavHostViewModel(
         }
     }
 
+    private val sharedLinks = SharedLinkStateHolder(
+        scope = viewModelScope,
+        activeAccountProvider = activeAccountProvider,
+        isLoggedIn = { isLoggedIn.value },
+        rosterEntries = { accountRoster.snapshot().entries },
+        hasSession = accountSwitcher::hasSession,
+        switchAccount = accountSwitcher::switch,
+        // A refusal means the row was stale: re-read which accounts still hold a session.
+        onSwitchRefused = { sessionRevision.update { it + 1 } },
+        ioDispatcher = Dispatchers.IO,
+    )
+
+    val sharedLinkOffer: StateFlow<SharedLinkRoute.OfferSwitch?> = sharedLinks.offer
+
+    /** Shared links handed to the browser after an account refused the switch. */
+    val browserLinks: Flow<String> = sharedLinks.browserLinks
+
+    /** See [SharedLinkStateHolder.route]. */
+    suspend fun routeSharedLink(url: String): SharedLinkRoute = sharedLinks.route(url)
+
+    fun offerSharedLinkSwitch(offer: SharedLinkRoute.OfferSwitch) = sharedLinks.offerSwitch(offer)
+
+    fun dismissSharedLinkOffer() = sharedLinks.dismissOffer()
+
+    /** See [SharedLinkStateHolder.acceptSwitch]. */
+    fun acceptSharedLinkSwitch() = sharedLinks.acceptSwitch()
+
+    /** See [SharedLinkStateHolder.takePendingSharedChat]. Call on every account flip. */
+    fun takePendingSharedChat(accountId: String?): String? = sharedLinks.takePendingSharedChat(accountId)
+
     /** Switch the active account (no-op for the already-active one). Post-switch refresh and the
-     *  back-stack reset ride on the [accountTransitions] collectors, not this call. */
+     *  back-stack reset ride on the [accountTransitions] collectors, not this call. An account whose
+     *  session has expired is not switched to, since every request on it would 401. */
     fun switchAccount(accountId: String) {
-        viewModelScope.launch { accountSwitcher.switch(accountId) }
+        viewModelScope.launch {
+            // A refusal can mean the row was stale: a straggler request's hard expiry empties a
+            // non-active slot without any signal, so the list still showed it signed in. Re-read it,
+            // or the tap does nothing and the row never says why.
+            if (!accountSwitcher.switch(accountId)) sessionRevision.update { it + 1 }
+        }
     }
 
-    /** Remove an account and all its local data. Removing the active one switches to the
-     *  most-recently-active survivor, or routes to auth when it was the last. */
+    /**
+     * The cold-start route. The active account's session may have died while another one is still
+     * live (it expired with the app closed, or before failover existed): start on the live one rather
+     * than at sign-in. Runs under [sessionDecision], since the startup requests of a dead account
+     * report its expiry through [onSessionEnded] at the same time.
+     */
+    private suspend fun resolveStartupSession(): Boolean {
+        if (authRepository.isLoggedIn()) {
+            _isLoggedIn.value = true
+            return true
+        }
+        // Read before the failover moves the active pointer off the expired account.
+        val expiredLabel = expiredAccountLabel().orEmpty()
+        val switched = accountSwitcher.failOverFromActive() as? FailoverResult.Switched
+        _isLoggedIn.value = switched != null
+        if (switched != null) {
+            failoverTarget = switched.entry.accountId
+            _sessionExpiredNotice.value = SessionExpiredNotice(expiredLabel, switchedTo = switched.entry.displayLabel)
+            // The first frame already routed to sign-in off the dead account's seed.
+            _sessionRoute.trySend(SessionRoute.Chat)
+        }
+        return switched != null
+    }
+
+    private suspend fun onSessionEnded(reason: SessionEndReason) = sessionDecision.withLock<Unit> {
+        val wasLoggedIn = _isLoggedIn.value
+        val expired = reason == SessionEndReason.EXPIRED
+        // Read before the failover moves the active pointer off the expired account.
+        val expiredLabel = if (expired) expiredAccountLabel().orEmpty() else null
+        val failover = if (expired) accountSwitcher.failOverFromActive() else FailoverResult.NoLiveAccount
+        sessionRevision.update { it + 1 }
+        when {
+            failover is FailoverResult.Switched -> {
+                failoverTarget = failover.entry.accountId
+                // Another account still holds a session: stay signed in on it. The account flip resets
+                // the back stack through the NavHost's account hygiene, as any switch does. Announced
+                // even from the sign-in screen: the user is being moved onto an account they didn't pick.
+                _isLoggedIn.value = true
+                _sessionExpiredNotice.value =
+                    SessionExpiredNotice(expiredLabel.orEmpty(), switchedTo = failover.entry.displayLabel)
+                // For when the expiry was discovered from the sign-in screen (a cold start on the dead
+                // account): the flip's own back-stack reset does not leave the auth flow.
+                _sessionRoute.trySend(SessionRoute.Chat)
+            }
+            // The account a failover just landed on is live, so this reports the one it left: the
+            // signal went out before the flip and is only being handled now.
+            failover == FailoverResult.ActiveStillLive && activeAccountId() == failoverTarget -> Unit
+            else -> {
+                // Lowered before the route event goes out: the NavHost reads this flag to keep an
+                // account flip racing this signal from routing straight back to chat on a dead session.
+                _isLoggedIn.value = false
+                // Only announce an expiry to someone the app believed was signed in. A logged-out cold
+                // start still fires requests (banners, the drawer); each 401s with no token to refresh
+                // and settles as expired, so dropping [wasLoggedIn] puts the dialog on every launch.
+                if (expiredLabel != null && wasLoggedIn) {
+                    _sessionExpiredNotice.value = SessionExpiredNotice(expiredLabel)
+                }
+                _sessionRoute.trySend(SessionRoute.SignIn)
+            }
+        }
+    }
+
+    /**
+     * A ban leaves the user where they are (see [SessionEndReason.BANNED]); if the server ended the
+     * session, the next refresh reports EXPIRED and signs out through [onSessionEnded]. Routing to
+     * sign-in here would end a session the server may not have ended, and sign-in is ban-checked too.
+     * Announced once per account, only to someone signed in (the sign-in form shows the server's
+     * own ban message), and never over a notice the user hasn't read yet.
+     */
+    private suspend fun onBanned() {
+        if (!_isLoggedIn.value || _sessionExpiredNotice.value != null) return
+        // Empty for a legacy session with no account id, which still needs the once-only guard.
+        val accountKey = activeAccountId().orEmpty()
+        if (accountKey == banAnnouncedFor) return
+        banAnnouncedFor = accountKey
+        _sessionExpiredNotice.value = SessionExpiredNotice(expiredAccountLabel().orEmpty(), banned = true)
+    }
+
+    private fun activeAccountId(): String? =
+        (activeAccountProvider.state.value as? AccountState.Resolved)?.id?.value
+
+    /** Sign an account out on its server and remove it with all its local data. Removing the active
+     *  one switches to the most-recently-active survivor, or routes to auth when it was the last. */
     fun removeAccount(accountId: String) {
-        viewModelScope.launch { accountSwitcher.remove(accountId) }
+        viewModelScope.launch { authRepository.removeAccount(accountId) }
     }
 
     /** Abandon any in-progress add-account flow; no-op when none is pending. Driven by the NavHost
@@ -312,7 +490,7 @@ class NavHostViewModel(
     /** The display label of the account whose session just ended, or null when it can't be named —
      *  a legacy pre-tenancy session, or one whose roster entry has already gone. */
     private suspend fun expiredAccountLabel(): String? {
-        val activeId = (activeAccountProvider.state.value as? AccountState.Resolved)?.id?.value ?: return null
+        val activeId = activeAccountId() ?: return null
         return accountRoster.entriesFlow().firstOrNull()
             ?.firstOrNull { it.accountId == activeId }
             ?.displayLabel
@@ -335,6 +513,7 @@ class NavHostViewModel(
 
     fun onAuthComplete() {
         _isLoggedIn.value = true
+        sessionRevision.update { it + 1 }
         // The drawer conversation list is refreshed by the nav host alongside this call
         // (DrawerViewModel.refreshConversationsAfterLogin) — accountTransitions() doesn't fire on a
         // login-from-logged-out, so that crossing is wired explicitly there. Session tasks

@@ -1,49 +1,132 @@
 # feature:agents
 
 ## Screens
-- **AgentMarketplaceScreen** -- grid of agent cards with search and category filters
-- **AgentDetailScreen** -- full agent info with "Start Chat" action
+- **AgentMarketplaceScreen** -- the agent index: search, a chip row, one column of cards on phones (two at >= 600dp)
+- **AgentDetailScreen** -- the agent page: header, Start chat, description, model/tools, starters; Pin and ⋮ in the bar
 
 ## Navigation
 - Sealed interface: `AgentsRoute : NavKey` with typed route classes
-- Routes: `AgentMarketplace` (grid), `AgentDetail(agentId: String)` (detail), `AgentEditorCreate`, `AgentEditorEdit(agentId: String)` (all `@Serializable`)
+- Routes: `AgentMarketplace` (index), `AgentDetail(agentId: String)` (detail), `AgentEditorCreate`, `AgentEditorEdit(agentId: String)` (all `@Serializable`)
 - Feature entries registered via `EntryProviderScope<NavKey>.agentsEntries()`
 - `onStartChat(agentId)` callback navigates to chat with the selected agent
+- `onStartChatWithPrompt(agentId, prompt)`: a conversation starter was tapped. The nav host owns what it does
+  (feature/agents never depends on feature/chat): it stages the prompt in feature/chat's
+  `PromptInsertionHandoff` and opens `NewChat(agentId)`, so the starter sits unsent in that chat's composer.
+- Duplicate from the page `onReplace`s it with the copy's page, as Duplicate in the editor does. Results that
+  land after the user has left (the entry is still composed for its exit animation) must act on that entry
+  only: `onReplace(key, …)` swaps it only while it is on top, and Delete closes it with `onRemove(key)`, never
+  a bare pop.
+
+## Who can reach the index
+- AGENTS.USE **and** MARKETPLACE.USE (web parity). Without either, the drawer and tablet sidebar hide the
+  Agents entry (`DrawerUiState.agentsEntryVisible`, feature/conversations), the VM reads nothing, and a screen
+  reached anyway (stale back stack) shows the "not available" state. Users without MARKETPLACE.USE therefore
+  have no way into the agent editor in the app: a decision, not a bug.
 
 ## Marketplace ViewModel
-- `AgentMarketplaceViewModel` uses server-side pagination via `AgentRepository.getAgentsPaginated()`
-- Page size: 10 agents per page
-- Categories fetched from `getAgentCategories()` API (server-driven, not client-derived)
-- `onCategorySelected()` toggles category filter and resets to page 1
-- `onSearchQueryChanged()` debounces 500ms, then resets to page 1 with server-side search
-- `loadMore()` appends next page; no-ops if already loading or no more pages
-- Pull-to-refresh resets to page 1
-- **Gotcha**: Search and category changes reset pagination — always load from page 1 when filters change
+- Server-side cursor pagination via `AgentRepository.getAgentsPaginated()`, 20 agents a page (`limit`). Each
+  page's `after` (`PaginatedAgents.nextCursor`) is the next request's `cursor`; the route ignores page numbers.
+- Categories come from `getAgentCategories()` (server-driven, not client-derived).
+- **Chips** (`AgentChip`): Top picks (only when categories include `promoted`), All, Editable (only with
+  AGENTS.CREATE), then the real categories. Exactly one is selected; tapping the selected chip does nothing.
+  A chip the row stops offering (Editable after losing CREATE, a removed category) falls back to All.
+- **Default chip**: Top picks when offered, else All. The first read waits for the role AND the categories, so
+  the default is known before anything is fetched (no flash of All, no second read). Placeholders cover the wait.
+- **Gotcha**: the categories route appends `promoted` and `all`, which are not categories. `AgentListFilter.of`
+  maps them like the web grid: `promoted` → `promoted=1`, `all` → no filter, and while searching both send
+  neither. Never send them as `category` (registered in `scripts/mirrors.json`). Editable is
+  `requiredPermission` = `PermissionBits.EDIT`; it ignores categories and still narrows a search.
+- **One load pipeline**: every read that replaces the list (chip, search, Retry, pull-to-refresh, return) goes
+  through `startLoad`, which cancels the previous read and any next-page read and bumps a generation; a late
+  answer from an older generation is dropped. Search is trimmed and debounced 300ms; a search that trims to
+  the request already made doesn't read again.
+- `loadMore()` appends the page after `nextCursor`; no-ops while any read runs, with no cursor, or after a
+  failed page (`loadMoreFailed`) until `retryLoadMore()` (the footer's Retry). Without that stop, the scroll
+  trigger re-arms and re-reads a failing page forever.
+- **Gotcha**: an unparseable cursor makes the route answer with the first page and the same `after`. A page
+  whose `after` is the cursor just sent ends paging, and the quiet reload's walk stops at a cursor it already
+  sent; without either, paging re-reads that page forever.
+- **Return to the screen** (`refreshOnReturn`, ON_RESUME): a quiet reload that walks the cursor until it has as
+  many agents as were loaded, with no pull-to-refresh spinner; a failure keeps what is shown, a success clears
+  a standing error. It does nothing before the first read has started (ON_RESUME fires on first composition,
+  while the role is still awaited).
+- Errors are `AgentListError(serverMessage)` (the server's message, or null); the screen words them. A first-page
+  failure with nothing listed is the error page with Retry; with a list for the same query it is a snackbar.
+  A failed read for a NEW chip/search empties the list rather than leave the old chip's agents standing.
 
-## Agent Card Layout
-- Card: 136dp height, endpoint avatar + name (2-line clamp) + description (2-line clamp) + "By {author}"
-- Category badge at top-right corner
-- Tap opens agent detail
+## Agent cards
+- `AdaptiveCard(onClick)` + `InitialTile(seed = id)`; name (1 line), plain-text description (2 lines) and a meta
+  row: Top pick mark (`is_promoted`), category label (not "general"), contact.
+- Every card is the same height: the description always takes 2 lines and the meta row always takes one (empty
+  or not, ellipsizing instead of wrapping), so two-column grid rows line up. `AgentCardPlaceholder` mirrors these
+  slots; change both together.
+- `AgentCardDisplayData.name` is null for an unnamed agent; the card shows `agent_unnamed`. No English in the VM.
+- Descriptions go through `agentDescriptionPreview()`: HTML (see "HTML descriptions" below) is reduced to one
+  run of text by `htmlToPlainText()` (`:core:common`; block tags become spaces); plain text is kept as written,
+  whitespace collapsed.
+- Contact = support contact's name (or email), else the owner's name (`Agent.resolvedContact()` in
+  `AgentDisplayMappers.kt`, shared with the detail page). Never the raw `author` id.
+- No per-card menu: agent actions live on the agent page.
+
+## Index states
+- First load (and a chip change with nothing listed): placeholder cards, never the empty state.
+- Pull-to-refresh: placeholders only over the error page (the error is kept until the pull lands); over an
+  empty or no-matches answer that answer stays under the pull spinner, FAB and all.
+- A chip/search change with a list showing: the old list stays, dimmed, until the answer lands.
+- Empty server (All, no search): "No agents yet" + New agent (with CREATE; the FAB hides) or "Check back later".
+- Nothing under a chip or search: names what it looked in, with a way out (Search all agents keeps the search,
+  Show all agents / Clear search go back to everything).
 
 ## Agent Detail
-- `AgentDetailViewModel` loads single agent by ID
-- Shows: large avatar, name, description, capabilities/tools list
-- Actions: Pin/Unpin, Copy link, "Start Chat" button
-- "Start Chat" flow: sets `endpoint: "agents"` + `agent_id`, creates conversation template, navigates to new chat
+- `AgentDetailScreen` (VM + nav glue) over a stateless `AgentDetailContent(uiState, actions)`; previews in
+  `AgentDetailPreviews.kt`.
+- **Load**: the edit-gated `/expanded` read first, then the VIEW read `getAgentForViewing` (see the comments
+  in `fetchAgent`). **Gotcha**: never `getAgent` here: its warm cache serves the list projection, which has
+  no model, `isPublic` or contacts' detail. VIEW has no `category`/`is_promoted` (decoding fills in
+  "general"/false); they come from the tapped list row (`getAgentForViewing` fills them in), else are left out. Model shows for
+  every viewer. `isFullRecord` is true only when `/expanded` answered, and Tools render only then (list rows
+  carry a cut-down `tools`, VIEW none). A skipped probe (the list said "not editable") is not a full record.
+- **Header**: `InitialTile` (64dp), name (heading; `agent_unnamed` when null), contact line (support contact,
+  else owner; a `Role.Button` that opens `mailto:` when there is an email), Top pick mark, category label via
+  `agentCategoryLabel()` (shared with the cards; "general" has none). No "by <author>" byline.
+- **HTML descriptions** (mirror `agent-description-html`): a description is HTML only when,
+  trimmed, it STARTS with a tag on `AGENT_DESCRIPTION_TAGS` (a, strong, b, em, i, br, code, span, p, div, ul, ol,
+  li) or `img`; a tag mid-sentence, a leading comment, `List<String>` or `<name>` keeps it plain text, shown as
+  written (upstream `isHtmlDescription` in `client/src/components/ui/Description.tsx` at the pinned v0.8.8, mirror
+  `agent-description-html-detection`; other revisions use `startsWith('<')`). Other tags, `img` included, are
+  dropped with their text kept, as on the web's agent card and page. Links: http(s), mailto,
+  tel, or relative (resolved against the server URL, `AgentDetailDisplayData.linkBaseUrl`); anything else is text.
+- **Body**: Start chat, the description (`htmlDescriptionToAnnotatedString`), one facts line ("Updated <relative
+  time>" through the date-format setting, "Public" when `isPublic`), Model, Tools (plain labels, not chips),
+  "Try asking" starter cards. Capped at 600dp wide, centred.
+- Categories are read once, only for an agent with a non-general category, so an admin's own label shows.
+- **Bar**: a star toggle (pin to the chat model menu), then ⋮ = Copy link, Edit (`canOpenEditor`), Duplicate
+  (`canDuplicate`), Delete (`canDelete`). All three are `canEdit && canCreate` (AGENTS.CREATE): the editor's save
+  (PATCH) and the duplicate route need CREATE plus EDIT on the agent, the delete route needs CREATE plus a DELETE
+  bit nothing reports (EDIT stands in; a 403 is an action error). The VM no-ops Duplicate or Delete when its
+  gate is false. While one runs, ⋮ is a spinner.
+- **Pin**: writes the WHOLE favorites list through `FavoritesRepository`, like `FavoritesDelegate.toggleAgent`
+  in feature/chat. **Gotcha**: never toggle on a list that wasn't read: the VM refreshes on open and, if that
+  failed, refreshes again before the first write; a failed read is an error, not a write of `[thisAgent]`.
+  `isPinned` follows the repository's flow, so a pin made in the chat picker shows here. Over
+  `FavoritesLimits.MAX_FAVORITES` is a `PinLimit` error, nothing sent.
+- **Copy link**: `agentChatLink()` = `<server URL>/c/new?agent_id=<id>`, the web's own agent URL (mirror
+  `agent-chat-link`). The clipboard is this module's own `ClipboardWriter` (same seam as chat/settings).
+  A snackbar confirms.
+- **Errors**: a page that never loaded is `loadError` (ErrorBanner + Retry). A failed Delete, Duplicate or pin
+  is `actionError`, shown once as a snackbar; the page stays. No English in the VM: the screen words both.
 
 ## Data Layer
 - `AgentRepository` in `:core:data` wraps `AgentsApi` from `:core:network`
 - API: `GET /api/agents` (list), `GET /api/agents/:id` (detail), `GET /api/agents/categories`
-- Categories are server-driven, not hardcoded; special values: "promoted" (Top Picks), "all"
+- Categories are server-driven, not hardcoded; special values: "promoted" (Top picks), "all"
 
 ## Infinite Scroll
-- `LazyVerticalGrid` with `rememberLazyGridState()` + `derivedStateOf` for scroll detection
-- Triggers `loadMore()` when last visible item is within 3 of the end
-- Shows `CircularProgressIndicator` in a full-span grid item while loading more
-
-## Spec Notes (not yet implemented)
-- Category tabs with slide animation (`AnimatedContent` with `slideInHorizontally`)
-- Permission check: `PermissionTypes.MARKETPLACE` with `Permissions.USE`
+- `LazyVerticalGrid` (search and chips are full-width items, so they scroll with the list and pull-to-refresh
+  starts anywhere) + `derivedStateOf` for scroll detection
+- Triggers `loadMore()` when the last visible item is within 3 of the end, and again when a page lands with the
+  end still in view
+- Footer: a spinner while a page loads, "Couldn't load more agents" + Retry after a failed one
 
 ### Agent Editor — Advanced Sections
 - `AgentEditorScreen` now includes 6 collapsible sections below the basic fields:

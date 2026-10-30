@@ -10,6 +10,7 @@ import com.garfiec.librechat.core.data.datastore.ContextBarPlacement
 import com.garfiec.librechat.core.data.datastore.DuringRunAction
 import com.garfiec.librechat.core.data.datastore.StarredModelsDisplay
 import com.garfiec.librechat.core.data.datastore.UploadRoutingMode
+import com.garfiec.librechat.core.model.Agent
 import com.garfiec.librechat.core.model.EndpointConfig
 import com.garfiec.librechat.core.model.response.UploadRoute
 import com.garfiec.librechat.feature.chat.viewmodel.delegate.PdfPasswordPrompt
@@ -304,6 +305,38 @@ class ChatViewModelUploadRoutingTest {
             io.mockk.verify(exactly = 0) { fileHandler.onFilesSelected(any()) }
         }
 
+    // Not upload routing, but the same gated-send shape, and this harness drives a real send.
+    @Test
+    fun `a send during Compare setup waits, keeping the text, and goes out once it starts`() =
+        routingTest(endpoint = "anthropic") { vm ->
+            vm.beginComparisonSetup()
+            vm.onInputChanged("which is better")
+
+            vm.sendMessage()
+            runCurrent()
+
+            io.mockk.verify(exactly = 0) {
+                chatRepository.startChat(
+                    any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                    any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                    any(),
+                )
+            }
+            assertThat(vm.uiState.value.inputText).isEqualTo("which is better")
+
+            vm.startComparison("openAI", "gpt-5")
+            vm.sendMessage()
+            runCurrent()
+
+            io.mockk.verify(exactly = 1) {
+                chatRepository.startChat(
+                    any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                    any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                    any(),
+                )
+            }
+        }
+
     @Test
     fun `a send while a batch is staged does not fire without it`() =
         routingTest(endpoint = "anthropic", mode = UploadRoutingMode.MANUAL) { vm ->
@@ -450,7 +483,6 @@ class ChatViewModelUploadRoutingTest {
             // answer null and route immediately, as unknown.
             assertThat(captured.isCaptured).isFalse()
 
-            availableModels.value = mapOf(EndpointConstants.AGENTS to listOf(AGENT_ID))
             vm.onModelSelected(EndpointConstants.AGENTS, AGENT_ID)
             runCurrent()
 
@@ -598,9 +630,9 @@ class ChatViewModelUploadRoutingTest {
             ?.let { Result.Success(it) }
             ?: Result.Error(message = "unresolved")
         if (providerAnswer != null) {
-            coEvery { agentRepository.getAgentProvider(any()) } coAnswers { providerAnswer() }
+            coEvery { agentRepository.getAgentForViewing(any()) } coAnswers { providerAnswer().asViewedAgent() }
         } else {
-            coEvery { agentRepository.getAgentProvider(any()) } returns providerResult
+            coEvery { agentRepository.getAgentForViewing(any()) } returns providerResult.asViewedAgent()
         }
         val vm = newViewModel()
         runCurrent()
@@ -630,4 +662,11 @@ class ChatViewModelUploadRoutingTest {
         const val PDF = "application/pdf"
         const val DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     }
+}
+
+/** The provider a test scripts, as the single-agent read the delegate makes returns it. */
+private fun Result<String?>.asViewedAgent(): Result<Agent> = when (this) {
+    is Result.Success -> Result.Success(Agent(id = "agent", provider = data))
+    is Result.Error -> this
+    Result.Loading -> Result.Loading
 }

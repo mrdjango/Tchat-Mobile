@@ -12,50 +12,79 @@ features. See [TCHAT.md](TCHAT.md) for exactly what this fork changes and why.
 
 > **Backend compatibility:** Tested against LibreChat **v0.8.4 – v0.8.8**.
 
+## Get it
+
+<p align="center">
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/garfiec/Librechat-Mobile"><img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="80"></a>
+  <!-- Uncomment each badge once its listing is live.
+  <a href="https://f-droid.org/packages/com.garfiec.librechat/"><img src="https://f-droid.org/badge/get-it-on.png" alt="Get it on F-Droid" height="80"></a>
+  <a href="https://play.google.com/store/apps/details?id=com.garfiec.librechat.play"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="80"></a>
+  -->
+  <a href="https://testflight.apple.com/join/pVhFr3a5"><img src="docs/badges/testflight.png" alt="Join the beta on TestFlight" height="80"></a>
+</p>
+
+<p align="center"><sub>F-Droid and Google Play are coming soon. iOS is in public beta on TestFlight. See <a href="#install-android">Install (Android)</a> and <a href="#install-ios">Install (iOS)</a> for details.</sub></p>
+
 ## Why use this instead of the web app?
 
-- **Smoother and faster** — a real native app instead of a website in a wrapper, so scrolling, typing, and watching responses stream in all feel snappier.
-- **Feels like a mobile app, not a shrunk-down website** — familiar gestures like swipe to switch accounts and swipe back, comfortable tap targets, and a layout that adapts to tablets and foldables.
-- **Plays nicely with your phone** — share text, images, and files into the app from anywhere *(Android)*, pin your favorite models or generated content to your home screen, open chat links straight into the right screen, and save or share images through your phone's normal menus.
-- **Works without a connection** — your chat list and any conversations you've opened are saved on your phone, so you can keep reading with spotty or no signal.
-- **Multiple accounts, one app** — sign in to more than one Tchat account and switch between them instantly, no re-entering passwords.
-- **Dictation stays on your phone** — voice typing runs on-device instead of through a server.
+**It's a real app**
 
-## Features
+- **Smoother and faster** — a real native app instead of a website in a wrapper, so scrolling, typing, and watching responses stream in all feel snappier.
+- **Feels like a mobile app, not a shrunk-down website** — swipe back and peek at where you're going before you let go, swipe to switch accounts, and a layout that spreads out on tablets and foldables.
+- **Two looks, one app** — Material or Liquid Glass on Android or iPhone, any accent color with the whole app recoloring around it, or colors from your wallpaper. Light or dark, threads or two-sided bubbles.
+- **From chat to home screen** — the apps and charts it builds run right in the chat. Pin one to your home screen and open it in a tap, even after the chat is gone. *(Android)*
+- **Plays nicely with your phone** — share text, images, and files in from any app *(Android)*, launch your favorite models from the home screen, save or share images through your phone's normal menus, and dictate with your phone's own speech recognizer.
+- **Works without a connection** — your chat list and any conversations you've opened are saved on your phone, so you can keep reading with spotty or no signal. Turn on background prefetch and recent chats are ready offline before you even open them.
+
+**It's easier to use**
+
+Same LibreChat, laid out for how you actually use it.
+
+- **Everything where you'd look for it** — your model, its settings, tools, and attachments sit together right where you type, not in a sidebar of icons that change from chat to chat. Agents are in the same list as your models, and the agent editor only shows up when you ask for it.
+- **One attach button for everything** — camera, photos, files on your phone, or files already on your server, without uploading them again.
+- **Compare models** — pick any two, change either one at any time, and every message goes to both. Swipe between them on a phone, or read them side by side with synced scrolling on a tablet or foldable.
+- **Find anything you've asked** — search every message in every chat, even offline, and land right on the one you meant. Or find text inside the chat you're reading.
+- **All your media** — every image, file, and link from a chat in one place. Swipe through photos and drag one down to send it back.
+- **Multiple accounts, one app** — sign in to different accounts on different LibreChat servers and switch between them instantly, no re-entering passwords.
+
+## More features
 
 - **Multi-Account** — Sign in to more than one Tchat account and switch between them instantly, no re-login. Swipe the account chip to switch; storage is fully scoped per account. All accounts are Tchat accounts — the server is fixed and there is no in-app way to point at a different one, in any build (see [TCHAT.md](TCHAT.md)).
 - **Pin Artifacts to Home Screen** — Turn any generated artifact (HTML, React, SVG, Mermaid, Markdown) into a home-screen launcher icon that opens straight into a full-screen viewer — works on cold start, while logged out, and even after the source chat is deleted. *(Android)*
 - **Quick Actions** — Your most-used models become home-screen shortcuts (Android) and long-press quick actions (iOS) that deep-link into a new chat with that model preselected.
-- **Rich Media Viewer** — Full-screen, Google-Photos-style viewer with pinch-to-zoom and swipe between images across a branch or grid, shared by chat and files.
-- **Native Upload, Share & Save** — Attach from the device or reuse existing server files without re-uploading, save images to your gallery, and share out through the system share sheet with original format preserved.
-- **Themes** — Pick any accent color and the whole app regenerates a matching Material 3 palette — choose from presets or dial in a custom color (HSV or hex). System/light/dark modes, plus Material You wallpaper-based colors on Android 12+.
 - **Chat** — Real-time streaming (SSE), message branching & sibling navigation, stop/regenerate/continue, markdown with syntax highlighting, LaTeX math rendering, code blocks with copy, image display, file attachments, tool call progress cards
+- **Answer Your Agents** — When an agent stops to ask you something or wants your OK before running a tool, answer right from the composer, one question at a time.
 - **Inline Artifacts** — Render Mermaid, SVG, HTML, React, and Markdown artifacts directly in chat messages at full message width with content-fit height. Per-type toggle in Settings → Chat → Artifacts.
-- **Model Selection** — Searchable bottom sheet grouped by endpoint, model comparison mode
+- **Model Selection** — Searchable bottom sheet grouped by endpoint; star your favorites to keep them on top
 - **Agents** — Marketplace with search and categories, MCP server configuration
+- **Projects & Scheduled Chats** — Group related chats into projects, and have an agent run a prompt on a schedule, filing each conversation into a project for you.
+- **Skills** — Create, import, and edit skills: reusable instructions and files your agents can draw on.
 - **Conversations** — Paginated list with date grouping, tags, search, rename, archive, delete, share, fork, duplicate, export/import
 - **Voice** — On-device live dictation (Android & iOS) with cloud fallback, plus text-to-speech playback
-- **Mobile & Tablet** — Single adaptive UI: single-pane on phones, dual-pane layout (600dp+) with a persistent sidebar on tablets and foldables, with native predictive-back gestures
-- **Settings** — In-app language switching, account management, data controls
+- **Settings** — In-app language switching across 10 languages, account management, data controls
 - **Accessibility** — Semantic headings, content descriptions, 48dp touch targets, live regions
 
 ## Screenshots
 
+<p align="center">
+  <img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/01-hero.png" width="100%" alt="The same chat on an unfolded Pixel Fold, in Material on the left and Liquid Glass on the right">
+</p>
+<p align="center"><b>Two looks, one app.</b> The same chat in Material and in Liquid Glass.</p>
+
 | Feature | Phone | Tablet / Foldable |
 |---|---|---|
-| **Home Screen** — Clean welcome screen with voice input and quick access | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/01-home.png" width="280"> | <img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/01-home.png" width="380"> |
-| **Conversations Sidebar** — Swipe to open your chat history with search, tags, and date grouping | <img src="docs/screenshots/sidebar-phone.gif" width="280"> | <img src="docs/screenshots/sidebar-tablet.gif" width="380"> |
-| **Predictive Back** — Native Android back gesture with peek animation | <img src="docs/screenshots/predictive-back-phone.gif" width="280"> | <img src="docs/screenshots/predictive-back-tablet.gif" width="380"> |
-| **Mermaid Diagrams** — Interactive flowcharts and diagrams rendered in-chat | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/04-mermaid.png" width="280"> | <img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/04-mermaid.png" width="380"> |
-| **LaTeX Math** — Beautifully typeset equations and formulas | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/05-latex.png" width="280"> | <img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/05-latex.png" width="380"> |
-| **Code Blocks** — Syntax-highlighted code with language badge and copy button | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/03-code.png" width="280"> | <img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/03-code.png" width="380"> |
-| **Tables** — Clean, scrollable data tables | <img src="docs/screenshots/table-phone.png" width="280"> | <img src="docs/screenshots/table-tablet.png" width="380"> |
-| **Extended Thinking** — See the model's reasoning process | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/06-thinking.png" width="280"> | <img src="docs/screenshots/thinking-tablet.png" width="380"> |
-| **Clarifying Questions** — When an agent pauses to ask, answer one question at a time in a panel that replaces the composer | <img src="docs/screenshots/ask-user-question-phone.png" width="280"> | <img src="docs/screenshots/ask-user-question-tablet.png" width="380"> |
-| **Chat Media** — Browse all media shared in the current chat in one place | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/07-chat-media.png" width="280"> | <img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/06-chat-media.png" width="380"> |
-| **Chat Options** — Attach files, switch models, toggle tools, and tune parameters | <img src="docs/screenshots/chat-options-phone.png" width="280"> | <img src="docs/screenshots/chat-options-tablet.png" width="380"> |
-| **Model Selection** — Searchable bottom sheet with models grouped by provider | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/02-model-selection.png" width="280"> | <img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/02-model-selection.png" width="380"> |
-| **Settings** — Theme, language, layout, and personalization options | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/08-settings.png" width="280"> | <img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/07-settings.png" width="380"> |
+| **Make It Yours** — Pick Material or Liquid Glass, any accent color, light or dark, and the whole app follows | <img src="docs/screenshots/looks-phone.gif" width="280" alt="Switching accent colors, dark mode and Liquid Glass on the Appearance page"> | <img src="docs/screenshots/looks-blue-light-material.png" width="186" alt="Blue, light, Material"> <img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/02-looks.png" width="186" alt="Amber, dark, Liquid Glass"><br><img src="docs/screenshots/looks-pink-dark-material.png" width="186" alt="Pink, dark, Material"> <img src="docs/screenshots/looks-green-light-glass.png" width="186" alt="Green, light, Liquid Glass"> |
+| **Find Anything** — Search every message in every chat, even offline, and land right on the one you meant | <img src="docs/screenshots/search-phone.gif" width="280" alt="Searching for chocolate and opening a result"> | <img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/03-search.png" width="380" alt="Search results beside a preview of the matching chat"> |
+| **All Your Media** — Every image, file, link and artifact from a chat, in one place | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/03-media.png" width="280" alt="A chat's media grid"> | <img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/04-media.png" width="380" alt="A chat's media grid beside the sidebar"> |
+| **Create Images** — Ask for a picture and it appears right in the conversation | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/04-images.png" width="280" alt="A generated portrait in the chat"> | <img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/05-images.png" width="380" alt="A generated sunset in the chat"> |
+| **Chat Your Way** — Thread or two-sided bubbles, with or without avatars, previewed as you choose | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/05-bubbles.png" width="280" alt="A chat in two-sided bubbles"> | <img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/06-layout.png" width="380" alt="The Chat layout page with its live preview"> |
+| **Compare Models** — Ask two models the same question and read their answers side by side | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/06-compare.png" width="280" alt="Two models' answers to the same question, one tab each"> | <img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/07-compare.png" width="380" alt="Two models' answers side by side"> |
+| **Interactive Artifacts** — Apps and charts the model builds run right in the chat *(shown on iPhone and iPad)* | <img src="docs/screenshots/artifact-iphone.png" width="280" alt="An allowance tracker app running in the chat on iPhone"> | <img src="docs/screenshots/artifact-ipad.png" width="380" alt="The same app on iPad"> |
+| **Photo Viewer** — Swipe between images, and drag down to send one back to the grid | <img src="docs/screenshots/viewer-phone.gif" width="280" alt="Paging through images, then dragging one back into the grid"> | |
+| **Answer Your Agents** — When an agent needs something from you, answer right in the chat, one question at a time | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/07-agent.png" width="280" alt="An agent asking a question, with answers to tap"> | <img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/08-agent.png" width="380" alt="The shopping list the agent made from the answers"> |
+| **Everything in Reach** — Your chats, projects and agents, a swipe away | <img src="docs/screenshots/sidebar-phone.gif" width="280" alt="Opening the sidebar"> | <img src="docs/screenshots/sidebar-tablet.gif" width="380" alt="Opening the sidebar and switching to Projects"> |
+| **Answers That Fit** — Tables fit the screen and wrap their text; only wide ones scroll sideways | <img src="docs/screenshots/table-phone.png" width="280" alt="A ranked table that fits a phone screen"> | <img src="docs/screenshots/table-tablet.png" width="380" alt="The same table with every column showing"> |
+| **Swipe Back** — The back gesture peeks at where you're going before you let go | | <img src="docs/screenshots/predictive-back-tablet.gif" width="380" alt="Swiping back from Settings to the chat"> |
 
 ## Install
 
@@ -83,7 +112,7 @@ that changes, and `TCHAT.md`'s top section for how to build a debug APK yourself
 ./gradlew assembleDebug
 ```
 
-The debug APK will be at `app/build/outputs/apk/debug/app-debug.apk`.
+The debug APK will be at `app/build/outputs/apk/foss/debug/app-foss-debug.apk`.
 
 For a release build:
 

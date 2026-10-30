@@ -36,6 +36,7 @@ import com.garfiec.librechat.core.data.datastore.InlineArtifactPrefs
 import com.garfiec.librechat.core.data.datastore.LatexRenderer
 import com.garfiec.librechat.core.data.datastore.StarredModelsDisplay
 import com.garfiec.librechat.core.data.datastore.UploadRoutingMode
+import com.garfiec.librechat.core.data.datastore.WebSearchPreference
 import com.garfiec.librechat.core.ui.components.AdaptiveAlertDialog
 import com.garfiec.librechat.core.ui.components.AdaptiveRadioButton
 import com.garfiec.librechat.core.ui.components.AdaptiveSwitch
@@ -49,6 +50,8 @@ internal enum class ChatSettingDialog {
     DURING_RUN_ACTION,
     UPLOAD_ROUTING,
     STARRED_MODELS,
+    NEW_CHAT_START,
+    WEB_SEARCH_FIRST,
     CHAT_HEADER,
     ARTIFACT_VIEWER,
     RENDER_INLINE,
@@ -97,6 +100,22 @@ internal fun uploadRoutingModeLabel(mode: UploadRoutingMode): String = when (mod
 }
 
 @Composable
+internal fun webSearchFirstLabel(first: WebSearchPreference): String = when (first) {
+    WebSearchPreference.LIBRECHAT_FIRST -> stringResource(Res.string.web_search_first_librechat)
+    WebSearchPreference.BUILT_IN_FIRST -> stringResource(Res.string.web_search_first_built_in)
+}
+
+@Composable
+internal fun webSearchFirstDescription(first: WebSearchPreference): String = when (first) {
+    WebSearchPreference.LIBRECHAT_FIRST -> stringResource(Res.string.web_search_first_librechat_desc)
+    WebSearchPreference.BUILT_IN_FIRST -> stringResource(Res.string.web_search_first_built_in_desc)
+}
+
+@Composable
+internal fun newChatStartLabel(preferLastUsed: Boolean): String =
+    stringResource(if (preferLastUsed) Res.string.new_chat_start_last_used else Res.string.new_chat_start_server)
+
+@Composable
 internal fun starredModelsDisplayLabel(display: StarredModelsDisplay): String = when (display) {
     StarredModelsDisplay.OFF -> stringResource(Res.string.starred_models_off)
     StarredModelsDisplay.GROUPED -> stringResource(Res.string.starred_models_grouped)
@@ -143,6 +162,7 @@ internal fun <T> RadioSelectionDialog(
 
     AdaptiveAlertDialog(
         onDismissRequest = onDismiss,
+        scrollableText = false,
         modifier = modifier,
         title = { Text(title) },
         text = {
@@ -195,6 +215,7 @@ internal fun ChatHeaderSettingsDialog(
 
     AdaptiveAlertDialog(
         onDismissRequest = onDismiss,
+        scrollableText = false,
         modifier = modifier,
         title = { Text(stringResource(Res.string.chat_header_title)) },
         text = {
@@ -249,6 +270,7 @@ internal fun RenderInlineDialog(
 ) {
     AdaptiveAlertDialog(
         onDismissRequest = onDismiss,
+        scrollableText = false,
         modifier = modifier,
         title = { Text(stringResource(Res.string.artifact_inline_title)) },
         text = {

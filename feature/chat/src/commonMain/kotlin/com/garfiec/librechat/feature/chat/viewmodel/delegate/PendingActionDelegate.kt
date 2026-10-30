@@ -12,6 +12,7 @@ import com.garfiec.librechat.core.model.ToolApprovalDecisions
 import com.garfiec.librechat.core.model.request.ChatResumeRequest
 import com.garfiec.librechat.core.model.request.EphemeralAgent
 import com.garfiec.librechat.core.model.request.ToolApprovalResolution
+import com.garfiec.librechat.core.model.request.withManualSkillsFlag
 import com.garfiec.librechat.feature.chat.components.PAUSE_PANEL_AUTO_ADVANCE_DELAY_MS
 import com.garfiec.librechat.feature.chat.components.PausePanelAutoAdvance
 import com.garfiec.librechat.feature.chat.components.pausePanelActiveIndex
@@ -28,6 +29,7 @@ import com.garfiec.librechat.feature.chat.viewmodel.ChatRequestBuilder
 import com.garfiec.librechat.feature.chat.viewmodel.PendingActionHandle
 import com.garfiec.librechat.feature.chat.viewmodel.PendingActionWrites
 import com.garfiec.librechat.feature.chat.viewmodel.QueuedMessage
+import com.garfiec.librechat.feature.chat.viewmodel.refusalErrorMarker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -166,6 +168,7 @@ class PendingActionDelegate(
         val endpointType: String?,
         val agentId: String?,
         val model: String?,
+        val spec: String?,
         /**
          * The `promptPrefix` ("Custom Instructions") the send POST carried at the TOP LEVEL of its
          * body, spread there out of the model-parameter payload
@@ -176,9 +179,6 @@ class PendingActionDelegate(
          * Null whenever the send omitted the key: nothing customized, or a wire key that is not
          * `promptPrefix` (bedrock-anthropic sends `system`, which the fingerprint does not cover).
          *
-         * `spec` is the fingerprint's one remaining field with no pin here, and cannot be sent by
-         * this client: nothing populates [com.garfiec.librechat.core.model.request.ChatRequest.spec],
-         * so both bodies hash it as null. Pin it here the moment a send path starts setting it.
          */
         val promptPrefix: String?,
         val ephemeralAgent: EphemeralAgent?,
@@ -193,10 +193,13 @@ class PendingActionDelegate(
      * client only reconnected to — there the live selection, restored from the conversation, is
      * the best available guess).
      *
+     * [manualSkills] are the skill names a spec-less turn (regenerate / edit) replays: they can
+     * turn the ephemeral skills flag on in the body, so the pin has to apply the same rule.
+     *
      * Must run AFTER the session boundary that calls [clear], or the new turn's pin is wiped.
      */
-    fun onTurnStarted(spec: QueuedMessage?) {
-        pinnedTurn = spec?.toPinnedTurn() ?: captureTurnConfig()
+    fun onTurnStarted(spec: QueuedMessage?, manualSkills: List<String>? = null) {
+        pinnedTurn = spec?.toPinnedTurn() ?: captureTurnConfig(manualSkills)
         persistPin()
     }
 
@@ -648,6 +651,7 @@ class PendingActionDelegate(
                     endpointType = turn.endpointType,
                     agentId = turn.agentId,
                     model = turn.model,
+                    spec = turn.spec,
                     promptPrefix = turn.promptPrefix,
                     ephemeralAgent = turn.ephemeralAgent,
                     isTemporary = turn.isTemporary.takeIf { it },
@@ -697,13 +701,16 @@ class PendingActionDelegate(
                         return@launch
                     }
                     val fingerprintRejected = statusCode == HTTP_FORBIDDEN
+                    // The resume route runs the message limiters and moderation over the answer,
+                    // and their refusal arrives as a 200 naming what to do next — wait, or edit.
+                    val refusalMarker = refusalErrorMarker(result.exception)
                     handle.update {
                         isResolvingPendingAction = false
                         pendingActionResumeFailed = true
-                        error = if (fingerprintRejected) {
-                            fingerprintRejectedMessage()
-                        } else {
-                            resumeFailureMessage(result.message)
+                        error = when {
+                            refusalMarker != null -> refusalMarker
+                            fingerprintRejected -> fingerprintRejectedMessage()
+                            else -> resumeFailureMessage(result.message)
                         }
                     }
                 }
@@ -720,8 +727,10 @@ class PendingActionDelegate(
         endpointType = dispatch.endpointType,
         agentId = agentId.takeIf { endpoint == EndpointConstants.AGENTS },
         model = model,
+        spec = modelSpec,
         promptPrefix = modelParamsPayload.promptPrefix(),
-        ephemeralAgent = ephemeralAgent,
+        // What the body carried: picked skills turn the ephemeral flag on there.
+        ephemeralAgent = ephemeralAgent.withManualSkillsFlag(endpoint, manualSkills),
         isTemporary = isTemporary,
     )
 
@@ -730,6 +739,7 @@ class PendingActionDelegate(
         endpointType = endpointType,
         agentId = agentId,
         model = model,
+        spec = spec,
         promptPrefix = promptPrefix,
         ephemeralAgent = ephemeralAgent,
         isTemporary = isTemporary,
@@ -740,12 +750,13 @@ class PendingActionDelegate(
         endpointType = endpointType,
         agentId = agentId,
         model = model,
+        spec = spec,
         promptPrefix = promptPrefix,
         ephemeralAgent = ephemeralAgent,
         isTemporary = isTemporary,
     )
 
-    private fun captureTurnConfig(): PinnedTurnConfig {
+    private fun captureTurnConfig(manualSkills: List<String>? = null): PinnedTurnConfig {
         val state = handle.state
         val dispatch = requestBuilder.currentDispatch()
         val isAgent = state.selectedEndpoint == EndpointConstants.AGENTS
@@ -754,8 +765,9 @@ class PendingActionDelegate(
             endpointType = dispatch.endpointType,
             agentId = if (isAgent) state.selectedModel else null,
             model = state.selectedModel,
+            spec = state.selectedSpec,
             promptPrefix = requestBuilder.buildModelParams().promptPrefix(),
-            ephemeralAgent = requestBuilder.buildEphemeralAgent(),
+            ephemeralAgent = requestBuilder.buildEphemeralAgent().withManualSkillsFlag(state.selectedEndpoint, manualSkills),
             isTemporary = state.isTemporaryChat,
         )
     }

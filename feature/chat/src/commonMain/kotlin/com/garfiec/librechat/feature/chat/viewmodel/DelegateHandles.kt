@@ -6,6 +6,8 @@ import com.garfiec.librechat.core.model.usage.ContextUsage
 import com.garfiec.librechat.core.model.usage.ContextUsageTotals
 import com.garfiec.librechat.core.ui.components.ModelParameters
 import com.garfiec.librechat.feature.chat.util.AskAnswerDraft
+import com.garfiec.librechat.feature.chat.util.CatalogSkill
+import com.garfiec.librechat.feature.chat.util.SpecTools
 import com.garfiec.librechat.feature.chat.util.ToolDecisionDraft
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
@@ -54,6 +56,20 @@ class StreamingHandle(root: ChatStateHandle) : DelegateHandle(root) {
         root.update { StreamingWrites(this).apply(block).applyTo(this) }
 }
 
+// ── JumpToMessageDelegate ─────────────────────────────────────────────────
+class JumpWrites internal constructor(state: ChatUiState) {
+    var content: MessagesState = state.content
+    var search: ChatSearchState = state.search
+    internal fun applyTo(s: ChatUiState) = s.copy(content = content, search = search)
+}
+
+/** Writes the branch selection and the find-in-page focus; reads the live state to wait on it. */
+class JumpHandle(root: ChatStateHandle) : DelegateHandle(root) {
+    val stateFlow: StateFlow<ChatUiState> get() = root.stateFlow
+    fun update(block: JumpWrites.() -> Unit) =
+        root.update { JumpWrites(this).apply(block).applyTo(this) }
+}
+
 // ── MessageTreeDelegate ───────────────────────────────────────────────────
 class MessageTreeWrites internal constructor(state: ChatUiState) {
     var content: MessagesState = state.content
@@ -95,6 +111,7 @@ class ComparisonWrites internal constructor(state: ChatUiState) {
 }
 
 class ComparisonHandle(root: ChatStateHandle) : DelegateHandle(root) {
+    val stateFlow: StateFlow<ChatUiState> get() = root.stateFlow
     fun update(block: ComparisonWrites.() -> Unit) =
         root.update { ComparisonWrites(this).apply(block).applyTo(this) }
 }
@@ -111,6 +128,21 @@ class ModelSelectionHandle(root: ChatStateHandle) : DelegateHandle(root) {
     val stateFlow: StateFlow<ChatUiState> get() = root.stateFlow
     fun update(block: ModelSelectionWrites.() -> Unit) =
         root.update { ModelSelectionWrites(this).apply(block).applyTo(this) }
+}
+
+// ── SkillsToggleDelegate ──────────────────────────────────────────────────
+// Owns only the conversation's Skills toggle value; everything that decides which slot it reads
+// (conversation id, temp-ness, spec) is written by others.
+class SkillsToggleWrites internal constructor(state: ChatUiState) {
+    var skillsToggle: Boolean = state.selection.skillsToggle
+    internal fun applyTo(s: ChatUiState) = s.copy(selection = s.selection.copy(skillsToggle = skillsToggle))
+}
+
+class SkillsToggleHandle(root: ChatStateHandle) : DelegateHandle(root) {
+    /** Read-only observation of the full state (the slot follows conversation, temp-ness and spec). */
+    val stateFlow: StateFlow<ChatUiState> get() = root.stateFlow
+    fun update(block: SkillsToggleWrites.() -> Unit) =
+        root.update { SkillsToggleWrites(this).apply(block).applyTo(this) }
 }
 
 // ── EndpointKeyStatusDelegate ─────────────────────────────────────────────
@@ -147,6 +179,26 @@ class PresetPromptHandle(root: ChatStateHandle) : DelegateHandle(root) {
         root.update { PresetPromptWrites(this).apply(block).applyTo(this) }
 }
 
+// ── SkillPickerDelegate ───────────────────────────────────────────────────
+// Owns only the picker's skill catalog; picking a skill goes through the send-dispatch chips.
+class SkillPickerWrites internal constructor(state: ChatUiState) {
+    var skillCatalog: List<CatalogSkill>? = state.presetPrompts.skillCatalog
+    var isLoadingSkills: Boolean = state.presetPrompts.isLoadingSkills
+    var skillsLoadFailed: Boolean = state.presetPrompts.skillsLoadFailed
+    internal fun applyTo(s: ChatUiState) = s.copy(
+        presetPrompts = s.presetPrompts.copy(
+            skillCatalog = skillCatalog,
+            isLoadingSkills = isLoadingSkills,
+            skillsLoadFailed = skillsLoadFailed,
+        ),
+    )
+}
+
+class SkillPickerHandle(root: ChatStateHandle) : DelegateHandle(root) {
+    fun update(block: SkillPickerWrites.() -> Unit) =
+        root.update { SkillPickerWrites(this).apply(block).applyTo(this) }
+}
+
 // ── ConversationActionsDelegate ───────────────────────────────────────────
 class ConversationActionsWrites internal constructor(state: ChatUiState) {
     var actions: ConversationActionsState = state.actions
@@ -156,8 +208,24 @@ class ConversationActionsWrites internal constructor(state: ChatUiState) {
 }
 
 class ConversationActionsHandle(root: ChatStateHandle) : DelegateHandle(root) {
+    /** Read-only observation of the full state (the link-active lookup follows the conversation). */
+    val stateFlow: StateFlow<ChatUiState> get() = root.stateFlow
     fun update(block: ConversationActionsWrites.() -> Unit) =
         root.update { ConversationActionsWrites(this).apply(block).applyTo(this) }
+}
+
+// ── ChatBookmarksDelegate ─────────────────────────────────────────────────
+class BookmarksWrites internal constructor(state: ChatUiState) {
+    var bookmarks: ChatBookmarksState = state.bookmarks
+    var error: String? = state.error
+    internal fun applyTo(s: ChatUiState) = s.copy(bookmarks = bookmarks, error = error)
+}
+
+class BookmarksHandle(root: ChatStateHandle) : DelegateHandle(root) {
+    /** Read-only observation of the full state (the checklist follows the open chat and its gate). */
+    val stateFlow: StateFlow<ChatUiState> get() = root.stateFlow
+    fun update(block: BookmarksWrites.() -> Unit) =
+        root.update { BookmarksWrites(this).apply(block).applyTo(this) }
 }
 
 // ── SendCompletionDelegate ────────────────────────────────────────────────
@@ -220,16 +288,16 @@ class SubagentHandle(root: ChatStateHandle) : DelegateHandle(root) {
         root.update { SubagentWrites(this).apply(block).applyTo(this) }
 }
 
-// ── OfficePreviewDelegate ─────────────────────────────────────────────────
-class OfficePreviewWrites internal constructor(state: ChatUiState) {
+// ── AttachmentPreviewDelegate ─────────────────────────────────────────────
+class AttachmentPreviewWrites internal constructor(state: ChatUiState) {
     var content: MessagesState = state.content
     var error: String? = state.error
     internal fun applyTo(s: ChatUiState) = s.copy(content = content, error = error)
 }
 
-class OfficePreviewHandle(root: ChatStateHandle) : DelegateHandle(root) {
-    fun update(block: OfficePreviewWrites.() -> Unit) =
-        root.update { OfficePreviewWrites(this).apply(block).applyTo(this) }
+class AttachmentPreviewHandle(root: ChatStateHandle) : DelegateHandle(root) {
+    fun update(block: AttachmentPreviewWrites.() -> Unit) =
+        root.update { AttachmentPreviewWrites(this).apply(block).applyTo(this) }
 }
 
 // ── ContextProjectionDelegate ─────────────────────────────────────────────
@@ -354,16 +422,21 @@ class ChatConfigHandle(root: ChatStateHandle) : DelegateHandle(root) {
 // Owns the message slice wholesale (every Room emission rebuilds messages/displayMessages and
 // the load flags live there too). On the composer it may only put text and quote chips back,
 // and on the conversation slice only the title: identity, temp-chat and navigation stay with
-// the ViewModel's open/reset transactions.
+// the ViewModel's open/reset transactions. Skill chips come back with the text the same way.
 class ConversationLoadWrites internal constructor(state: ChatUiState) {
     var content: MessagesState = state.content
     var inputText: String = state.composer.inputText
     var pendingQuotes: List<String> = state.composer.pendingQuotes
+    var pendingManualSkills: List<String> = state.composer.pendingManualSkills
     var conversationTitle: String? = state.conversation.conversationTitle
     var error: String? = state.error
     internal fun applyTo(s: ChatUiState) = s.copy(
         content = content,
-        composer = s.composer.copy(inputText = inputText, pendingQuotes = pendingQuotes),
+        composer = s.composer.copy(
+            inputText = inputText,
+            pendingQuotes = pendingQuotes,
+            pendingManualSkills = pendingManualSkills,
+        ),
         conversation = s.conversation.copy(conversationTitle = conversationTitle),
         error = error,
     )
@@ -393,6 +466,7 @@ class SendDispatchWrites internal constructor(state: ChatUiState) {
     var content: MessagesState = state.content
     var inputText: String = state.composer.inputText
     var pendingQuotes: List<String> = state.composer.pendingQuotes
+    var pendingManualSkills: List<String> = state.composer.pendingManualSkills
     var pendingUploadRouting: PendingUploadRouting? = state.composer.pendingUploadRouting
     var error: String? = state.error
     internal fun applyTo(s: ChatUiState) = s.copy(
@@ -400,6 +474,7 @@ class SendDispatchWrites internal constructor(state: ChatUiState) {
         composer = s.composer.copy(
             inputText = inputText,
             pendingQuotes = pendingQuotes,
+            pendingManualSkills = pendingManualSkills,
             pendingUploadRouting = pendingUploadRouting,
         ),
         error = error,
@@ -416,30 +491,34 @@ class SendDispatchHandle(root: ChatStateHandle) : DelegateHandle(root) {
 // ── QueueOrchestrationDelegate ────────────────────────────────────────────
 // Writes nothing on the queue slice: every row change goes through MessageQueueDelegate and
 // QueuedTurnDelegate. What it owns is the composer swap a queued edit makes — the text, a staged
-// batch, the edit session — and the five selection fields that swap carries, so `applyComposer`
+// batch, the skill chips, the edit session — and the selection fields that swap carries, so `applyComposer`
 // stays one emission.
 class QueueOrchestrationWrites internal constructor(state: ChatUiState) {
     var inputText: String = state.composer.inputText
     var pendingUploadRouting: PendingUploadRouting? = state.composer.pendingUploadRouting
     var editingQueuedItem: QueuedEditSession? = state.composer.editingQueuedItem
-    var selectedEndpoint: String = state.selection.selectedEndpoint
-    var selectedModel: String? = state.selection.selectedModel
+    var pendingManualSkills: List<String> = state.composer.pendingManualSkills
+    var choice: ModelChoice = state.selection.choice
     var enabledTools: Set<String> = state.selection.enabledTools
     var selectedMcpServerNames: Set<String> = state.selection.selectedMcpServerNames
+    var specTools: SpecTools? = state.selection.specTools
     var modelParameters: ModelParameters = state.selection.modelParameters
+    var skillsToggle: Boolean = state.selection.skillsToggle
     var error: String? = state.error
     internal fun applyTo(s: ChatUiState) = s.copy(
         composer = s.composer.copy(
             inputText = inputText,
             pendingUploadRouting = pendingUploadRouting,
             editingQueuedItem = editingQueuedItem,
+            pendingManualSkills = pendingManualSkills,
         ),
         selection = s.selection.copy(
-            selectedEndpoint = selectedEndpoint,
-            selectedModel = selectedModel,
+            choice = choice,
             enabledTools = enabledTools,
             selectedMcpServerNames = selectedMcpServerNames,
+            specTools = specTools,
             modelParameters = modelParameters,
+            skillsToggle = skillsToggle,
         ),
         error = error,
     )

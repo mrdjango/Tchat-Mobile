@@ -1,8 +1,10 @@
 package com.garfiec.librechat.core.ui.components.topbar
 
 import androidx.compose.runtime.Immutable
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.garfiec.librechat.core.ui.glass.GlassFlare
 
 /**
  * An icon a top bar can draw on either renderer: the Compose [vector], and the SF Symbol the native
@@ -40,10 +42,16 @@ sealed interface BarAction {
         val onClick: () -> Unit,
     ) : BarAction
 
+    /**
+     * A labelled button. Where the label would leave the title too little room (a narrow screen, a
+     * large font, a long translation), the bar draws [compactIcon] instead, with the label as its
+     * content description.
+     */
     @Immutable
     data class Text(
         override val id: String,
         override val label: String,
+        val compactIcon: BarIcon,
         val enabled: Boolean = true,
         val onClick: () -> Unit,
     ) : BarAction
@@ -56,6 +64,13 @@ sealed interface BarAction {
         override val label: String,
         val checked: Boolean,
         val onCheckedChange: (Boolean) -> Unit,
+        /** The icon's colour while checked, in place of the bar's accent (glass and the native bar). */
+        val checkedTint: Color? = null,
+        /**
+         * Reports the button's bounds in root coordinates, for an effect that starts at it. The
+         * Compose bars only: the native iOS bar's buttons have no Compose layout.
+         */
+        val onAnchor: ((Rect) -> Unit)? = null,
     ) : BarAction
 
     /**
@@ -115,6 +130,11 @@ data class BarTitle(
     val alignment: BarTitleAlignment = BarTitleAlignment.LEADING,
     val onClick: (() -> Unit)? = null,
     val rename: BarRename? = null,
+    /**
+     * Lines a plain title may take before it ellipsizes; 1 for a name with no spaces to break at
+     * (a file name). A tappable or chip title always keeps one.
+     */
+    val maxLines: Int = 2,
 )
 
 @Immutable
@@ -122,6 +142,8 @@ data class AdaptiveTopBarSpec(
     val navigation: BarNavigation?,
     val title: BarTitle,
     val actions: List<BarAction> = emptyList(),
+    /** Lights the edge of the simulated glass bar's actions capsule. Ignored by the other renderers. */
+    val actionsFlare: GlassFlare? = null,
 )
 
 /**
@@ -132,4 +154,10 @@ data class AdaptiveTopBarSpec(
 data class MaterialBarStyle(
     /** Unspecified leaves M3's default colours untouched rather than restating them. */
     val containerColor: Color = Color.Unspecified,
+    /**
+     * Draws the bar, its status-bar band and `belowBar` over a fading surface scrim instead of a solid
+     * container, so the list scrolls up under them as the chat thread does. Only worth it when the
+     * body passes the Scaffold's padding to its list as `contentPadding`. Wins over [containerColor].
+     */
+    val translucent: Boolean = false,
 )

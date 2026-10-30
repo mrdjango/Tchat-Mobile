@@ -12,24 +12,30 @@ import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
-import com.garfiec.librechat.feature.auth.oauth.REFRESH_TOKEN_COOKIE
+import com.garfiec.librechat.core.common.identity.cleanServerUrl
+import com.garfiec.librechat.core.model.auth.AuthCookies
+import com.garfiec.librechat.core.network.client.CookieHelper
 import com.garfiec.librechat.feature.auth.oauth.SSO_ANDROID_USER_AGENT
 import com.garfiec.librechat.feature.auth.oauth.SsoNavigationDecision
 import com.garfiec.librechat.feature.auth.oauth.SsoNavigationGate
+import com.garfiec.librechat.feature.auth.oauth.extractAuthCookies
 import com.garfiec.librechat.feature.auth.oauth.extractQueryParameter
 import com.garfiec.librechat.feature.auth.oauth.extractRefreshTokenFromCookies
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
- * `HttpOnly` is load-bearing, not decoration: the server sets `refreshToken` with it, and Chromium
- * refuses to overwrite an HttpOnly cookie from a value that lacks the attribute. Without it this
- * expiry never lands and a previous identity's token survives into the next sign-in.
+ * `HttpOnly` is load-bearing, not decoration: the server sets every auth cookie with it, and
+ * Chromium refuses to overwrite an HttpOnly cookie from a value that lacks the attribute. Without it
+ * this expiry never lands and a previous identity's cookie survives into the next sign-in.
  */
-private fun expiredRefreshTokenCookie(serverUrl: String): String {
+private fun expiredCookie(serverUrl: String, name: String): String {
     val secure = if (serverUrl.startsWith("https://", ignoreCase = true)) "; Secure" else ""
-    return "$REFRESH_TOKEN_COOKIE=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly$secure"
+    return "$name=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly$secure"
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -37,11 +43,12 @@ private fun expiredRefreshTokenCookie(serverUrl: String): String {
 actual fun SsoWebView(
     serverUrl: String,
     provider: String,
-    onTokenCapture: (String) -> Unit,
+    onTokenCapture: (AuthCookies) -> Unit,
     onOAuthError: (String?) -> Unit,
     onCaptureFail: () -> Unit,
     modifier: Modifier,
 ) {
+    val scope = rememberCoroutineScope()
     val currentOnTokenCapture by rememberUpdatedState(onTokenCapture)
     val currentOnOAuthError by rememberUpdatedState(onOAuthError)
     val currentOnCaptureFail by rememberUpdatedState(onCaptureFail)
@@ -72,17 +79,27 @@ actual fun SsoWebView(
                     if (finished) return
                     finished = true
                     view.stopLoading()
-                    val cookies = CookieManager.getInstance()
-                    val token = extractRefreshTokenFromCookies(cookies.getCookie(serverUrl))
-                    // Blank it so the half-rendered redirect target isn't left under the spinner.
-                    view.loadUrl("about:blank")
-                    when {
-                        token != null -> {
-                            cookies.setCookie(serverUrl, expiredRefreshTokenCookie(serverUrl))
-                            currentOnTokenCapture(token)
+                    scope.launch {
+                        val cookies = CookieManager.getInstance()
+                        var captured: AuthCookies? = null
+                        repeat(2) { attempt ->
+                            if (captured == null || (provider == "openid" && captured?.openId == null)) {
+                                if (attempt > 0) delay(150L)
+                                captured = extractAuthCookies(cookies.getCookie(serverUrl))
+                            }
                         }
-                        errorCode != null -> currentOnOAuthError(errorCode)
-                        else -> currentOnCaptureFail()
+                        // The complete bundle is copied before clearing the WebView's auth cookies.
+                        view.loadUrl("about:blank")
+                        when {
+                            captured != null -> {
+                                CookieHelper.authCookieNames.forEach { name ->
+                                    cookies.setCookie(serverUrl, expiredCookie(serverUrl, name))
+                                }
+                                currentOnTokenCapture(checkNotNull(captured))
+                            }
+                            errorCode != null -> currentOnOAuthError(errorCode)
+                            else -> currentOnCaptureFail()
+                        }
                     }
                 }
 
@@ -169,7 +186,7 @@ actual fun SsoWebView(
                 val cookies = CookieManager.getInstance()
                 cookies.setAcceptCookie(true)
                 cookies.setAcceptThirdPartyCookies(this, true)
-                val startUrl = "${serverUrl.trimEnd('/')}/oauth/$provider"
+                val startUrl = "${cleanServerUrl(serverUrl)}/oauth/$provider"
                 // The load is issued from inside the clear's callback, because removeAllCookies is
                 // asynchronous and that ordering is the only thing keeping a stale token from being
                 // read back before the round-trip has even reached the provider.

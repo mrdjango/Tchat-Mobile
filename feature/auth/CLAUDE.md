@@ -2,7 +2,7 @@
 
 ## Screens
 - **ServerUrlScreen** -- first-run server URL entry with validation and QR scan option
-- **LoginScreen** -- email/password + social OAuth buttons + LDAP username mode
+- **LoginScreen** -- email/password + social OAuth buttons
 - **RegisterScreen** -- name, username, email, password, confirm password
 - **ForgotPasswordScreen** -- email entry for password reset link
 - **TwoFactorScreen** -- 6-digit OTP input with backup code fallback
@@ -62,6 +62,19 @@
   consistent with an overridden agent.
 - Supported providers configured by server: Google, GitHub, Discord, Facebook, Apple, OpenID
 
+## Diagnostic log
+- `DiagnosticLogLink` ("Export diagnostic logs", the same label as Settings) offers the log under a
+  sign-in error. Settings → Data has the same export but can't be reached before sign-in.
+- Where: ServerUrl (any error), the SSO error pane, and Login / Register / ForgotPassword /
+  ResetPassword / TwoFactor only when their UiState's `offerDiagnosticLog` is set. That flag follows
+  `Result.Error.offersDiagnosticLog()`: no answer, a page LibreChat didn't write, or a 5xx — not
+  LibreChat judging the input (wrong password, rate limit, ban). Each submit clears it first, so a
+  later local validation error doesn't inherit it. 2FA offers it only on `ConnectionFailure`:
+  `NotEvaluated` mixes 5xx with 400/429 and carries no status.
+- It exports `DiagnosticLogRepository`'s buffer as is (already redacted on write) through
+  `TextFileSaver` in `:core:ui`, with its own ViewModel. The log is kept across sign-out on purpose:
+  an expired session is the case it exists for.
+
 ## Token Storage
 - Tokens stored in `EncryptedSharedPreferences` via `TokenDataStore` in `:core:data`
 - Refresh token sent as Cookie header (backend reads `cookies.parse(req.headers.cookie)`)
@@ -74,8 +87,31 @@
 
 ## Key Implementation Notes
 - If server URL is already stored, skip ServerUrl screen on launch
+- **The URL field accepts a pasted web-UI address and cleans it** (`cleanServerUrl`, `:core:common`):
+  the fragment and query go, so does one trailing LibreChat web route (`/login`, `/c/<id>`,
+  `/share/<id>`, `/search`, `/agents`, … — the web client's route table, registered in
+  `scripts/mirrors.json`), and the cleaned address is written back into the field. Any other path is kept — a subpath deployment is a different server.
+  Both Connect and the http-warning Confirm go through it. Whatever is stored lives in the identity
+  hash and the roster for good, so junk has to go before then; the same function names the root every
+  request resolves under, so a URL stored before this existed still works — see
+  `core/network/CLAUDE.md`.
+- **Connect finds the server before storing anything** (`ConfigRepository.resolveServer`): it probes
+  the cleaned address, and when that has a path, the bare origin second — but only when the path
+  *answered* and wasn't LibreChat (a 4xx, or a body that isn't the config, such as the web app's
+  HTML). An unreachable host, a timeout, TLS, an access gateway or a 5xx stops there: same host,
+  same outcome, and the user needs that error rather than a second wait. Whichever answered is stored
+  (`setServerUrl` then `publishStartupConfig`, or `beginAdd` + `attachPendingConfig` in add mode) and
+  written back into the field, so a subpath deployment stays as typed and a junk page path is
+  dropped silently. Probes run under a `PendingRequestIdentity` per candidate, so a failure stores
+  nothing — the previous URL stays as it was.
+- **When the origin wins, the gateway headers move with it**, before `beginAdd` mints the identity
+  that reads them: the serverId that keys them hashes the stored URL. The entry under the typed
+  address is cleared only if this attempt wrote it; one stored earlier may belong to another
+  account's server.
 - `openidAutoRedirect` from server config triggers automatic redirect instead of showing login form
-- LDAP mode: show "Username" field instead of "Email" (check server config)
+- No LDAP username mode: the login field is always an email field and `LdapConfig.username` is
+  unused. An LDAP server that signs in by username still works (the field accepts any text), but
+  the label and keyboard say "Email".
 
 ### Terms Screen
 - `TermsScreen` + `TermsViewModel` — displays server terms, "I Accept" button
@@ -89,3 +125,37 @@
 - `strings.xml` created for all 8 modules (app, core/ui, feature/auth, chat, conversations, settings, agents, files)
 - Contains key toolbar titles, button labels, section headers — NOT exhaustive extraction
 - Full string extraction is a future pass
+
+## Password managers
+- **Android** fills and saves through the autofill framework. Login email carries
+  `Username + EmailAddress`; Register and Reset password mark `NewUsername`/`NewPassword`; the
+  password fields are recognised from `PasswordVisualTransformation`. Compose ends the autofill
+  session (and the provider may offer to save) when the fields leave the screen. Register calls
+  `LocalAutofillManager.commit()` itself, because it returns to Login, whose fields keep the
+  session open.
+- **iOS** takes its roles from `KeyboardOptions.withIosTextContentType()` (`:core:ui`): `.username`
+  on the email fields, `.newPassword` on Register/Reset, `.oneTimeCode` on the 2FA input.
+- Fields holding other secrets (API keys, gateway tokens, PDF passwords) use
+  `Modifier.excludeFromAutofill()` so a password manager doesn't offer or save the login there.
+- Limits, all outside the app's control:
+  - Saved logins are keyed by the app's package or bundle, not by the server, so a password saved
+    in a browser for the server is not suggested automatically, and the same email on two servers
+    collides.
+  - On a tested Pixel, Google's autofill service returned no save info for the login form, so
+    Google Password Manager never offered to save. Other providers (LastPass) did. Cause unknown.
+  - iOS shows no save prompt and no matching suggestions without associated domains, which a
+    client for arbitrary servers can't declare. Picking a login from the keyboard's key icon works.
+- Credential Manager's `createCredential()` is deliberately not used on sign-in: it reaches only
+  Credential Manager providers, so it would send a LastPass user's login to Google.
+
+## OpenID reuse capture
+
+Both SSO WebViews hand off `AuthCookies`, not a refresh-token string. Capture the refresh token,
+`token_provider`, and `openid_user_id` from one cookie snapshot. A reuse capture missing its user
+marker fails capture rather than falling through to LibreChat JWT authentication. Bounded second
+reads allow the native cookie store to catch up; preserve the single-completion latch and composition
+scope cancellation. iOS also filters domain, path, Secure and expiry before choosing cookies.
+
+The ViewModel passes the bundle directly to the repository; credentials never enter navigation or
+saved UI state. Normal sessions carry no OpenID marker. Existing reuse sessions whose marker was
+never captured need a new sign-in; the refresh token cannot recreate that server-issued marker.

@@ -107,8 +107,8 @@ jobs:
           echo "CFBundleVersion suffix for this upload: .$IOS_BUILD_NUMBER_SUFFIX"
           xcodebuild archive \
             -project iosApp/iosApp.xcodeproj \
-            -scheme iosApp \
-            -configuration Release \
+            -scheme "iosApp AppStore" \
+            -configuration Release-AppStore \
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/iosApp.xcarchive" \
             -allowProvisioningUpdates \
@@ -118,6 +118,32 @@ jobs:
             CODE_SIGN_STYLE=Automatic \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             ONLY_ACTIVE_ARCH=NO
+
+      # Release-AppStore is what turns the GitHub release notes off and the store defaults on. An
+      # archive from the plain Release configuration would upload the open-source build to Apple.
+      - name: Verify the archive is the App Store channel
+        run: |
+          set -euo pipefail
+          plist="$RUNNER_TEMP/iosApp.xcarchive/Products/Applications/iosApp.app/Info.plist"
+          # `|| true`: a missing key must reach the annotation below, not abort under `set -e`.
+          got="$(/usr/libexec/PlistBuddy -c 'Print :SwitchboardChannel' "$plist" 2>/dev/null || true)"
+          if [ "$got" != "appstore" ]; then
+            echo "::error title=Wrong distribution channel::expected appstore, got ${got:-<missing>}"
+            exit 1
+          fi
+          echo "Archive declares the App Store channel."
+
+      # Before the upload, so a missing dSYM fails the run while nothing has reached App Store Connect.
+      # Named per attempt so a re-run of a failed upload doesn't collide with the first attempt's
+      # artifact. After 90 days, App Store Connect's copy (TestFlight → build → Build Metadata) is the
+      # only one.
+      - name: Keep the dSYMs
+        uses: actions/upload-artifact@v7
+        with:
+          name: dSYMs-${{ inputs.tag }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/iosApp.xcarchive/dSYMs/
+          if-no-files-found: error
+          retention-days: 90
 
       # destination=upload pushes the build to App Store Connect during export — no
       # deprecated altool, no Transporter, no fastlane. manageAppVersionAndBuildNumber=false

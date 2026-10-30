@@ -167,7 +167,7 @@ private fun tchatDarkScheme(accent: AccentRoles, inversePrimary: Color): ColorSc
 )
 
 /** The status colours M3 has no role for (design tokens `success*` / `warning*`). */
-data class StatusColors(
+data class TchatStatusColors(
     val success: Color,
     val successContainer: Color,
     val onSuccessContainer: Color,
@@ -176,7 +176,7 @@ data class StatusColors(
     val onWarningContainer: Color,
 )
 
-internal val LightStatusColors = StatusColors(
+internal val LightStatusColors = TchatStatusColors(
     success = Color(0xFF00785F),
     successContainer = Color(0xFFDCF4EC),
     onSuccessContainer = Color(0xFF00513F),
@@ -185,7 +185,7 @@ internal val LightStatusColors = StatusColors(
     onWarningContainer = Color(0xFF6B3F00),
 )
 
-internal val DarkStatusColors = StatusColors(
+internal val DarkStatusColors = TchatStatusColors(
     success = Color(0xFF3CCFA4),
     successContainer = Color(0xFF0C3127),
     onSuccessContainer = Color(0xFFA6ECD5),

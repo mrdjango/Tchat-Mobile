@@ -10,6 +10,7 @@
     <string name="action_insert">삽입</string>
     <string name="action_open">열기</string>
     <string name="action_share">공유</string>
+    <string name="action_share_link_active">공유 · 링크 활성</string>
     <string name="action_search">검색</string>
     <string name="action_archive">보관</string>
     <string name="action_duplicate">복제</string>
@@ -19,7 +20,17 @@
     <string name="new_chat">새 채팅</string>
     <string name="load_preset">프리셋 불러오기</string>
     <string name="save_as_preset">프리셋으로 저장</string>
-    <string name="save_and_submit">저장 &amp; 제출</string>
+    <string name="saving">저장 중…</string>
+    <string name="rerun">다시 실행</string>
+    <string name="update_and_rerun">업데이트 후 다시 실행</string>
+    <string name="edit_part_response">응답</string>
+    <string name="edit_part_thoughts">추론</string>
+    <string name="edit_status_part_empty">메시지의 일부를 비워 둘 수 없습니다.</string>
+    <string name="edit_status_save_before_rerun">다시 실행하기 전에 변경 내용을 저장하세요.</string>
+    <string name="edit_status_unsaved_changes">저장하지 않은 변경 내용이 있습니다.</string>
+    <string name="edit_status_rerun_discards_changes">다시 실행하면 이 응답이 새로 생성되고 변경 내용은 사라집니다.</string>
+    <string name="edit_status_rerun_needs_user_turn">다시 실행하려면 재전송할 사용자 메시지가 필요합니다.</string>
+    <string name="notice_message_save_failed">편집 내용을 저장할 수 없습니다.</string>
     <string name="preset_name_label">프리셋 이름</string>
     <string name="code">코드</string>
     <string name="preview">미리보기</string>
@@ -29,7 +40,24 @@
     <!-- Neutral label for the active agent when its name hasn't resolved yet (never a model string). -->
     <string name="chat_agent_fallback_label">에이전트</string>
     <string name="compare_models">모델 비교</string>
+    <string name="compare_with">비교 대상</string>
+    <string name="compare_start">시작</string>
+    <string name="compare_setup_hint">모든 메시지가 두 모델에 전송됩니다. A 또는 B를 탭해 모델을 선택하세요.</string>
+    <string name="compare_same_model">같은 모델, 두 번째 답변</string>
+    <string name="compare_pick_below">아래에서 선택</string>
+    <string name="compare_message_both">두 모델에 메시지 보내기</string>
+    <string name="compare_pick_to_send">보내려면 모델 B를 선택하세요</string>
+    <string name="compare_not_picked">아직 선택 안 됨</string>
+    <string name="compare_empty_lane">메시지를 보내면 여기에 답변이 표시됩니다.</string>
+    <string name="compare_empty_pick_right">오른쪽에서 비교할 모델을 선택하세요.</string>
+    <string name="compare_empty_ready">시작을 탭한 다음 메시지를 보내세요. 두 모델이 나란히 답변합니다.</string>
+    <string name="compare_browse_all">모든 모델 보기</string>
+    <string name="compare_pick_second_model">두 번째 모델 선택</string>
+    <string name="cd_change_compared_models">비교 중인 모델 변경</string>
+    <string name="compare_lane_a">A</string>
+    <string name="compare_lane_b">B</string>
     <string name="how_can_i_help">오늘 무엇을 도와드릴까요?</string>
+    <string name="chat_in_project">%1$s에서</string>
     <string name="recording">녹음 중…</string>
     <string name="hint_message_model">%1$s에게 메시지</string>
     <string name="hint_message">메시지…</string>
@@ -61,6 +89,9 @@
     <string name="cd_more_options">추가 옵션</string>
     <string name="cd_scroll_to_bottom">맨 아래로 스크롤</string>
     <string name="cd_select_model">모델 선택</string>
+    <string name="cd_starter_send">보내기</string>
+    <string name="cd_starter_edit">보내기 전에 편집</string>
+    <string name="starters_try_asking">이렇게 물어보세요</string>
     <string name="cd_librechat">Switchboard</string>
     <string name="cd_comparison_enabled">비교 사용</string>
 
@@ -100,7 +131,6 @@
     <string name="cd_code_execution_result">코드 실행 결과</string>
     <string name="cd_exit_code_success">종료 코드 0 (성공)</string>
     <string name="cd_exit_code_failure">종료 코드 %1$d (실패)</string>
-    <string name="exit_code">종료 %1$d</string>
     <string name="label_code">코드</string>
     <string name="label_output">출력:</string>
     <string name="label_error">오류:</string>
@@ -179,8 +209,6 @@
     <string name="trace_error_unsupported">이 서버의 트레이싱 서비스는 트레이스를 반환할 수 없습니다.</string>
 
     <!-- Office-doc preview attachments (deferred preview, v0.8.6+) -->
-    <string name="office_preview_preparing">%1$s 미리보기 준비 중…</string>
-    <string name="office_preview_failed">%1$s을(를) 미리볼 수 없습니다 (%2$s)</string>
     <string name="office_preview_unavailable">%1$s — 미리보기를 사용할 수 없습니다</string>
 
     <!-- Content descriptions - Tool calls -->
@@ -200,8 +228,15 @@
     <string name="tool_model">모델</string>
     <string name="tool_model_parameters">모델 매개변수</string>
     <string name="tool_model_parameters_desc">온도, 토큰 등 조정</string>
+    <string name="param_set_by_spec">이 모델의 설정은 서버에서 정하므로 여기서 변경할 수 없습니다.</string>
+    <string name="tool_set_by_spec">이 모델에 대해 서버에서 켜 두었습니다</string>
     <string name="tool_web_search">웹 검색</string>
     <string name="tool_web_search_desc">웹에서 정보 검색</string>
+    <string name="web_search_librechat">LibreChat 검색</string>
+    <string name="web_search_checking">LibreChat 검색 확인 중…</string>
+    <string name="web_search_built_in">%1$s 기본 제공 검색</string>
+    <string name="web_search_built_in_plain">기본 제공 검색</string>
+    <string name="web_search_set_by_spec">%1$s, 이 모델에 대해 서버에서 켜 두었습니다</string>
     <string name="web_searched">웹을 검색함</string>
     <string name="tool_url_context">URL 컨텍스트</string>
     <string name="tool_url_context_desc">참조한 URL과 YouTube를 모델이 읽도록 허용</string>
@@ -254,8 +289,11 @@
     <string name="audio_decode_failed">오디오를 디코딩하지 못했습니다</string>
 
     <!-- Citation -->
-    <string name="citation_number">인용 %1$d</string>
-    <string name="cd_open_citation_url">인용 URL 열기</string>
+    <string name="citation_sources_title">출처</string>
+    <string name="cd_citation">출처: %1$s</string>
+    <plurals name="cd_citation_more">
+        <item quantity="other">출처: %1$s 외 %2$d개</item>
+    </plurals>
 
     <!-- Fork options -->
     <string name="fork_conversation">대화 분기</string>
@@ -286,18 +324,24 @@
     <string name="cd_mcp_resource">MCP 리소스: %1$s</string>
 
     <!-- Memory artifact -->
-    <string name="cd_memory_artifact">메모리 아티팩트: %1$s</string>
-    <string name="memory_artifact_untitled">제목 없음</string>
     <string name="label_memory">메모리</string>
-    <string name="cd_memory_artifacts">메모리 업데이트: %1$d</string>
+    <string name="memory_manage">관리</string>
+    <string name="cd_memory_manage">메모리 관리</string>
+    <plurals name="cd_memory_artifacts_summary">
+        <item quantity="other">%1$s, 변경 %2$s건</item>
+    </plurals>
     <string name="memory_updated">저장된 메모리 업데이트됨</string>
     <string name="memory_error">메모리 오류</string>
     <string name="memory_updated_items">업데이트된 메모리</string>
     <string name="memory_deleted_items">삭제된 메모리</string>
     <string name="memory_deleted">메모리 삭제됨</string>
     <string name="memory_storage_full">메모리 저장 공간 가득 참</string>
-    <string name="memory_already_exceeded">메모리 저장 공간이 이미 가득 찼습니다 — %1$d 토큰 초과. 새 메모리를 추가하기 전에 기존 메모리를 삭제하세요.</string>
-    <string name="memory_would_exceed">저장할 수 없습니다 — 한도를 %1$d 토큰 초과합니다. 공간을 확보하려면 기존 메모리를 삭제하세요.</string>
+    <plurals name="memory_already_exceeded">
+        <item quantity="other">메모리 저장 공간이 이미 가득 찼습니다 — %1$s 토큰 초과. 새 메모리를 추가하기 전에 기존 메모리를 삭제하세요.</item>
+    </plurals>
+    <plurals name="memory_would_exceed">
+        <item quantity="other">저장할 수 없습니다 — 한도를 %1$s 토큰 초과합니다. 공간을 확보하려면 기존 메모리를 삭제하세요.</item>
+    </plurals>
     <string name="files_searched">파일을 검색함</string>
     <string name="cd_file_search_source">파일 검색 출처: %1$s</string>
     <string name="file_search_relevance">%1$d%%</string>
@@ -318,10 +362,7 @@
     <!-- Message files -->
     <string name="file_fallback">파일</string>
     <string name="attachment_fallback">첨부 파일</string>
-    <string name="pdf_document">PDF 문서</string>
     <string name="pdf_load_failed">PDF를 불러오지 못했습니다</string>
-    <string name="cd_share_pdf">PDF 공유</string>
-    <string name="cd_open_pdf">PDF 열기</string>
     <string name="retry">다시 시도</string>
     <string name="messages_unavailable_title">메시지를 사용할 수 없음</string>
     <string name="messages_unavailable_body">이 대화를 불러올 수 없으며 이 기기에 저장된 오프라인 사본이 없습니다.</string>
@@ -333,8 +374,12 @@
     <string name="cd_unpin_favorite">즐겨찾기 고정 해제</string>
     <string name="cd_collapse_section">%1$s 접기</string>
     <string name="cd_expand_section">%1$s 펼치기</string>
-    <string name="set_api_key_action">API 키 설정</string>
-    <string name="cd_set_api_key">%1$s의 API 키 구성</string>
+    <string name="set_api_key_action">키 추가</string>
+    <string name="cd_set_api_key">%1$s 키 추가</string>
+    <!-- Under an endpoint or spec name in the model picker when its key is missing. -->
+    <string name="model_selector_needs_key">키가 필요합니다</string>
+    <!-- Same place, in the minute before the server deletes an expired key. -->
+    <string name="model_selector_key_expired">키 만료됨</string>
 
     <!-- Preset picker -->
     <string name="select_preset">프리셋 선택</string>
@@ -446,22 +491,31 @@
     <string name="dialog_title_fill_variables">변수 입력</string>
 
     <!-- Comparison mode -->
-    <string name="continue_with_response">이 응답으로 계속하기</string>
-    <string name="waiting_for_response">응답 대기 중…</string>
+    <string name="keep_this_answer">이 답변 유지</string>
+    <string name="reply_stopped">중지됨</string>
+    <string name="action_continue_reply">계속하기</string>
+    <string name="action_keep_and_continue">유지하고 계속하기</string>
 
     <!-- Provider Keys chat-time errors. -->
     <string name="provider_keys_chat_error_no_key">키를 찾을 수 없습니다. 키를 입력한 후 다시 시도하세요.</string>
-    <!-- {0} = endpoint name, {1} = expiredAt (server-locale string, NOT ISO) -->
+    <!-- {0} = endpoint name, {1} = expiry date and time, already formatted in the user's locale -->
     <string name="provider_keys_chat_error_expired">%1$s에 제공된 키가 %2$s에 만료되었습니다. 새 키를 입력한 후 다시 시도하세요.</string>
     <string name="provider_keys_chat_error_invalid">유효하지 않은 키입니다. 유효한 키를 입력한 후 다시 시도하세요.</string>
-    <!-- Snackbar action label that deep-links to Settings → Provider Keys -->
-    <string name="provider_keys_chat_error_cta">키 설정 열기</string>
+    <string name="provider_keys_chat_error_no_key_for">%1$s의 키를 찾을 수 없습니다. 키를 입력한 후 다시 시도하세요.</string>
+    <string name="provider_keys_chat_error_invalid_for">%1$s의 키가 유효하지 않습니다. 유효한 키를 입력한 후 다시 시도하세요.</string>
+    <string name="provider_keys_chat_error_expired_no_label">제공된 키가 %1$s에 만료되었습니다. 새 키를 입력한 후 다시 시도하세요.</string>
+    <string name="provider_keys_chat_error_no_base_url">기본 URL을 찾을 수 없습니다. URL을 입력한 후 다시 시도하세요.</string>
+    <string name="provider_keys_chat_error_no_base_url_for">%1$s의 기본 URL을 찾을 수 없습니다. URL을 입력한 후 다시 시도하세요.</string>
+    <string name="provider_keys_chat_error_invalid_base_url">입력한 기본 URL이 제한된 주소를 가리킵니다. 유효한 외부 URL을 사용하여 다시 시도하세요.</string>
+    <string name="provider_keys_chat_error_invalid_base_url_for">%1$s에 입력한 기본 URL이 제한된 주소를 가리킵니다. 유효한 외부 URL을 사용하여 다시 시도하세요.</string>
     <string name="queued_messages_dropped_account_switch">계정 전환으로 대기 중인 메시지가 삭제되었습니다</string>
 
     <!-- Send block reasons (shown in error snackbar when send can't proceed) -->
     <string name="send_block_select_agent">메시지를 보내기 전에 에이전트를 선택하세요.</string>
     <string name="send_block_select_model">메시지를 보내기 전에 모델을 선택하세요.</string>
+    <string name="send_block_select_second_model">보내기 전에 목록에서 모델 B를 선택하세요.</string>
     <string name="send_block_agents_unavailable">이 서버에서는 에이전트를 사용할 수 없습니다. 다른 모델을 선택하세요.</string>
+    <string name="send_block_api_key_required">메시지를 보내려면 %1$s의 API 키를 추가하세요.</string>
     <string name="send_block_agent_not_available">선택한 에이전트를 이 서버에서 사용할 수 없습니다. 다른 에이전트를 선택하세요.</string>
     <string name="send_block_model_not_available">선택한 모델을 이 서버에서 사용할 수 없습니다. 다른 모델을 선택하세요.</string>
     <string name="send_block_model_load_failed">선택한 모델을 아직 불러올 수 없습니다. 다시 시도하거나 다른 모델을 선택하세요.</string>
@@ -544,6 +598,9 @@
     <string name="error_auth_banned">이 계정 또는 네트워크는 로그인이 차단되었습니다. 관리자에게 문의하세요.</string>
     <string name="error_auth_cross_origin">서버가 다른 사이트에서 온 로그인으로 판단하여 거부했습니다. 비밀번호 문제가 아닌 앱 버그이니 신고해 주세요.</string>
     <string name="error_share_limit">공유 링크 요청이 너무 많습니다. 잠시 후 다시 시도하세요.</string>
+    <string name="error_message_limit">이 서버의 메시지 한도에 도달했습니다. 잠시 기다린 후 다시 시도하세요.</string>
+    <string name="error_ban">이 계정은 이 서버에서 일시적으로 제한되었습니다. 나중에 다시 시도하거나 서버 관리자에게 문의하세요.</string>
+    <string name="error_convo_access">이 대화는 다른 계정의 대화이므로 여기에서 이어갈 수 없습니다.</string>
     <string name="ask_user_question_record_asked">질문함</string>
     <string name="ask_user_question_record_asking">질문 중</string>
     <string name="ask_user_question_record_answer_label">내 답변:</string>
@@ -557,6 +614,21 @@
     <string name="cd_collapse_ask_user_question">질문 세부정보 접기</string>
     <string name="tool_memory">메모리</string>
     <string name="tool_memory_desc">어시스턴트가 이 채팅의 세부 정보를 기억하도록 허용</string>
+    <string name="tool_skills">스킬</string>
+    <string name="tool_skills_desc">이 채팅에서 어시스턴트가 내 스킬을 사용하도록 허용</string>
+    <string name="cd_skills_enabled">스킬 사용</string>
+    <string name="picker_type_prompt">프롬프트</string>
+    <string name="picker_type_skill">스킬</string>
+    <string name="picker_no_matches">일치하는 항목 없음</string>
+    <string name="picker_loading_skills">스킬 불러오는 중…</string>
+    <string name="picker_skills_failed">스킬을 불러올 수 없습니다</string>
+    <string name="cd_pending_skills">다음 메시지에 사용할 스킬</string>
+    <string name="cd_remove_skill">스킬 %1$s 제거</string>
+    <string name="cd_skill_always_applied">항상 적용되는 스킬: %1$s</string>
+    <string name="cd_skill_used">사용한 스킬: %1$s</string>
+    <string name="skill_call_running">%1$s 실행 중</string>
+    <string name="skill_call_finished">%1$s 실행함</string>
+    <string name="skill_call_fallback_name">스킬</string>
     <string name="cd_steer_message">이 응답의 방향 조정</string>
     <string name="cd_cancel_steer">방향 조정 취소</string>
     <string name="cd_during_run_options">지금 보낼 때의 동작 선택</string>
@@ -564,6 +636,8 @@
     <string name="during_run_queue">대기열에 추가</string>
     <string name="during_run_always_steer">생성 중에는 항상 방향 조정</string>
     <string name="during_run_always_queue">생성 중에는 항상 대기열에 추가</string>
+    <string name="steer_pending_hint">다음 도구 단계에서 응답에 반영됩니다. 응답이 먼저 끝나면 그 뒤에 전송됩니다.</string>
+    <string name="steer_queued_as_follow_up">메시지를 이 응답에 반영하지 못해 응답 뒤에 보내도록 대기열에 추가했습니다.</string>
     <string name="system_event_label">시스템</string>
     <string name="wakeup_explainer">이 지속 결과가 에이전트를 깨워 대화를 이어가게 했습니다.</string>
     <string name="wakeup_subagent_completed">서브에이전트 작업 완료됨</string>
@@ -636,21 +710,173 @@
     <string name="compact_confirm_not_now">나중에</string>
     <string name="compact_confirm_action">압축</string>
     <string name="cd_temporary_chat">임시 채팅</string>
+    <string name="temporary_chat_title">임시 채팅</string>
+    <string name="temporary_chat_subtitle">이 대화는 기록에 저장되지 않습니다</string>
     <string name="notice_rename_failed">대화 이름을 변경하지 못했습니다</string>
     <string name="notice_delete_failed">대화를 삭제하지 못했습니다</string>
     <string name="notice_archive_failed">대화를 보관하지 못했습니다</string>
     <string name="notice_duplicate_failed">대화를 복제하지 못했습니다</string>
-    <string name="notice_share_link_failed">공유 링크를 만들지 못했습니다</string>
     <string name="notice_preset_save_failed">프리셋을 저장하지 못했습니다</string>
     <string name="notice_preset_delete_failed">프리셋을 삭제하지 못했습니다</string>
     <string name="notice_preset_update_failed">프리셋을 업데이트하지 못했습니다</string>
     <string name="notice_continue_response_failed">선택한 응답으로 계속하지 못했습니다</string>
     <string name="notice_favorites_limit">즐겨찾기는 최대 %1$d개까지 고정할 수 있습니다.</string>
     <string name="notice_favorites_update_failed">즐겨찾기를 업데이트하지 못했습니다.</string>
+    <string name="notice_bookmark_update_failed">북마크를 업데이트하지 못했습니다. 다시 시도하세요.</string>
+    <string name="notice_bookmark_create_failed">북마크를 만들지 못했습니다. 다시 시도하세요.</string>
+    <string name="notice_bookmarks_load_failed">이 채팅의 북마크를 불러오지 못했습니다</string>
     <string name="notice_upload_failed">%1$s을(를) 업로드하지 못했습니다: %2$s</string>
     <string name="notice_upload_failed_unknown">%1$s을(를) 업로드하지 못했습니다: 알 수 없는 오류</string>
     <string name="notice_upload_unreadable">%1$s을(를) 업로드하지 못했습니다: 파일을 읽을 수 없습니다</string>
     <string name="notice_upload_too_large">%1$s이(가) 서버 제한인 %2$s보다 큽니다.</string>
     <string name="notice_speech_permission_denied">음성 인식 권한이 거부되었습니다</string>
     <string name="notice_speech_unavailable">음성 인식을 사용할 수 없습니다. 설정 &gt; 개인정보 보호 &gt; 음성 인식을 확인하세요.</string>
+    <string name="notice_send_refused">서버가 이 메시지를 거부했습니다.</string>
+    <string name="notice_skills_not_sent">일부 스킬은 이 채팅에서 사용할 수 없어 전송되지 않았습니다.</string>
+    <string name="notice_skills_removed_from_queued">일부 스킬은 이 채팅에서 사용할 수 없어 대기 중인 메시지에서 제거되었습니다.</string>
+    <plurals name="notice_message_limit_retry_minutes">
+        <item quantity="other">이 서버의 메시지 한도에 도달했습니다. %1$d분 후에 다시 시도하세요.</item>
+    </plurals>
+    <plurals name="notice_message_limit_retry_hours">
+        <item quantity="other">이 서버의 메시지 한도에 도달했습니다. %1$d시간 후에 다시 시도하세요.</item>
+    </plurals>
+    <plurals name="notice_message_limit_retry_days">
+        <item quantity="other">이 서버의 메시지 한도에 도달했습니다. %1$d일 후에 다시 시도하세요.</item>
+    </plurals>
+    <string name="queue_held_after_refusal">서버가 메시지를 거부했습니다. 메시지는 대기열에서 기다리며 자동으로 전송되지 않습니다. 준비되면 “대기 중인 메시지 보내기”를 탭하세요.</string>
+    <string name="jump_message_not_found">이 메시지는 더 이상 이 채팅에 없습니다.</string>
+    <string name="jump_branch_switched">이 메시지가 있는 분기인 응답 %1$d/%2$d(으)로 전환했습니다.</string>
+    <string name="load_image_from_host">%1$s에서 이미지 불러오기</string>
+    <string name="workspace_changes">작업 공간 변경 사항</string>
+    <plurals name="n_files_changed">
+        <item quantity="other">파일 %1$d개 변경됨</item>
+    </plurals>
+    <string name="file_created">새 파일</string>
+    <string name="file_updated">편집됨</string>
+    <string name="show_all_n">%1$d개 모두 보기</string>
+    <string name="cd_download_file">%1$s 다운로드</string>
+    <string name="cd_open_file">%1$s 열기</string>
+    <string name="preview_preparing">미리보기 준비 중…</string>
+    <string name="preview_failed_download">미리보기를 사용할 수 없음 · 다운로드하여 보기</string>
+    <plurals name="text_n_lines">
+        <item quantity="other">%1$d줄</item>
+    </plurals>
+    <string name="sandbox_starting">샌드박스 환경 시작 중</string>
+    <string name="analyzing">분석 중</string>
+    <string name="analyzing_finished">분석 완료</string>
+    <plurals name="show_all_n_lines">
+        <item quantity="other">%1$d줄 모두 보기</item>
+    </plurals>
+    <string name="cd_copy_output">출력 복사</string>
+    <string name="expired">만료됨</string>
+    <string name="expired_explainer">코드 샌드박스의 파일은 24시간 동안 보관됩니다. 이 파일은 만료되어 더 이상 다운로드할 수 없습니다.</string>
+    <string name="file_download_failed">%1$s을(를) 다운로드할 수 없습니다</string>
+    <plurals name="files_count_summary">
+        <item quantity="other">파일 %1$d개</item>
+    </plurals>
+    <plurals name="plus_n_more">
+        <item quantity="other">외 %1$d개</item>
+    </plurals>
+    <string name="greeting_late_night">늦은 밤이네요</string>
+    <string name="greeting_early_morning">이른 아침이네요</string>
+    <string name="greeting_morning">좋은 아침입니다</string>
+    <string name="greeting_afternoon">좋은 오후입니다</string>
+    <string name="greeting_evening">좋은 저녁입니다</string>
+    <string name="greeting_weekend_morning">즐거운 주말 아침이에요</string>
+    <string name="greeting_weekend_afternoon">즐거운 주말 오후예요</string>
+    <string name="greeting_weekend_evening">즐거운 주말 저녁이에요</string>
+    <string name="diagram_error_prefix">다이어그램 오류:</string>
+    <string name="stt_mic_permission_required">음성 입력에는 마이크 권한이 필요합니다</string>
+    <string name="stt_speak_now">지금 말하세요…</string>
+    <string name="stt_recognition_unavailable">이 기기에서는 음성 인식을 사용할 수 없습니다</string>
+    <string name="artifact_preview_failed">미리보기를 불러오지 못했습니다</string>
+    <string name="cd_mcp_server_enabled">MCP 서버 %1$s 사용 중</string>
+    <string name="cd_code_block">코드 블록</string>
+    <string name="cd_code_block_language">%1$s 코드 블록</string>
+    <string name="log_output_title">로그 출력</string>
+    <string name="cd_attached_image">첨부된 이미지</string>
+    <string name="model_selector_search">모델 검색…</string>
+    <string name="model_selector_my_agents">내 에이전트</string>
+    <string name="model_selector_spec_only_note">이 서버에서는 위에 표시된 옵션만 사용할 수 있습니다.</string>
+    <string name="agent_handoff_to">에이전트 %1$s</string>
+    <string name="agent_handoff_run">실행: %1$s</string>
+    <string name="sibling_position">응답 %1$d/%2$d</string>
+    <string name="cd_assistant_responding">어시스턴트 응답 중: %1$s</string>
+    <string name="tool_call_fallback">도구 호출</string>
+    <string name="prompt_filter_title">필터 및 정렬</string>
+    <string name="prompt_sort_recent">최근</string>
+    <string name="prompt_sort_popular">인기</string>
+    <string name="prompt_sort_alphabetical">이름순</string>
+    <string name="prompt_editor_create_title">프롬프트 만들기</string>
+    <string name="prompt_editor_edit_title">프롬프트 편집</string>
+    <string name="prompt_command_placeholder">my-command</string>
+    <string name="prompt_variables_hint">{{variable_name}}을(를) 사용해 변수를 추가하세요</string>
+    <string name="prompt_editor_create">만들기</string>
+    <string name="prompts_load_failed">프롬프트를 불러오지 못했습니다</string>
+    <string name="prompts_empty_category">이 카테고리에 프롬프트가 없습니다</string>
+    <string name="prompts_empty">아직 프롬프트가 없습니다</string>
+    <string name="prompts_empty_category_hint">다른 카테고리를 선택하거나 필터를 지우세요</string>
+    <string name="prompts_empty_hint">+를 눌러 만드세요</string>
+    <string name="prompt_shared">공유됨</string>
+    <string name="prompt_private">비공개</string>
+    <string name="prompt_permission_view_only">보기만 가능</string>
+    <string name="prompt_permission_can_edit">편집 가능</string>
+    <string name="prompt_preview_placeholder">변수 값을 입력하면 미리보기가 표시됩니다</string>
+    <string name="cd_sync_scroll_on">창이 함께 스크롤됩니다. 연결 해제</string>
+    <string name="cd_sync_scroll_off">창이 따로 스크롤됩니다. 연결</string>
+    <!-- Shared chat viewer -->
+    <string name="shared_chat_title_fallback">공유된 채팅</string>
+    <string name="shared_chat_subtitle">공유된 채팅 · %1$s</string>
+    <string name="shared_chat_continue">이 채팅 계속하기</string>
+    <string name="shared_chat_open_in_browser">브라우저에서 열기</string>
+    <string name="shared_chat_langfuse">Langfuse에서 세션 보기</string>
+    <string name="shared_chat_link_updated">이 링크가 업데이트되었습니다. 최신 버전을 표시합니다.</string>
+    <string name="shared_chat_continue_rate_limited">채팅 계속하기 요청이 너무 많습니다. 나중에 다시 시도하세요.</string>
+    <string name="shared_chat_continue_failed">이 채팅을 계속할 수 없습니다</string>
+    <string name="shared_chat_continue_unsupported">이 서버에서는 공유된 채팅을 계속할 수 없습니다</string>
+    <string name="shared_chat_refresh_failed">이 공유된 채팅을 새로 고칠 수 없습니다</string>
+    <string name="shared_chat_continue_blocked">서버에서 이 채팅의 복사를 차단했습니다</string>
+    <string name="shared_chat_continue_blocked_reason">서버에서 이 채팅의 복사를 차단했습니다: %1$s</string>
+    <string name="shared_chat_not_found">공유 링크를 찾을 수 없습니다</string>
+    <string name="shared_chat_not_found_description">삭제되었거나 링크가 잘못되었을 수 있습니다.</string>
+    <string name="shared_chat_no_access">이 공유된 채팅을 열 수 없습니다</string>
+    <string name="shared_chat_no_access_description">이 계정과 공유되지 않았습니다.</string>
+    <string name="shared_chat_rate_limited">공유 링크 요청이 너무 많습니다</string>
+    <string name="shared_chat_rate_limited_description">잠시 후 다시 시도하세요.</string>
+    <string name="shared_chat_blocked">서버에서 이 공유된 채팅을 차단했습니다</string>
+    <string name="shared_chat_load_failed">이 공유된 채팅을 불러올 수 없습니다</string>
+    <string name="shared_chat_user">사용자</string>
+    <string name="shared_chat_file_failed">이 파일을 열 수 없습니다</string>
+
+    <!-- Web and file search sources -->
+    <string name="web_searching">웹 검색 진행 중</string>
+    <string name="web_searching_again">웹 검색 다시 진행</string>
+    <string name="web_search_processing">결과 처리 중</string>
+    <string name="web_search_reading">결과 읽기 중</string>
+    <string name="web_search_details">검색 세부 정보</string>
+    <string name="web_search_query">검색어</string>
+    <string name="web_search_images">이미지 결과</string>
+    <string name="web_search_shopping">쇼핑 결과</string>
+    <string name="web_search_places">장소</string>
+    <string name="files_searching">파일 검색 중</string>
+    <string name="searching_web_and_files">웹과 파일 검색 중</string>
+    <string name="searched_web_and_files">웹과 파일 검색 완료</string>
+    <string name="search_cancelled">취소됨</string>
+    <string name="sources_tab_all">전체</string>
+    <string name="sources_tab_news">뉴스</string>
+    <string name="sources_tab_images">이미지</string>
+    <string name="sources_tab_files">파일</string>
+    <string name="sources_agent_files">에이전트 파일</string>
+    <string name="sources_agent_file">소스 문서</string>
+    <string name="web_search_load_images">이미지 불러오기</string>
+    <string name="cd_open_cited_file">%1$s 열기</string>
+    <plurals name="web_search_sources">
+        <item quantity="other">출처 %1$d개</item>
+    </plurals>
+    <plurals name="sources_more">
+        <item quantity="other">+%1$d개 소스</item>
+    </plurals>
+    <plurals name="files_more">
+        <item quantity="other">파일 +%1$d개</item>
+    </plurals>
 </resources>

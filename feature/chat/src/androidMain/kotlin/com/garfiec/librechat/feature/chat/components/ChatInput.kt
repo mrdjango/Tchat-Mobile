@@ -43,7 +43,9 @@ import com.garfiec.librechat.core.data.datastore.DuringRunAction
 import com.garfiec.librechat.core.ui.components.pressBounce
 import com.garfiec.librechat.core.ui.components.rememberPressBounce
 import com.garfiec.librechat.core.ui.theme.isLiquidGlass
+import com.garfiec.librechat.feature.chat.model.ComposerPickerItem
 import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
+import com.garfiec.librechat.feature.chat.model.PickerSkill
 import com.garfiec.librechat.feature.chat.model.PromptMentionDisplayData
 import com.garfiec.librechat.feature.chat.resources.*
 import com.garfiec.librechat.feature.chat.resources.Res
@@ -79,14 +81,20 @@ fun ChatInput(
     onCancelSteer: (steerId: String) -> Unit = {},
     pendingQuotes: List<String> = emptyList(),
     onRemoveQuote: (index: Int) -> Unit = {},
+    pendingManualSkills: List<String> = emptyList(),
+    onRemoveManualSkill: (name: String) -> Unit = {},
     onSetDuringRunAction: (DuringRunAction) -> Unit = {},
     queuedPausedCount: Int = 0,
+    queueHeldForRefusal: Boolean = false,
+    isTemporaryChat: Boolean = false,
     onSendQueuedMessages: () -> Unit = {},
     isEditingQueued: Boolean = false,
     onCommitEdit: () -> Unit = {},
     onCancelEdit: () -> Unit = {},
     isAwaitingUploadSend: Boolean = false,
     arePicksUnsettled: Boolean = false,
+    comparison: ComposerComparison? = null,
+    comparisonHint: ComposerComparisonHint = ComposerComparisonHint.NONE,
     onCancelPendingSend: () -> Unit = {},
     queuedMessages: List<QueuedMessage> = emptyList(),
     onEditQueuedMessage: (localId: String) -> Unit = {},
@@ -96,7 +104,12 @@ fun ChatInput(
     attachedFiles: List<AttachedFile> = emptyList(),
     onRemoveFile: (AttachedFile) -> Unit = {},
     promptSuggestions: List<PromptMentionDisplayData> = emptyList(),
-    onSlashCommandSelect: (PromptMentionDisplayData) -> Unit = {},
+    skillSuggestions: List<PickerSkill> = emptyList(),
+    isLoadingSkills: Boolean = false,
+    skillsLoadFailed: Boolean = false,
+    canPickSkills: Boolean = false,
+    onRetrySkills: () -> Unit = {},
+    onPickerSelect: (ComposerPickerItem) -> Unit = {},
     isRecording: Boolean = false,
     isTranscribing: Boolean = false,
     onStartRecording: () -> Unit = {},
@@ -163,15 +176,21 @@ fun ChatInput(
         duringRunSendTarget = duringRunSendTarget,
         pendingSteers = pendingSteers,
         pendingQuotes = pendingQuotes,
+        pendingManualSkills = pendingManualSkills,
         isEditingQueued = isEditingQueued,
         isAwaitingUploadSend = isAwaitingUploadSend,
         arePicksUnsettled = arePicksUnsettled,
+        comparisonHint = comparisonHint,
         contextGauge = contextGauge,
         contextUsageEnabled = contextUsageEnabled,
         onCompact = onCompact,
         onSnoozeCompact = onSnoozeCompact,
         contextBarPlacement = contextBarPlacement,
         promptSuggestions = promptSuggestions,
+        skillSuggestions = skillSuggestions,
+        isLoadingSkills = isLoadingSkills,
+        skillsLoadFailed = skillsLoadFailed,
+        canPickSkills = canPickSkills,
     )
 
     CommonChatInputCore(
@@ -185,7 +204,7 @@ fun ChatInput(
             onStart = onStartRecording,
             onStop = onStopRecording,
         ),
-        onSelectPrompt = onSlashCommandSelect,
+        onSelectPickerItem = onPickerSelect,
         onToggleTool = onToggleTool,
         toolTray = toolTray, // TCHAT
         onQueue = onQueue,
@@ -193,8 +212,12 @@ fun ChatInput(
         onSteer = onSteer,
         onCancelSteer = onCancelSteer,
         onRemoveQuote = onRemoveQuote,
+        onRemoveManualSkill = onRemoveManualSkill,
+        onRetrySkills = onRetrySkills,
         onSetDuringRunAction = onSetDuringRunAction,
         queuedPausedCount = queuedPausedCount,
+        queueHeldForRefusal = queueHeldForRefusal,
+        isTemporaryChat = isTemporaryChat,
         onSendQueuedMessages = onSendQueuedMessages,
         onCommitEdit = onCommitEdit,
         onCancelEdit = onCancelEdit,
@@ -206,7 +229,7 @@ fun ChatInput(
         fontSizeMultiplier = fontSizeMultiplier,
         onRemoveFile = onRemoveFile,
         modifier = modifier,
-        leadingButtons = {
+        leadingButtons = { compact ->
             // "+" button to open tools bottom sheet
             val toolsBounce = rememberPressBounce()
             Box(modifier = Modifier.pressBounce(toolsBounce, enabled = !isLiquidGlass)) {
@@ -275,10 +298,13 @@ fun ChatInput(
                 }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            if (!compact) Spacer(modifier = Modifier.width(8.dp))
         },
         textFieldContent = {
             Box(modifier = Modifier.weight(1f)) {
+                val compactComparison = comparison?.takeIf { it.compact }
+                val comparisonCollapsed = compactComparison?.collapsedFor(textFieldValue.text) == true
+                val comparisonCollapse by animateComposerComparisonCollapse(comparisonCollapsed)
                 // The composer draws its own field (ChatInputDefaults), glass included; not the adaptive one.
                 OutlinedTextField(
                     value = textFieldValue,
@@ -297,19 +323,33 @@ fun ChatInput(
                         ChatInputPlaceholder(
                             isRecording = isRecording,
                             selectedModelDisplay = selectedModelDisplay,
+                            comparisonHint = comparisonHint,
                         )
                     },
+                    leadingIcon = comparison?.takeUnless { it.compact }?.let { comparison ->
+                        { ComposerComparisonBadges(comparison) }
+                    },
+                    prefix = compactComparison?.let { { ComposerComparisonReserve { comparisonCollapse } } },
+                    suffix = { ComposerAffixAnchor() },
                     textStyle = MaterialTheme.typography.bodyLarge,
                     shape = ChatInputDefaults.shape,
-                    colors = ChatInputDefaults.textFieldColors(),
+                    colors = ChatInputDefaults.textFieldColors(isTemporaryChat),
                     keyboardOptions = ChatInputDefaults.keyboardOptions,
                     keyboardActions = KeyboardActions.Default,
                     maxLines = 6,
                 )
+                if (compactComparison != null) {
+                    ComposerComparisonMorph(
+                        comparison = compactComparison,
+                        collapsed = comparisonCollapsed,
+                        collapse = { comparisonCollapse },
+                        modifier = Modifier.align(Alignment.TopStart),
+                    )
+                }
             }
         },
-        trailingSpacer = {
-            Spacer(modifier = Modifier.width(8.dp))
+        trailingSpacer = { compact ->
+            if (!compact) Spacer(modifier = Modifier.width(8.dp))
         },
     )
 }

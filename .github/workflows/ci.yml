@@ -42,12 +42,15 @@ jobs:
       - name: Verify F-Droid store listing
         run: scripts/check-fdroid-metadata.py
 
+      - name: Verify Kotlin/Native-safe names
+        run: scripts/check-native-test-names.py
+
       - name: Run lint
         run: ./gradlew detekt :app:lint --continue
 
       - name: Upload detekt SARIF
         if: always() && hashFiles('build/reports/detekt/merged.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v4.38.2
+        uses: github/codeql-action/upload-sarif@v4.39.1
         with:
           sarif_file: build/reports/detekt/merged.sarif
           category: detekt
@@ -57,7 +60,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: lint-report
-          path: app/build/reports/lint-results-debug.html
+          path: app/build/reports/lint-results-fossDebug.html
           if-no-files-found: ignore
 
   test:
@@ -112,20 +115,25 @@ jobs:
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug
 
-      # Compile-only gate for :feature:chat's instrumented tests (they execute on a
-      # local emulator via connectedDebugAndroidTest, never in CI). Scoped to the one
-      # module on purpose: a repo-wide assembleDebugAndroidTest would also compile
-      # :app's stale androidTest sources.
-      - name: Compile chat instrumented tests
-        run: ./gradlew :feature:chat:assembleDebugAndroidTest
+      # Compile-only gate for the instrumented tests (they execute on a local emulator via
+      # connectedDebugAndroidTest, never in CI). Scoped to the modules named on purpose: a
+      # repo-wide assembleDebugAndroidTest would also compile :app's stale androidTest sources.
+      # :core:ui's holds the only test of the Material sheet's dismiss hold (the discard prompt).
+      - name: Compile instrumented tests
+        run: ./gradlew :feature:chat:assembleDebugAndroidTest :core:ui:assembleDebugAndroidTest
+
+      # The device half of this check runs locally on a no-GMS emulator; the manifest half is
+      # cheap enough for every PR.
+      - name: Check speech <queries> in the merged manifests
+        run: python3 -I scripts/verify-speech-services.py --manifest-only
 
       - name: Upload debug APK
         id: upload_apk
-        if: always() && hashFiles('app/build/outputs/apk/debug/app-debug.apk') != ''
+        if: always() && hashFiles('app/build/outputs/apk/foss/debug/app-foss-debug.apk') != ''
         uses: actions/upload-artifact@v7
         with:
           name: switchboard-android-debug-${{ github.event.pull_request.number || github.sha }}
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/foss/debug/app-foss-debug.apk
           retention-days: 90
           if-no-files-found: error
 
@@ -194,9 +202,9 @@ jobs:
           restore-keys: ${{ runner.os }}-konan-
 
       # Kotlin/Native tests on the simulator arch, which the ubuntu `test` job can't run.
-      # Every module with an iosTest source set belongs here; one left off never runs on iOS in CI.
-      # :shared exercises the real iOS Koin graph (iOS actuals); :core:ui runs the iOS
-      # gesture and layout tests.
+      # Every KMP module with tests (commonTest or iosTest) belongs here; one left off never has
+      # its tests compiled or run for iOS in CI. :shared exercises the real iOS Koin graph
+      # (iOS actuals); :core:ui runs the iOS gesture and layout tests.
       - name: iOS tests
         run: >-
           ./gradlew
@@ -204,6 +212,11 @@ jobs:
           :core:ui:iosSimulatorArm64Test
           :core:common:iosSimulatorArm64Test
           :core:data:iosSimulatorArm64Test
+          :core:model:iosSimulatorArm64Test
+          :core:network:iosSimulatorArm64Test
+          :core:logging:iosSimulatorArm64Test
+          :feature:chat:iosSimulatorArm64Test
+          :feature:conversations:iosSimulatorArm64Test
 
       # The Kotlin framework is built by the Xcode "Compile Kotlin Framework" build
       # phase (./gradlew :shared:embedAndSignAppleFrameworkForXcode) — no separate

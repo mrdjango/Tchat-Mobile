@@ -2,13 +2,18 @@ package com.garfiec.librechat.shared.navigation
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.VerticalDivider
@@ -27,6 +32,7 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,18 +40,32 @@ import com.garfiec.librechat.core.model.Banner
 import com.garfiec.librechat.core.ui.components.BannerDisplay
 import com.garfiec.librechat.core.ui.components.PlatformBackHandler
 import com.garfiec.librechat.core.ui.glass.rememberGlassStyle
-import com.garfiec.librechat.feature.agents.navigation.AgentMarketplace
 import com.garfiec.librechat.feature.auth.navigation.AddAccountServerUrl
 import com.garfiec.librechat.feature.chat.navigation.NewChat
+import com.garfiec.librechat.feature.chat.navigation.isPlainLanding
 import com.garfiec.librechat.feature.conversations.navigation.Projects
-import com.garfiec.librechat.feature.files.navigation.Files
-import com.garfiec.librechat.feature.schedules.navigation.SchedulesList
+import com.garfiec.librechat.feature.conversations.navigation.Search
 import com.garfiec.librechat.feature.settings.navigation.SettingsTabbed
-import com.garfiec.librechat.feature.skills.navigation.SkillsList
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 
 private val SidebarWidth = 320.dp
+
+/**
+ * Whether a window this size gets [TabletLayout], whose sidebar pushes the content aside, rather than
+ * [PhoneLayout]'s drawer over it. Both platform hosts decide with this, so they can't diverge.
+ *
+ * The sidebar has to leave the content a phone's width, or every screen beside it lays out narrower
+ * than the smallest phone. A short window (a phone on its side) keeps the drawer: the sidebar's
+ * header and footer would leave its list no room.
+ */
+fun usesSidebarLayout(windowWidth: Dp, windowHeight: Dp): Boolean =
+    windowWidth - SidebarWidth >= MinContentWidth && windowHeight >= MinSidebarWindowHeight
+
+private val MinContentWidth = 360.dp
+
+// The compact-height window size class's upper bound.
+private val MinSidebarWindowHeight = 480.dp
 
 /** Velocity (px/s) above which a fling commits the gesture regardless of position. */
 private const val FLING_VELOCITY_THRESHOLD = 800f
@@ -59,10 +79,20 @@ fun TabletLayout(
 ) {
     // Banner state only -- drawer state is collected inside DrawerContent itself
     val banner by navHostViewModel.banner.collectAsStateWithLifecycle()
+    val sessionRenewalBlocked by navHostViewModel.sessionRenewalBlocked.collectAsStateWithLifecycle()
     val isLoggedIn by navHostViewModel.isLoggedIn.collectAsStateWithLifecycle()
     // The sidebar is an authenticated surface, same rule as PhoneLayout's drawer gestures: a
     // logged-out deep link (artifact viewer atop the auth base) is not in the auth flow either.
     val showSidebar = isLoggedIn && !navigator.isInAuthFlow
+    // Search's list and preview pane need the whole width (an unfolded Fold leaves it under the
+    // two-pane threshold beside the sidebar), so the sidebar steps aside while Search is on top.
+    // Nothing is persisted: closing Search brings it back as it was.
+    val searchOpen = navigator.currentRoute is Search
+    val sidebarReveal by animateFloatAsState(
+        targetValue = if (searchOpen) 0f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+        label = "sidebarReveal",
+    )
     val glass = rememberGlassStyle()
 
     // Persisted sidebar state from DataStore -- single source of truth in the ViewModel.
@@ -76,9 +106,17 @@ fun TabletLayout(
     val gestureEnabled by navHostViewModel.tabletSidebarGestureEnabled.collectAsStateWithLifecycle()
 
     val density = LocalDensity.current
-    val sidebarWidthPx = with(density) { SidebarWidth.toPx() }
+    val layoutDirection = LocalLayoutDirection.current
+    // The glass panel keeps out of a start-edge cutout (GlassSidebarPanel pads it). The sidebar widens
+    // by that inset, so the panel inside it stays SidebarWidth rather than giving the inset up.
+    val sidebarWidth = if (glass != null) {
+        SidebarWidth + WindowInsets.safeDrawing.asPaddingValues().calculateStartPadding(layoutDirection)
+    } else {
+        SidebarWidth
+    }
+    val sidebarWidthPx = with(density) { sidebarWidth.toPx() }
     // Drag deltas are physical (+x = rightward) but the sidebar sits on the start edge, which RTL mirrors.
-    val dragSign = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
+    val dragSign = if (layoutDirection == LayoutDirection.Rtl) -1f else 1f
 
     // Animatable tracks sidebar reveal in pixels: 0 = closed, sidebarWidthPx = open.
     val sidebarOffset = remember { Animatable(0f) }
@@ -87,23 +125,14 @@ fun TabletLayout(
 
     // Back press closes sidebar before navigating away. Gated on the sidebar being shown: armed while
     // hidden, it swallows back on the root auth screen and silently persists the sidebar closed.
-    PlatformBackHandler(enabled = showSidebar && isSidebarOpen) {
+    PlatformBackHandler(enabled = showSidebar && isSidebarOpen && !searchOpen) {
         navHostViewModel.setTabletSidebarOpen(false)
-    }
-
-    // Reset the sidebar to Conversations whenever it's closed, so reopening lands on recents and
-    // the Projects-mode back handler (in SidebarScaffold) can't stay armed while the sidebar is
-    // hidden off-screen and swallow back presses. Mirrors PhoneLayout's drawerState.isClosed reset.
-    LaunchedEffect(isSidebarOpen) {
-        if (!isSidebarOpen) {
-            navHostViewModel.setSidebarMode(SidebarMode.Conversations)
-        }
     }
 
     // Sync: when ViewModel state changes (e.g. hamburger button, back press), animate the
     // sidebar to match. The first resolved value is snapped (not animated) so a tablet that
     // restores "open" doesn't visibly slide the sidebar in on every cold start.
-    LaunchedEffect(resolvedSidebarOpen) {
+    LaunchedEffect(resolvedSidebarOpen, sidebarWidthPx) {
         val resolved = resolvedSidebarOpen ?: return@LaunchedEffect
         val target = if (resolved) sidebarWidthPx else 0f
         if (!initialStateApplied) {
@@ -121,7 +150,7 @@ fun TabletLayout(
     }
 
     if (showSidebar) {
-        val swipeModifier = if (gestureEnabled) {
+        val swipeModifier = if (gestureEnabled && !searchOpen) {
             Modifier.pointerInput(sidebarWidthPx, dragSign) {
                 val velocityTracker = VelocityTracker()
                 detectHorizontalDragGestures(
@@ -179,13 +208,14 @@ fun TabletLayout(
 
         Layout(
             content = {
-                // Slot 0: Sidebar -- always 320dp, slides from off-screen left to x=0
+                // Slot 0: Sidebar -- sidebarWidth wide, slides from off-screen left to x=0
                 Row(modifier = Modifier.fillMaxHeight()) {
                     val sidebar: @Composable (Modifier) -> Unit = { sidebarModifier ->
                         SidebarScaffold(
                             isOpen = isSidebarOpen,
                             onNewChat = {
-                                if (navigator.currentRoute !is NewChat) {
+                                // A project's landing is not the plain one, so New chat still leaves it.
+                                if ((navigator.currentRoute as? NewChat)?.isPlainLanding != true) {
                                     navigator.navigateToTopLevel(NewChat())
                                 }
                             },
@@ -195,23 +225,21 @@ fun TabletLayout(
                             onSettingsClick = {
                                 navigator.navigate(SettingsTabbed)
                             },
-                            onSettingsCategorySelect = { category ->
-                                navigator.navigate(category.toRoute())
+                            onWorkspaceClick = { destination ->
+                                navigator.navigate(destination.route())
                             },
-                            onAgentsClick = {
-                                navigator.navigate(AgentMarketplace)
-                            },
-                            onFilesClick = {
-                                navigator.navigate(Files)
-                            },
-                            onSkillsClick = {
-                                navigator.navigate(SkillsList)
-                            },
-                            onSchedulesClick = {
-                                navigator.navigate(SchedulesList)
-                            },
+                            currentWorkspace = navigator.currentRoute.workspaceDestination(),
                             onOpenProjectsIndex = {
                                 navigator.navigate(Projects)
+                            },
+                            onNewChatInProject = { projectId, projectName ->
+                                navigator.navigateToNewChatInProject(projectId, projectName)
+                            },
+                            onOpenSearch = { query ->
+                                navigator.navigateToSearch(query)
+                            },
+                            onMessageClick = { conversationId, messageId, query, inReasoning ->
+                                navigator.navigateToMessage(conversationId, messageId, query, inReasoning)
                             },
                             onSwitchAccount = { accountId ->
                                 navHostViewModel.switchAccount(accountId)
@@ -233,7 +261,7 @@ fun TabletLayout(
                         GlassSidebarPanel(
                             style = glass,
                             backdrop = null,
-                            modifier = Modifier.width(SidebarWidth).fillMaxHeight(),
+                            modifier = Modifier.width(sidebarWidth).fillMaxHeight(),
                         ) {
                             sidebar(Modifier.fillMaxSize())
                         }
@@ -245,6 +273,8 @@ fun TabletLayout(
                     showBanner = true,
                     banner = banner,
                     onDismissBanner = navHostViewModel::dismissBanner,
+                    sessionRenewalBlocked = sessionRenewalBlocked,
+                    onSignInAgain = navHostViewModel::signInAgain,
                     onToggleDrawer = {
                         navHostViewModel.toggleTabletSidebar()
                     },
@@ -259,8 +289,8 @@ fun TabletLayout(
                 .then(swipeModifier)
                 .clipToBounds(),
         ) { measurables, constraints ->
-            val sidebarPx = SidebarWidth.roundToPx()
-            val animatedPx = sidebarOffset.value.toInt()
+            val sidebarPx = sidebarWidth.roundToPx()
+            val animatedPx = (sidebarOffset.value * sidebarReveal).toInt()
 
             val sidebarPlaceable = measurables[0].measure(
                 constraints.copy(minWidth = sidebarPx, maxWidth = sidebarPx),
@@ -282,6 +312,8 @@ fun TabletLayout(
             showBanner = false,
             banner = banner,
             onDismissBanner = navHostViewModel::dismissBanner,
+            sessionRenewalBlocked = false,
+            onSignInAgain = {},
             onToggleDrawer = {},
             modifier = modifier.fillMaxSize(),
         )
@@ -294,11 +326,17 @@ private fun MainContent(
     showBanner: Boolean,
     banner: Banner?,
     onDismissBanner: (String) -> Unit,
+    sessionRenewalBlocked: Boolean,
+    onSignInAgain: () -> Unit,
     onToggleDrawer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
         if (showBanner) {
+            SessionRenewalBlockedBanner(
+                visible = sessionRenewalBlocked,
+                onSignInAgain = onSignInAgain,
+            )
             BannerDisplay(
                 banner = banner,
                 onDismiss = onDismissBanner,

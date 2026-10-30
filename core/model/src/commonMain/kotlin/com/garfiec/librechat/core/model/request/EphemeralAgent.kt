@@ -25,4 +25,10 @@ data class EphemeralAgent(
     @SerialName("image_gen") val imageGen: JsonPrimitive? = null,
     /** TCHAT: the parameters pinned for that image model; the server drops any it doesn't offer. */
     @SerialName("image_options") val imageOptions: ImageChoice? = null,
+    /**
+     * Turn skills on for an ephemeral (non-agent) run. The server consults it only when the
+     * agent has no `skills_enabled` of its own, which a model spec that configures `skills`
+     * supplies; without it an ephemeral run gets no skill catalog and no manual skills.
+     */
+    val skills: Boolean? = null,
 )

@@ -10,6 +10,10 @@ import com.garfiec.librechat.core.logging.Diag
 import com.garfiec.librechat.core.logging.LogOrigin
 import com.garfiec.librechat.core.model.Conversation
 import com.garfiec.librechat.core.model.Message
+import com.garfiec.librechat.core.model.config.ModelSpecs
+import com.garfiec.librechat.core.model.hasParameters
+import com.garfiec.librechat.core.model.parametersStale
+import com.garfiec.librechat.core.model.request.MAX_MANUAL_SKILLS
 import com.garfiec.librechat.feature.chat.util.MessageNode
 import com.garfiec.librechat.feature.chat.util.NEW_CHAT_DRAFT_KEY
 import com.garfiec.librechat.feature.chat.util.buildActiveMessagePath
@@ -45,6 +49,15 @@ class ConversationLoadDelegate(
     private val defaultDispatcher: CoroutineDispatcher,
     /** ModelSelectionDelegate.applyConversationModel: seeds the selection from a fetched conversation. */
     private val applyConversationModel: (Conversation) -> Boolean,
+    /** Whether this screen takes the conversation's stored parameters (not a handed-off new chat). */
+    private val wantsStoredParameters: () -> Boolean = { false },
+    /** Writes the conversation's parameters, with the web-search switch this device remembered (if any). */
+    private val restoreParameters: (Conversation, Boolean?) -> Unit = { _, _ -> },
+    /**
+     * The web-search switch this device remembered for a conversation. Read before the model is
+     * applied, so nothing suspends between that and [restoreParameters] for a user change to land in.
+     */
+    private val rememberedWebSearch: suspend (String) -> Boolean? = { null },
     /**
      * Marks the conversation-model load attempted (never "resolved") and refilters the model list;
      * see ModelSelectionDelegate.conversationModelLoaded. Runs on every path out of
@@ -53,12 +66,47 @@ class ConversationLoadDelegate(
     private val onModelLoadSettled: () -> Unit,
     /** ComparisonModeDelegate.rehydrateFromMessage, for a reopened Compare Models conversation. */
     private val rehydrateComparison: (Message) -> Unit,
+    /**
+     * AttachmentPreviewDelegate.onMessagesSettled: polls the deferred previews the displayed
+     * messages still list as pending. Called on every settled emission; the delegate dedupes.
+     */
+    private val onMessagesSettled: (List<MessageNode>) -> Unit,
+    /**
+     * The server's spec config as last fetched. Read directly rather than from the selection,
+     * which the seeder fills in only after the conversation has loaded.
+     */
+    private val currentModelSpecs: () -> ModelSpecs?,
+    /** The active account's id, which keys [specBackfillDone]: conversation ids repeat across servers. */
+    private val currentAccountId: () -> String?,
+    /**
+     * ModelSelectionDelegate.selectionWatches ([SelectionWatches]). The default sees no config
+     * rewrites, so it counts a spec drop as the user's change: pass the shared watches.
+     */
+    private val watchSelection: () -> () -> Boolean = {
+        SelectionWatches { handle.state.selection.let { it.choice to it.modelParameters } }.watch()
+    },
+    private val newChatDraftKey: String = NEW_CHAT_DRAFT_KEY,
 ) {
     private var roomObserverJob: Job? = null
+
+    /**
+     * A comparison tail that settled while Compare setup was open. Rehydrating then would replace
+     * the setup, so it waits: Cancel restores it ([releaseRehydrateHeldForSetup]), Start replaces it.
+     */
+    private var rehydrateHeldForSetup: Message? = null
+
+    /** Compare setup ended. [started] is false for Cancel, which restores a held comparison. */
+    fun releaseRehydrateHeldForSetup(started: Boolean) {
+        val tail = rehydrateHeldForSetup ?: return
+        rehydrateHeldForSetup = null
+        val state = handle.state
+        if (!started && !state.isStreaming && !state.comparisonState.isEnabled) rehydrateComparison(tail)
+    }
 
     fun stopObserving() {
         roomObserverJob?.cancel()
         roomObserverJob = null
+        rehydrateHeldForSetup = null
     }
 
     /**
@@ -128,6 +176,7 @@ class ConversationLoadDelegate(
         // non-empty emission (the authoritative tail) — so a later Room re-emit can't
         // re-enable comparison after the user has toggled it off for the session.
         var autoRehydrateHandled = false
+        rehydrateHeldForSetup = null
         var pendingUnsavedTurn = unsavedTurn
         roomObserverJob = handle.scope.launch {
             // A flow, not a plain flag: it is a `combine` input below, so settling re-runs the
@@ -218,13 +267,16 @@ class ConversationLoadDelegate(
                     // and would always look like the server dropped it. A fetch that failed also
                     // settles, and then restores — duplicating text the server did keep is the
                     // recoverable mistake; losing text it did not keep is not.
+                    // A reply that finished while nobody was watching may have left its generated
+                    // files pending; the settled read is the one that names them.
+                    if (settled) onMessagesSettled(displayMessages)
                     pendingUnsavedTurn?.takeIf { settled }?.let { unsent ->
                         pendingUnsavedTurn = null
                         val kept = emission.messages.any {
                             it.messageId == unsent.messageId || it.isServerCopyOf(unsent)
                         }
-                        if (!kept && unsent.text.isNotBlank()) {
-                            restoreUnsentInput(unsent.text, unsent.quotes.orEmpty())
+                        if (!kept) {
+                            restoreUnsentInput(unsent.text, unsent.quotes.orEmpty(), unsent.manualSkills.orEmpty())
                         }
                     }
                     // Restore comparison mode when reopening a Compare Models conversation: the
@@ -242,7 +294,11 @@ class ConversationLoadDelegate(
                         if (!state.isStreaming && !state.comparisonState.isEnabled &&
                             tail != null && hasParallelParts(tail)
                         ) {
-                            rehydrateComparison(tail)
+                            if (state.comparisonState.isSettingUp) {
+                                rehydrateHeldForSetup = tail
+                            } else {
+                                rehydrateComparison(tail)
+                            }
                         }
                     }
                 }
@@ -254,26 +310,34 @@ class ConversationLoadDelegate(
      * landed before the server persisted anything, so the optimistic bubble was removed).
      * Yields to anything the user has since typed — same rule as [restoreDraft] — and persists
      * as a draft so the restored text survives process death, same as `ChatViewModel.onInputChanged`.
+     * A turn with no text (files only) still puts its quote and skill chips back.
      */
-    fun restoreUnsentInput(text: String, quotes: List<String> = emptyList()) {
+    fun restoreUnsentInput(
+        text: String,
+        quotes: List<String> = emptyList(),
+        manualSkills: List<String> = emptyList(),
+    ) {
         handle.update {
-            if (inputText.isBlank()) {
-                inputText = text
+            if (inputText.isBlank() || text.isBlank()) {
+                if (text.isNotBlank()) inputText = text
                 // The chips were taken (and cleared) when the spec was minted, so an
                 // un-send has to put them back or the retry silently loses the excerpts.
                 // Anything staged since wins — same yield-to-the-user rule as the text.
                 pendingQuotes = pendingQuotes.ifEmpty { quotes }
+                // The skill chips likewise, or the retry runs without the picked skills. Merged
+                // rather than yielded: chips the send held back are still staged beside them.
+                pendingManualSkills = (manualSkills + pendingManualSkills).distinct().take(MAX_MANUAL_SKILLS)
             }
         }
-        if (handle.state.inputText != text) return
-        val draftKey = handle.state.conversationId ?: NEW_CHAT_DRAFT_KEY
+        if (text.isBlank() || handle.state.inputText != text) return
+        val draftKey = handle.state.conversationId ?: newChatDraftKey
         handle.scope.launch {
             draftRepository.saveDraft(draftKey, text)
         }
     }
 
     /**
-     * Restores a previously saved draft for the given key (conversation ID or [NEW_CHAT_DRAFT_KEY]).
+     * Restores a previously saved draft for the given key (conversation ID or the landing's key).
      */
     fun restoreDraft(draftKey: String) {
         handle.scope.launch {
@@ -299,10 +363,43 @@ class ConversationLoadDelegate(
         }
         handle.scope.launch {
             val result = conversationRepository.getConversation(conversationId, originAccount = null)
-            val conversation = result.getOrNull()
+            var conversation = result.getOrNull()
+            val wantsParameters = wantsStoredParameters()
+            val remembered = if (wantsParameters) rememberedWebSearch(conversationId) else null
+            fun apply(loaded: Conversation, restore: Boolean): Boolean {
+                handle.update { conversationTitle = loaded.title }
+                val applied = applyConversationModel(loaded)
+                // After the model, so the conversation's own parameters are what stays.
+                if (applied && restore) restoreParameters(loaded, remembered)
+                return applied
+            }
+            // The cached row applies at once, so an open never waits on the network for its model.
+            var applied = conversation?.let { apply(it, restore = wantsParameters) } ?: false
+            // Rows cached before the spec column have none, and an enforced server rejects a send
+            // without it. The list route sends no parameters, so a row it synced has none, or older
+            // ones once the chat changed elsewhere. Ask the server once per process and version of
+            // the chat: one that has neither there either would otherwise cost a request every open.
+            val cached = conversation
+            val backfillKey = currentAccountId()?.let { "$it:$conversationId:${cached?.updatedAt}" }
+            val incomplete = cached != null && (
+                (cached.spec == null && currentModelSpecs()?.enforce == true) ||
+                    (wantsParameters && (!cached.hasParameters || cached.parametersStale))
+                )
+            if (incomplete && backfillKey != null && backfillKey !in conversationBackfillDone) {
+                val unchanged = watchSelection()
+                val fetched = conversationRepository.refreshConversation(conversationId, originAccount = null).getOrNull()
+                // A model or parameter set while the fetch was out is the user's and stays.
+                val userUnchanged = unchanged()
+                fetched?.let {
+                    // Only a successful fetch settles it: a failed one is retried on the next open.
+                    conversationBackfillDone.add(backfillKey)
+                    conversation = it
+                    if (userUnchanged) {
+                        applied = apply(it, restore = wantsParameters && it.hasParameters)
+                    }
+                }
+            }
             if (conversation != null) {
-                handle.update { conversationTitle = conversation.title }
-                val applied = applyConversationModel(conversation)
                 Diag.d(
                     tag = "ModelSel",
                     attrs = mapOf(
@@ -345,6 +442,12 @@ class ConversationLoadDelegate(
         }
     }
 }
+
+/**
+ * Conversations the server has been asked for their spec and parameters this process, keyed
+ * `accountId:conversationId:updatedAt`. Touched only on the main thread.
+ */
+private val conversationBackfillDone = HashSet<String>()
 
 private data class MessagePathEmission(
     val messages: List<Message>,

@@ -122,6 +122,9 @@ class McpApi constructor(
                     ?.takeIf { it.isNotBlank() }
                     ?.let(::McpOboConfig),
                 chatMenu = (config["chatMenu"] as? JsonPrimitive)?.booleanOrNull, // TCHAT
+                dbId = (config["dbId"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() },
+                consumeOnly = (config["consumeOnly"] as? JsonPrimitive)?.booleanOrNull ?: false,
+                requestScoped = (config["requestScoped"] as? JsonPrimitive)?.booleanOrNull ?: false,
             )
         }
     }

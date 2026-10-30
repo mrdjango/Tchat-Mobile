@@ -34,10 +34,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.garfiec.librechat.core.common.ToolConstants
 import com.garfiec.librechat.core.data.datastore.ContextBarPlacement
 import com.garfiec.librechat.core.data.datastore.StarredModelsDisplay
 import com.garfiec.librechat.core.model.Agent
 import com.garfiec.librechat.core.model.EndpointConfig
+import com.garfiec.librechat.core.model.config.ModelSpec
+import com.garfiec.librechat.core.model.config.ModelSpecs
 import com.garfiec.librechat.core.model.endpoint.KeyState
 import com.garfiec.librechat.core.ui.components.AdaptiveModalBottomSheet
 import com.garfiec.librechat.core.ui.components.LowProfileDragHandle
@@ -48,11 +51,14 @@ import com.garfiec.librechat.core.ui.components.clearFocusOnTap
 import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
 import com.garfiec.librechat.feature.chat.resources.Res
 import com.garfiec.librechat.feature.chat.resources.cd_back
+import com.garfiec.librechat.feature.chat.resources.param_set_by_spec
 import com.garfiec.librechat.feature.chat.resources.tool_model_parameters
 import com.garfiec.librechat.feature.chat.tchat.TchatModelPickerContent
 import com.garfiec.librechat.feature.chat.tchat.TchatPicker
 import com.garfiec.librechat.feature.chat.tchat.TchatPickerActions
 import com.garfiec.librechat.feature.chat.tchat.showsPinned
+import com.garfiec.librechat.feature.chat.util.WebSearchKind
+import com.garfiec.librechat.feature.chat.util.WebSearchRoute
 import com.garfiec.librechat.feature.chat.viewmodel.ChatInputGates
 import com.garfiec.librechat.feature.chat.viewmodel.ContextGaugeDetails
 import org.jetbrains.compose.resources.stringResource
@@ -76,14 +82,19 @@ data class ChatToolsPageParams(
     val onPickPhotos: () -> Unit,
     val onAttachFromServer: () -> Unit,
     val selectedModelDisplay: String?,
+    /** Both models while comparing; the Model row then names A and B. */
+    val comparisonModels: ComparisonModelLabels? = null,
     val isCodeInterpreterAvailable: Boolean = true,
     val webSearchEnabled: Boolean = true,
+    val webSearchKind: WebSearchKind = WebSearchKind(WebSearchRoute.LIBRECHAT, null),
     val urlContextEnabled: Boolean = false,
     val runCodeEnabled: Boolean = true,
     val fileSearchEnabled: Boolean = true,
     val memoryEnabled: Boolean = false,
     /** TCHAT: offer the Image Gen switch (`TchatModelState.imageGenAvailable`). */
     val imageGenEnabled: Boolean = false,
+    /** Whether to offer the per-conversation Skills toggle. See [ChatUiState.isSkillsToolAvailable]. */
+    val skillsEnabled: Boolean = false,
     val mcpServersEnabled: Boolean = true,
     val gates: ChatInputGates = ChatInputGates(),
     val contextGauge: ContextGaugeDetails? = null,
@@ -99,7 +110,8 @@ data class ChatToolsPageParams(
 
 /**
  * Everything the ModelSelector page renders. In comparison mode the host points the selection
- * fields at the secondary model, so this page is agnostic to which tab is active.
+ * fields at whichever lane [comparisonHeader]'s A/B pair is editing, so this page is agnostic to
+ * which tab is active.
  */
 @Immutable
 data class ModelSelectorPageParams(
@@ -109,6 +121,12 @@ data class ModelSelectorPageParams(
     val selectedEndpoint: String?,
     val selectedModel: String?,
     val onModelSelect: (endpoint: String, model: String) -> Unit,
+    /** `interface.modelSelect`; off lists only the server's specs. */
+    val modelSelect: Boolean,
+    val agentsLoaded: Boolean = false,
+    val modelSpecs: ModelSpecs? = null,
+    val selectedSpec: String? = null,
+    val onSpecSelect: (ModelSpec) -> Unit = {},
     val onSetApiKey: (endpointName: String) -> Unit,
     /** Fired on each surfacing; hosts route it to `ChatViewModel.prepareModelSelector()`. */
     val onSurfaced: () -> Unit = {},
@@ -118,13 +136,17 @@ data class ModelSelectorPageParams(
     val serverUrl: String = "",
     val favoriteAgentIds: Set<String> = emptySet(),
     val favoriteModelKeys: Set<String> = emptySet(),
+    val favoriteSpecNames: Set<String> = emptySet(),
     val onToggleAgentFavorite: ((agentId: String) -> Unit)? = null,
     val onToggleModelFavorite: ((endpoint: String, model: String) -> Unit)? = null,
+    val onToggleSpecFavorite: ((name: String) -> Unit)? = null,
     val starredDisplay: StarredModelsDisplay = StarredModelsDisplay.GROUPED,
     val endpointKeyStates: Map<String, KeyState> = emptyMap(),
     /** TCHAT: when set, the page renders the Tchat picker instead of upstream's selector. */
     val tchatPicker: TchatPicker? = null,
     val tchatActions: TchatPickerActions? = null,
+    /** Under the page's back row; the comparison A/B pair while comparing. */
+    val comparisonHeader: (@Composable () -> Unit)? = null,
 )
 
 /** Everything the ModelParameters page renders. See [ModelParameterContent]. */
@@ -141,6 +163,8 @@ data class ModelParametersPageParams(
     /** Resolved `/api/config.endpointsDropParamsMap` entry; see [ModelParameterContent]. */
     val dropParams: List<String> = emptyList(),
     val onSaveAsPreset: () -> Unit = {},
+    /** The server sets the parameters (an enforced spec): the page shows them read-only. */
+    val setBySpec: Boolean = false,
 )
 
 /**
@@ -162,7 +186,7 @@ fun ChatOptionsBottomSheet(
 ) {
     // Held here, not in ChatToolsSheetContent: AnimatedContent drops the Options page from
     // composition on a sub-page, so state remembered there would reset. Saveable to survive the
-    // host teardown the page survives (the "Set API Key" round trip, config change).
+    // host teardown the page survives (the "Add key" round trip, config change).
     var mcpExpanded by rememberSaveable { mutableStateOf(false) }
     val optionsScrollState = rememberScrollState()
     // Or the Options page — the common path — would open at half height.
@@ -241,14 +265,17 @@ fun ChatOptionsBottomSheet(
                         onOpenModelParameters = { goTo(ChatOptionsPage.ModelParameters) },
                         onOpenModelSelector = { goTo(ChatOptionsPage.ModelSelector) },
                         selectedModelDisplay = tools.selectedModelDisplay,
+                        comparisonModels = tools.comparisonModels,
                         onDismiss = dismiss,
                         isCodeInterpreterAvailable = tools.isCodeInterpreterAvailable,
                         webSearchEnabled = tools.webSearchEnabled,
+                        webSearchKind = tools.webSearchKind,
                         urlContextEnabled = tools.urlContextEnabled,
                         runCodeEnabled = tools.runCodeEnabled,
                         fileSearchEnabled = tools.fileSearchEnabled,
                         memoryEnabled = tools.memoryEnabled,
                         imageGenEnabled = tools.imageGenEnabled,
+                        skillsEnabled = tools.skillsEnabled,
                         mcpServersEnabled = tools.mcpServersEnabled,
                         gates = tools.gates,
                         contextGauge = tools.contextGauge,
@@ -274,7 +301,12 @@ fun ChatOptionsBottomSheet(
                             serverUrl = selector.serverUrl,
                             errorMessage = selector.errorMessage,
                             onErrorDismiss = selector.onErrorDismiss,
-                            header = { SheetPageBackRow(title = null, onBack = back) },
+                            header = {
+                                Column {
+                                    SheetPageBackRow(title = null, onBack = back)
+                                    selector.comparisonHeader?.invoke()
+                                }
+                            },
                         )
                     } else {
                         ModelSelectorSheetContent(
@@ -283,6 +315,14 @@ fun ChatOptionsBottomSheet(
                             agents = selector.agents,
                             selectedEndpoint = selector.selectedEndpoint,
                             selectedModel = selector.selectedModel,
+                            modelSelect = selector.modelSelect,
+                            selectedSpec = selector.selectedSpec,
+                            modelSpecs = selector.modelSpecs,
+                            agentsLoaded = selector.agentsLoaded,
+                            onSpecSelect = { spec ->
+                                selector.onSpecSelect(spec)
+                                goTo(ChatOptionsPage.Options)
+                            },
                             onModelSelect = { endpoint, model ->
                                 selector.onModelSelect(endpoint, model)
                                 goTo(ChatOptionsPage.Options)
@@ -294,11 +334,18 @@ fun ChatOptionsBottomSheet(
                             onErrorDismiss = selector.onErrorDismiss,
                             favoriteAgentIds = selector.favoriteAgentIds,
                             favoriteModelKeys = selector.favoriteModelKeys,
+                            favoriteSpecNames = selector.favoriteSpecNames,
                             onToggleAgentFavorite = selector.onToggleAgentFavorite,
                             onToggleModelFavorite = selector.onToggleModelFavorite,
+                            onToggleSpecFavorite = selector.onToggleSpecFavorite,
                             starredDisplay = selector.starredDisplay,
                             endpointKeyStates = selector.endpointKeyStates,
-                            header = { SheetPageBackRow(title = null, onBack = back) },
+                            header = {
+                                Column {
+                                    SheetPageBackRow(title = null, onBack = back)
+                                    selector.comparisonHeader?.invoke()
+                                }
+                            },
                         )
                     }
 
@@ -317,8 +364,15 @@ fun ChatOptionsBottomSheet(
                             selectedModel = parameters.selectedModel,
                             dropParams = parameters.dropParams,
                             onSaveAsPreset = parameters.onSaveAsPreset,
+                            readOnlyNote = if (parameters.setBySpec) {
+                                stringResource(Res.string.param_set_by_spec)
+                            } else {
+                                null
+                            },
                             // The back row above replaces the content's own title.
                             showHeader = false,
+                            // The tools' web-search control is the one switch for both searches.
+                            hiddenKeys = setOf(ToolConstants.WEB_SEARCH),
                             modifier = Modifier
                                 .padding(horizontal = 24.dp)
                                 .navigationBarsPadding()

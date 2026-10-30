@@ -6,18 +6,25 @@ import com.garfiec.librechat.core.common.result.Result
 import com.garfiec.librechat.core.common.result.getOrNull
 import com.garfiec.librechat.core.data.repository.ConfigRepository
 import com.garfiec.librechat.core.data.repository.FileRepository
+import com.garfiec.librechat.core.data.repository.MemoryRepository
 import com.garfiec.librechat.core.data.repository.RoleRepository
 import com.garfiec.librechat.core.data.repository.UserRepository
+import com.garfiec.librechat.core.data.repository.WebSearchReadinessRepository
+import com.garfiec.librechat.core.model.Attachment
 import com.garfiec.librechat.core.model.config.InterfaceConfig
 import com.garfiec.librechat.core.model.permissions.Permission
 import com.garfiec.librechat.core.model.permissions.PermissionType
 import com.garfiec.librechat.core.model.permissions.UserRolePermissions
 import com.garfiec.librechat.core.model.permissions.canCreateSharedLinks
+import com.garfiec.librechat.core.model.permissions.canOpenMemories
 import com.garfiec.librechat.core.model.permissions.hasAccessOrPermissive
 import com.garfiec.librechat.feature.chat.viewmodel.ChatConfigHandle
 import com.garfiec.librechat.feature.chat.viewmodel.ChatUiState
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
@@ -37,6 +44,8 @@ class ChatConfigDelegate(
     private val roleRepository: RoleRepository,
     private val fileRepository: FileRepository,
     private val userRepository: UserRepository,
+    private val memoryRepository: MemoryRepository,
+    private val webSearchReadiness: WebSearchReadinessRepository,
 ) {
 
     // Cached so tapping several generated-file chips doesn't re-fetch the user each time.
@@ -44,7 +53,10 @@ class ChatConfigDelegate(
 
     fun loadUserProfile() {
         handle.scope.launch {
-            when (val result = userRepository.getUser()) {
+            // The profile carries the opt-out, so this read refreshes the shared value too: a value
+            // cached earlier in the process (the user may since have changed it on the web) must
+            // not outrank it.
+            when (val result = memoryRepository.fetchUserPublishingPreference(userRepository::getUser)) {
                 is Result.Success -> {
                     val user = result.data
                     cachedUserId = user.id
@@ -52,7 +64,11 @@ class ChatConfigDelegate(
                         account = account.copy(
                             userName = user.name ?: user.username,
                             userAvatarUrl = user.avatar,
-                            memoriesOptedOut = user.personalization?.memories == false,
+                            // The shared value is this read's answer once published. It differs only
+                            // when the repository refused to publish: a Settings toggle overlapped
+                            // the GET, and the toggle is newer.
+                            memoriesOptedOut = memoryRepository.memoriesEnabled.value?.not()
+                                ?: (user.personalization?.memories == false),
                         )
                     }
                 }
@@ -60,6 +76,19 @@ class ChatConfigDelegate(
                     Logger.d(result.exception) { "Failed to load user profile: ${result.message}" }
                 }
                 is Result.Loading -> { /* no-op */ }
+            }
+        }
+    }
+
+    /**
+     * Follows the user's memory opt-out as the Memories page changes it, so a chat that stays open
+     * while the user flips the switch in Settings shows or hides its composer memory toggle without
+     * being reopened. Null (not known yet for this account) leaves the profile seed in place.
+     */
+    fun observeMemoriesPreference() {
+        handle.scope.launch {
+            memoryRepository.memoriesEnabled.filterNotNull().distinctUntilChanged().collect { enabled ->
+                handle.update { account = account.copy(memoriesOptedOut = !enabled) }
             }
         }
     }
@@ -129,8 +158,8 @@ class ChatConfigDelegate(
                         multiConvoEnabled = gate(PermissionType.MULTI_CONVO, Permission.USE) { it.multiConvo },
                         temporaryChatEnabled = gate(PermissionType.TEMPORARY_CHAT, Permission.USE) { it.temporaryChat },
                         // TCHAT: no toggle for a tool the server always runs (web hides it the same way).
-                        webSearchEnabled = !inputs.webSearchAlwaysOn &&
-                            gate(PermissionType.WEB_SEARCH, Permission.USE) { it.webSearch },
+                        webSearchEnabled = !inputs.webSearchAlwaysOn && librechatSearchAllowed(role, iface),
+                        webSearchPermitted = role.hasAccessOrPermissive(PermissionType.WEB_SEARCH, Permission.USE),
                         runCodeEnabled = gate(PermissionType.RUN_CODE, Permission.USE) { it.runCode },
                         fileSearchEnabled = gate(PermissionType.FILE_SEARCH, Permission.USE) { it.fileSearch },
                         bookmarksEnabled = gate(PermissionType.BOOKMARKS, Permission.USE) { it.bookmarks },
@@ -153,11 +182,63 @@ class ChatConfigDelegate(
                         memoryEnabled = role.hasAccessOrPermissive(PermissionType.MEMORIES, Permission.USE) &&
                             role.hasAccessOrPermissive(PermissionType.MEMORIES, Permission.CREATE) &&
                             role.hasAccessOrPermissive(PermissionType.MEMORIES, Permission.UPDATE),
+                        // The memory card's Manage action opens the Memories page, so it is gated
+                        // like the Data tab row that opens the same page: USE + READ.
+                        memoriesPageEnabled = role.canOpenMemories(),
+                        skillsEnabled = role.hasAccessOrPermissive(PermissionType.SKILLS, Permission.USE),
                         // Pinned tools (v0.8.7): raw interface list; mapped/filtered by pinnedToolChips.
                         pinnedTools = iface?.defaultPinnedTools ?: emptyList(),
                         dropParamsMap = inputs.dropParamsMap,
                         compactionEnabled = inputs.compactionEnabled == true,
                     )
+                }
+            }
+        }
+    }
+
+    /**
+     * Keeps `gates.librechatSearchReady` in step with the server, the account and the role: true
+     * only when the config names a search provider and the server's key check passes. An answer is
+     * remembered per account and config ([WebSearchReadinessRepository]), so a chat opened after
+     * the first one has it at once. Until there is one it reads false with
+     * `librechatSearchChecking` set, so a send that would run LibreChat search runs none; a check
+     * that failed rather than answered is retried, and once the retries run out the hold lifts
+     * while it keeps asking once a minute.
+     */
+    fun loadWebSearchReadiness() {
+        handle.scope.launch {
+            // Every config, not just a change of "configured": another server with search set up
+            // too must be asked for its own keys. The StateFlow already skips identical configs.
+            combine(
+                configRepository.startupConfig,
+                roleRepository.userPermissions,
+                webSearchReadiness.account,
+            ) { config, role, account ->
+                config?.webSearch?.takeIf { librechatSearchAllowed(role, config.interfaceConfig) } to account
+            }.distinctUntilChanged().collectLatest { (searchConfig, _) ->
+                val cached = searchConfig?.let { webSearchReadiness.cached(it) }
+                handle.update {
+                    gates = gates.copy(
+                        librechatSearchReady = cached == true,
+                        librechatSearchChecking = searchConfig != null && cached == null,
+                    )
+                }
+                if (searchConfig == null || cached != null) return@collectLatest
+                var attempt = 0
+                while (true) {
+                    val ready = webSearchReadiness.check(searchConfig)
+                    if (ready != null) {
+                        if (!ready) Logger.d { "LibreChat web search is configured but not authenticated" }
+                        handle.update { gates = gates.copy(librechatSearchReady = ready, librechatSearchChecking = false) }
+                        return@collectLatest
+                    }
+                    if (attempt == WEB_SEARCH_CHECK_RETRY_MS.size) {
+                        // Past the ladder: stop holding sends and let the other search run, but keep
+                        // asking at its slowest pace, so a connection that comes back is noticed.
+                        handle.update { gates = gates.copy(librechatSearchChecking = false) }
+                    }
+                    delay(WEB_SEARCH_CHECK_RETRY_MS[attempt.coerceAtMost(WEB_SEARCH_CHECK_RETRY_MS.lastIndex)])
+                    attempt++
                 }
             }
         }
@@ -179,16 +260,18 @@ class ChatConfigDelegate(
     /**
      * Downloads a generated tool-call file's bytes (authenticated) for the file-chip share action;
      * null on failure. Backs [com.garfiec.librechat.feature.chat.components.LocalAttachmentDownloader].
-     * Mirrors `ConversationMediaViewModel.downloadFileBytes`.
+     * Mirrors `ConversationMediaViewModel.downloadFileBytes`. A code-output fallback needs no user
+     * id, so a failed user lookup only fails a stored file.
      */
-    suspend fun downloadFileBytes(fileId: String): ByteArray? {
+    suspend fun downloadFileBytes(attachment: Attachment): ByteArray? {
         val userId = cachedUserId
             ?: (userRepository.getUser() as? Result.Success)?.data?.id?.also { cachedUserId = it }
-            ?: return null
-        return when (val result = fileRepository.downloadFile(userId, fileId)) {
+        return when (val result = fileRepository.downloadAttachment(attachment, userId)) {
             is Result.Success -> result.data
             is Result.Error -> {
-                Logger.e(result.exception) { "Failed to download file $fileId: ${result.message}" }
+                Logger.e(result.exception) {
+                    "Failed to download file ${attachment.fileId ?: attachment.filename}: ${result.message}"
+                }
                 null
             }
             is Result.Loading -> null
@@ -205,3 +288,10 @@ private data class GateInputs(
     val compactionEnabled: Boolean?,
     val webSearchAlwaysOn: Boolean = false, // TCHAT
 )
+
+/** One gate for both the control (`gates.webSearchEnabled`) and whether `loadWebSearchReadiness` asks. */
+private fun librechatSearchAllowed(role: UserRolePermissions?, iface: InterfaceConfig?): Boolean =
+    role.hasAccessOrPermissive(PermissionType.WEB_SEARCH, Permission.USE) && iface?.webSearch != false
+
+/** Waits between retries of a web-search key check that failed (offline, a timeout, a 5xx), not one that answered. */
+private val WEB_SEARCH_CHECK_RETRY_MS = listOf(2_000L, 5_000L, 15_000L, 30_000L, 60_000L)

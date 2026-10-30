@@ -3,7 +3,6 @@ package com.garfiec.librechat.shared
 import co.touchlab.kermit.Logger
 import com.garfiec.librechat.core.logging.PersistentLogWriter
 import platform.Foundation.NSException
-import platform.Foundation.NSLog
 import kotlin.experimental.ExperimentalNativeApi
 
 private val log = Logger.withTag("CrashReporting")
@@ -38,12 +37,17 @@ fun installCrashReporting(persistentWriter: PersistentLogWriter? = null) {
         val exceptionName = throwable::class.qualifiedName ?: throwable::class.simpleName ?: "Unknown"
         val message = throwable.message ?: "(no message)"
 
-        log.e { "FATAL: Unhandled Kotlin exception: $exceptionName: $message" }
-        log.e { stackTrace }
+        // Guarded like the crash record: a throw here would skip the NSException below.
+        runCatching {
+            log.e { "FATAL: Unhandled Kotlin exception: $exceptionName: $message" }
+            log.e { stackTrace }
+        }
 
         // Also write directly to NSLog in case Kermit writers aren't flushed
-        NSLog("FATAL: Unhandled Kotlin exception: %@: %@", exceptionName, message)
-        NSLog("Stack trace:\n%@", stackTrace)
+        runCatching {
+            nsLogVerbatim("FATAL: Unhandled Kotlin exception: $exceptionName: $message")
+            nsLogVerbatim("Stack trace:\n$stackTrace")
+        }
 
         // Raise as NSException so iOS crash reporters capture a meaningful report
         // instead of a bare SIGABRT with no context

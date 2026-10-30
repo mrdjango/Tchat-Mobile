@@ -5,22 +5,31 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.Archive
@@ -80,11 +89,27 @@ object BarIcons {
     val Filter = BarIcon(Icons.Default.FilterList, "line.3.horizontal.decrease.circle")
     val Source = BarIcon(Icons.Default.Code, "chevron.left.forwardslash.chevron.right")
     val Rendered = BarIcon(Icons.AutoMirrored.Filled.Notes, "text.alignleft")
+    val Link = BarIcon(Icons.Default.Link, "link")
+    val OpenInBrowser = BarIcon(Icons.AutoMirrored.Outlined.OpenInNew, "safari")
+
+    // A pin toggle: the outline while off, the filled star while on.
+    val Star = BarIcon(Icons.Default.StarBorder, "star")
+    val StarFilled = BarIcon(Icons.Default.Star, "star.fill")
+
+    // Bookmarks: the outline while the chat has none, filled once it carries one.
+    val Bookmark = BarIcon(Icons.Default.BookmarkBorder, "bookmark")
+    val BookmarkFilled = BarIcon(Icons.Default.Bookmark, "bookmark.fill")
+
+    // Compact forms of text actions (see BarAction.Text.compactIcon).
+    val Confirm = BarIcon(Icons.Default.Check, "checkmark")
+    val Attach = BarIcon(Icons.Default.AttachFile, "paperclip")
+    val ClearAll = BarIcon(Icons.Default.DeleteSweep, "xmark.bin")
 
     val all: List<BarIcon> = listOf(
         Back, Menu, Close, More, Search, Visible, Hidden, Media, LoadPreset, SavePreset, Prompts,
         Compare, Trace, ContextUsage, Compact, Share, Edit, Duplicate, Archive, Delete,
         EditFilled, DuplicateFilled, DeleteFilled, ShareFilled, History, Sort, NewFolder, Tools, Import,
-        SelectAll, GridView, ListView, Filter, Source, Rendered,
+        SelectAll, GridView, ListView, Filter, Source, Rendered, Link, Star, StarFilled, OpenInBrowser,
+        Bookmark, BookmarkFilled, Confirm, Attach, ClearAll,
     )
 }

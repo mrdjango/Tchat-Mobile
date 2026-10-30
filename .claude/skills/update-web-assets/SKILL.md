@@ -97,6 +97,7 @@ builder in the same pass. The builders are:
 | mermaid | `androidMain/components/MermaidDiagram.kt`, `commonMain/…/artifact/MermaidWebContent.kt`, `iosMain/components/PlatformMediaComponents.ios.kt` |
 | marked, marked-highlight, highlight | `commonMain/…/artifact/MarkdownWebContent.kt` |
 | tailwind, babel, react, react-dom | `commonMain/…/artifact/ArtifactWebContent.kt` |
+| jszip, docx-preview | not built here: the server builds the document; `commonMain/…/artifact/OfficePreviewLocalizer.kt` rewrites its exact CDN URLs (`VENDORED_OFFICE_RENDERERS`). Repin only to the server's `DOCX_PREVIEW_CDN` versions, and update the map in the same pass |
 
 Note KaTeX and mermaid each have **two** independent HTML builders (Android and iOS) that
 do not share code. Changing one and not the other is the easiest mistake to make here.
@@ -134,5 +135,6 @@ the assets that actually moved:
 | marked / marked-highlight / highlight | a markdown artifact with a fenced code block — highlighting present, theme matches light/dark |
 | tailwind | an HTML artifact using utility classes |
 | babel / react / react-dom | a React artifact that uses hooks; then one importing an unbundled package, which must show the naming error rather than a blank box |
+| jszip / docx-preview | a code-interpreter DOCX preview — page-style render, NOT the "High-fidelity renderer unavailable" fallback notice |
 
 Do not open a PR. Per the repo's convention, stop at local commits and let the user device-test first.

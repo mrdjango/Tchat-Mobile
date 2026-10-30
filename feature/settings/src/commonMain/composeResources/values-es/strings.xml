@@ -20,32 +20,24 @@
     <string name="action_verifying">Verificando…</string>
 
     <!-- Content descriptions -->
-    <string name="cd_add_memory">Añadir recuerdo</string>
     <string name="cd_add_server">Añadir servidor</string>
     <string name="cd_back">Atrás</string>
     <string name="cd_change_avatar">Cambiar avatar</string>
     <string name="cd_choose_image">Elegir imagen</string>
-    <string name="cd_collapse_tools">Contraer herramientas</string>
     <string name="cd_copy_api_key">Copiar clave de API</string>
-    <string name="cd_copy_link">Copiar enlace</string>
+    <string name="shared_chats_copy_link">Copiar enlace</string>
     <string name="cd_create_api_key">Crear clave de API</string>
     <string name="cd_current_avatar">Avatar actual</string>
     <string name="cd_delete">Eliminar</string>
     <string name="cd_delete_api_key">Eliminar clave de API</string>
-    <string name="cd_delete_memory">Eliminar recuerdo</string>
     <string name="cd_delete_preset">Eliminar preajuste</string>
-    <string name="cd_delete_server">Eliminar servidor</string>
-    <string name="cd_delete_shared_link">Eliminar enlace compartido</string>
-    <string name="cd_edit_memory">Editar recuerdo</string>
     <string name="memory_redacted_key">Entrada oculta</string>
     <string name="memory_redacted_value">La política de contenido de este servidor oculta lo que hay guardado aquí. Aun así, puedes eliminarlo.</string>
-    <string name="cd_edit_server">Editar servidor</string>
-    <string name="cd_expand_tools">Expandir herramientas</string>
+    <string name="memory_redacted_value_no_delete">La política de contenido de este servidor oculta lo que hay guardado aquí.</string>
     <string name="cd_loading_profile">Cargando perfil</string>
     <string name="cd_make_private">Hacer privado</string>
     <string name="cd_make_public">Hacer público</string>
     <string name="cd_preview_voice">Previsualizar voz</string>
-    <string name="cd_reinitialize">Reinicializar</string>
     <string name="cd_avatar_preview">Vista previa del avatar</string>
     <string name="cd_selected">Seleccionado</string>
     <string name="cd_selected_avatar">Avatar seleccionado</string>
@@ -53,11 +45,9 @@
     <string name="cd_test_tts_voice">Probar la voz de TTS seleccionada</string>
     <string name="cd_toggle_auto_read">Activar o desactivar la lectura automática de respuestas</string>
     <string name="cd_toggle_auto_send_stt">Activar o desactivar el envío automático tras el habla</string>
-    <string name="cd_toggle_memories">Activar o desactivar recuerdos</string>
     <string name="cd_tts_voice_selector">Seleccionar voz de TTS. Actualmente %1$s</string>
     <string name="cd_user_avatar">Avatar de usuario</string>
     <string name="cd_view_all_tools">Ver todas las herramientas</string>
-    <string name="cd_view_tools">Ver herramientas</string>
 
     <!-- Section headers -->
     <string name="section_about">Acerca de</string>
@@ -78,7 +68,7 @@
     <string name="prefetch_enabled">Precargar conversaciones</string>
     <string name="prefetch_enabled_desc">Carga con antelación las conversaciones recientes y fijadas para que se abran al instante. Se ejecuta mientras la app está inactiva y periódicamente mientras el dispositivo se está cargando.</string>
     <string name="prefetch_on_metered">Usar datos móviles</string>
-    <string name="prefetch_on_metered_desc">Permitir la precarga en conexiones de uso medido. Desactivado de forma predeterminada para evitar un consumo de datos inesperado.</string>
+    <string name="prefetch_on_metered_desc">Permitir la precarga en conexiones de uso medido.</string>
     <string name="prefetch_depth">Profundidad</string>
     <string name="prefetch_depth_value">%1$d conversaciones</string>
     <string name="prefetch_depth_desc">Cuántas conversaciones recientes mantener en caché. Las conversaciones fijadas siempre se incluyen, por antiguas que sean.</string>
@@ -154,7 +144,6 @@
     <string name="title_mcp_servers">Servidores MCP</string>
     <string name="title_presets">Preajustes</string>
     <string name="title_settings">Ajustes</string>
-    <string name="title_shared_links">Enlaces compartidos</string>
 
     <!-- Tabbed settings tabs -->
     <string name="tab_general">General</string>
@@ -163,7 +152,7 @@
     <string name="tab_data">Datos</string>
 
     <!-- Theme -->
-    <string name="theme_system">Predeterminado del sistema</string>
+    <string name="theme_system">Sistema</string>
     <string name="theme_light">Claro</string>
     <string name="theme_dark">Oscuro</string>
 
@@ -225,6 +214,8 @@
     <string name="whats_new_error">No se pudieron cargar las notas de la versión</string>
     <string name="release_notes_title">Notas de la versión</string>
     <string name="release_notes_desc">Qué cambió en la versión %1$s</string>
+    <string name="privacy_policy_title">Política de privacidad</string>
+    <string name="privacy_policy_desc">Qué hace la app con tus datos</string>
     <string name="release_notes_not_found">No hay notas de la versión %1$s</string>
     <string name="release_notes_not_found_desc">Esta compilación no tiene una versión publicada en GitHub.</string>
     <string name="release_notes_previous">Versiones anteriores</string>
@@ -236,7 +227,40 @@
 
     <!-- Balance -->
     <string name="token_credits">Créditos de tokens</string>
-    <string name="available_balance">Saldo disponible</string>
+    <string name="balance_credit_conversion">1000 créditos = 0,001 US$</string>
+    <string name="balance_load_error">No se pudo cargar el saldo</string>
+    <string name="auto_refill_title">Recarga automática</string>
+    <string name="auto_refill_off">Desactivada</string>
+    <string name="auto_refill_unavailable">Detalles no disponibles</string>
+    <string name="auto_refill_last">Última recarga</string>
+    <string name="auto_refill_amount">Importe de recarga</string>
+    <string name="auto_refill_interval">Intervalo</string>
+    <string name="auto_refill_next">Próxima recarga</string>
+    <string name="auto_refill_next_info">La recarga solo ocurre después de esta hora y solo si un mensaje dejaría tu saldo por debajo de cero.</string>
+    <plurals name="auto_refill_every_seconds">
+        <item quantity="one">Cada %1$s segundo</item>
+        <item quantity="other">Cada %1$s segundos</item>
+    </plurals>
+    <plurals name="auto_refill_every_minutes">
+        <item quantity="one">Cada %1$s minuto</item>
+        <item quantity="other">Cada %1$s minutos</item>
+    </plurals>
+    <plurals name="auto_refill_every_hours">
+        <item quantity="one">Cada %1$s hora</item>
+        <item quantity="other">Cada %1$s horas</item>
+    </plurals>
+    <plurals name="auto_refill_every_days">
+        <item quantity="one">Cada %1$s día</item>
+        <item quantity="other">Cada %1$s días</item>
+    </plurals>
+    <plurals name="auto_refill_every_weeks">
+        <item quantity="one">Cada %1$s semana</item>
+        <item quantity="other">Cada %1$s semanas</item>
+    </plurals>
+    <plurals name="auto_refill_every_months">
+        <item quantity="one">Cada %1$s mes</item>
+        <item quantity="other">Cada %1$s meses</item>
+    </plurals>
     <string name="cd_token_balance">Saldo de tokens: %1$s créditos</string>
     <string name="chat_group_display">Visualización</string>
     <string name="chat_group_behavior">Comportamiento</string>
@@ -259,6 +283,16 @@
     <string name="starred_models_off">Desactivado</string>
     <string name="starred_models_grouped">Grupo plegable en la parte superior</string>
     <string name="starred_models_top">En la parte superior, sin agrupar</string>
+    <string name="new_chat_start_title">Iniciar chats nuevos con</string>
+    <string name="new_chat_start_desc">Cuando tu servidor elige un modelo para los chats nuevos, decide si usarlo o el último modelo que usaste. Se ignora si el servidor oculta el selector de modelos. Si el servidor exige uno de sus propios modelos, tu último modelo solo cuenta si era uno de ellos.</string>
+    <string name="new_chat_start_server">Elección del servidor</string>
+    <string name="new_chat_start_last_used">Mi último modelo usado</string>
+    <string name="web_search_first_title">Búsqueda web</string>
+    <string name="web_search_first_desc">Qué búsqueda ejecuta el interruptor de búsqueda web de un chat cuando ambas son posibles. Si tu elección no está disponible en un chat, se usa la otra. La búsqueda propia de una especificación de modelo tiene prioridad, y Comparar usa la búsqueda de LibreChat cuando puede, para que busquen los dos modelos.</string>
+    <string name="web_search_first_librechat">Primero la búsqueda de LibreChat</string>
+    <string name="web_search_first_librechat_desc">La búsqueda de tu servidor, con fuentes. Usa la búsqueda integrada del modelo cuando el servidor no tiene ninguna configurada.</string>
+    <string name="web_search_first_built_in">Primero la búsqueda integrada</string>
+    <string name="web_search_first_built_in_desc">La búsqueda propia del proveedor del modelo (OpenAI, Claude, Gemini, OpenRouter). Usa la búsqueda de LibreChat con otros modelos.</string>
     <string name="chat_header_title">Encabezado del chat</string>
     <string name="chat_header_summary_format">%1$s · %2$s</string>
     <string name="chat_header_content_label">Contenido</string>
@@ -280,8 +314,8 @@
     <string name="latex_native_desc">Muestra el código fuente de LaTeX para un mejor rendimiento de desplazamiento</string>
     <string name="auto_scroll">Desplazamiento automático durante la transmisión</string>
     <string name="auto_scroll_desc">Desplazarse automáticamente al nuevo contenido mientras se genera una respuesta</string>
-    <string name="show_thinking_blocks">Mostrar bloques de razonamiento</string>
-    <string name="show_thinking_blocks_desc">Muestra los pasos de razonamiento del modelo cuando estén disponibles</string>
+    <string name="thinking_open_by_default">Abrir el razonamiento por defecto</string>
+    <string name="thinking_open_by_default_desc">Mostrar el razonamiento de la respuesta expandido en lugar de contraído</string>
     <string name="context_bar_title">Uso del contexto</string>
     <string name="context_bar_desc">Dónde mostrar el indicador de uso de la ventana de contexto</string>
     <string name="context_bar_hidden">Oculto</string>
@@ -319,7 +353,7 @@
     <string name="two_factor_auth">Autenticación de dos factores</string>
     <string name="enable_two_factor">Activar la autenticación de dos factores</string>
     <string name="disable_two_factor">Desactivar la autenticación de dos factores</string>
-    <string name="view_backup_codes">Ver códigos de respaldo</string>
+    <string name="regenerate_backup_codes">Regenerar códigos de respaldo</string>
 
     <!-- 2FA setup dialog -->
     <string name="dialog_title_enable_2fa">Activar la autenticación de dos factores</string>
@@ -333,7 +367,6 @@
     <string name="action_hide_qr">Ocultar código QR</string>
     <string name="cd_twofa_qr">Código QR para añadir la cuenta en otro dispositivo</string>
     <string name="twofa_disable_instructions">Introduce el código de tu autenticador para desactivar la 2FA.</string>
-    <string name="hint_verification_code">Código de verificación</string>
 
     <!-- OTP verification dialogs -->
     <string name="otp_title_verify_identity">Verificar identidad</string>
@@ -349,6 +382,10 @@
     <!-- Backup codes dialog -->
     <string name="dialog_title_backup_codes">Códigos de respaldo</string>
     <string name="backup_codes_instructions">Guarda estos códigos de respaldo en un lugar seguro. Cada código solo se puede usar una vez.</string>
+    <string name="dialog_title_regenerate_backup_codes">¿Regenerar los códigos de respaldo?</string>
+    <string name="regenerate_backup_codes_warning">Tus códigos de respaldo actuales dejarán de funcionar. Recibirás un conjunto nuevo para guardar.</string>
+    <string name="action_regenerate">Regenerar</string>
+    <string name="backup_codes_saved_ack">He guardado estos códigos</string>
 
     <!-- Danger zone -->
     <string name="delete_account">Eliminar cuenta</string>
@@ -376,7 +413,6 @@
     <string name="archived_all_count">%1$d conversaciones archivadas</string>
     <string name="archived_conversations">Conversaciones archivadas</string>
     <string name="export_all_data">Exportar todos los datos</string>
-    <string name="shared_links">Enlaces compartidos</string>
     <string name="clear_cache_with_size">Borrar caché (%1$s)</string>
     <string name="clear_cache">Borrar caché</string>
     <string name="revoke_all_api_keys">Revocar todas las claves de API</string>
@@ -434,33 +470,79 @@
     <string name="tts_preview_voice">Previsualizar voz</string>
 
     <!-- Memories -->
-    <string name="enable_memories">Activar recuerdos</string>
-    <string name="enable_memories_desc">Permitir que la IA recuerde información entre conversaciones</string>
-    <string name="no_memories_saved">Aún no hay recuerdos guardados</string>
-    <string name="memories_add_hint">Toca el botón + para añadir un recuerdo</string>
     <string name="add_memory">Añadir recuerdo</string>
     <string name="edit_memory">Editar recuerdo</string>
     <string name="dialog_title_delete_memory">Eliminar recuerdo</string>
-    <string name="dialog_delete_memory_message">¿Seguro que quieres eliminar el recuerdo "%1$s"?</string>
+    <string name="dialog_delete_memory_message">¿Seguro que quieres eliminar el recuerdo «%1$s»?</string>
     <string name="memory_key_label">Clave</string>
     <string name="memory_value_label">Valor</string>
-    <string name="memory_key_hint">Usa solo letras minúsculas y guiones bajos</string>
-    <string name="memory_key_invalid">La clave solo puede contener letras minúsculas y guiones bajos</string>
+    <string name="memory_key_hint">Usa solo letras minúsculas a–z y guiones bajos</string>
+    <string name="memory_key_invalid">La clave solo puede contener letras minúsculas a–z y guiones bajos</string>
     <string name="memory_key_exists">Ya existe un recuerdo con esta clave</string>
+    <string name="memory_key_reserved">Esta clave está reservada. Elige otra.</string>
+    <string name="memory_key_too_long">Las claves pueden tener como máximo %1$s caracteres.</string>
+    <string name="memory_error_forbidden">No tienes permiso para cambiar los recuerdos.</string>
+    <string name="memory_error_toggle_forbidden">Tu rol no puede activar ni desactivar los recuerdos.</string>
+    <string name="memory_error_content_filtered">Bloqueado por el filtro de contenido de tu servidor.</string>
+    <string name="memory_error_agent">Los recuerdos de este agente no se pueden cambiar.</string>
+    <string name="memory_error_network">No se pudo conectar con el servidor. Comprueba tu conexión.</string>
+    <string name="memory_error_save">No se pudo guardar el recuerdo.</string>
+    <string name="memory_error_delete">No se pudo eliminar el recuerdo.</string>
+    <string name="memory_error_toggle">No se pudo cambiar el ajuste de recuerdos.</string>
+    <string name="memory_error_not_found">Este recuerdo se eliminó en otro lugar.</string>
+    <string name="memory_error_not_found_readd">Este recuerdo se eliminó en otro lugar. Guárdalo para volver a añadirlo.</string>
+    <!-- Memories index -->
+    <string name="memories_use_title">Usar recuerdos guardados</string>
+    <string name="memories_use_desc">Los chats pueden leer y guardar recuerdos</string>
+    <string name="memories_use_load_failed">No se pudo cargar este ajuste.</string>
+    <string name="memories_use_loading">Cargando</string>
+    <string name="memories_usage_percent">%1$s %</string>
+    <plurals name="memories_usage_tokens">
+        <item quantity="one">%1$s / %2$s token</item>
+        <item quantity="other">%1$s / %2$s tokens</item>
+    </plurals>
+    <plurals name="memories_usage_a11y">
+        <item quantity="one">Uso de recuerdos: %1$s, %2$s de %3$s token</item>
+        <item quantity="other">Uso de recuerdos: %1$s, %2$s de %3$s tokens</item>
+    </plurals>
+    <plurals name="memory_token_count">
+        <item quantity="one">%1$s token</item>
+        <item quantity="other">%1$s tokens</item>
+    </plurals>
+    <string name="memory_agent_fallback">Recuerdo de agente</string>
+    <string name="memory_agent_numbered">%1$s (%2$s)</string>
+    <string name="memories_search_hint">Buscar recuerdos</string>
+    <string name="memories_no_match">Ningún recuerdo coincide con «%1$s»</string>
+    <string name="memories_personal_empty">Aún no hay recuerdos personales</string>
+    <string name="memories_filter_all">Todos</string>
+    <string name="memories_filter_personal">Personales</string>
+    <string name="memories_empty_title">Aún no hay recuerdos</string>
+    <string name="memories_empty_desc">Los chats guardan aquí lo que vale la pena recordar. También puedes añadir uno tú mismo.</string>
+    <string name="memories_empty_desc_no_create">Los chats guardan aquí lo que vale la pena recordar.</string>
+    <string name="memories_view_only">Tu rol puede ver los recuerdos, pero no añadirlos ni cambiarlos.</string>
+    <string name="memories_no_access_title">Sin acceso a los recuerdos</string>
+    <string name="memories_no_access_desc">Tu rol no tiene permiso para ver los recuerdos.</string>
+    <string name="memory_action_edit">Editar</string>
+    <string name="cd_memory_options">Opciones de %1$s</string>
+    <!-- Memory sheet -->
+    <string name="view_memory">Ver recuerdo</string>
+    <string name="action_close">Cerrar</string>
+    <string name="memory_value_counter">%1$s / %2$s</string>
+    <plurals name="memory_token_share">
+        <item quantity="one">%1$s token · %2$s % de tu memoria</item>
+        <item quantity="other">%1$s tokens · %2$s % de tu memoria</item>
+    </plurals>
+    <string name="memory_updated_at">Actualizado: %1$s</string>
 
     <!-- MCP -->
     <string name="add_mcp_server">Añadir servidor MCP</string>
     <string name="edit_mcp_server">Editar servidor MCP</string>
-    <string name="no_mcp_servers">No hay servidores MCP configurados</string>
-    <string name="mcp_add_hint">Toca el botón + para añadir un servidor</string>
     <string name="mcp_name_label">Nombre</string>
     <string name="mcp_description_label">Descripción</string>
     <string name="mcp_description_optional">Opcional</string>
     <string name="mcp_url_label">URL</string>
-    <string name="mcp_type_label">Tipo</string>
     <string name="mcp_type_sse">SSE</string>
     <string name="mcp_type_streamable_http">HTTP transmisible</string>
-    <string name="mcp_auth_label">Autenticación</string>
     <string name="mcp_auth_none">Ninguna</string>
     <string name="mcp_auth_api_key">Clave de API</string>
     <string name="mcp_auth_oauth">OAuth</string>
@@ -481,7 +563,6 @@
     <string name="dialog_title_delete_server">Eliminar servidor</string>
     <string name="dialog_delete_server_message">¿Seguro que quieres eliminar "%1$s"?</string>
     <string name="error_failed_to_load_servers">Error al cargar los servidores</string>
-    <string name="mcp_tools_count">%1$d herramienta%2$s</string>
     <string name="no_tools_available">No hay herramientas disponibles</string>
     <!-- Fork settings -->
     <string name="fork_mode_direct_path">Mensajes visibles</string>
@@ -525,29 +606,17 @@
     <string name="dialog_delete_preset_message">¿Seguro que quieres eliminar "%1$s"?</string>
 
     <!-- Shared links -->
-    <string name="no_shared_links">No hay enlaces compartidos</string>
-    <string name="no_shared_links_desc">Comparte una conversación para verla aquí</string>
     <string name="mcp_oauth_secret_reentry_required">Los endpoints de OAuth cambiaron, así que el secreto guardado ya no es válido. Vuelve a introducirlo.</string>
     <string name="mcp_api_key_reentry_required">La configuración de conexión cambió, así que la clave de API guardada ya no es válida. Vuelve a introducirla.</string>
-    <string name="cd_update_shared_link">Actualizar enlace compartido</string>
-    <string name="dialog_title_update_shared_link">Actualizar enlace compartido</string>
-    <string name="dialog_update_shared_link_message">Esto vuelve a publicar "%1$s" con la conversación tal como está ahora. El enlace no cambia, así que quien ya lo tenga verá el contenido actualizado.</string>
-    <string name="dialog_update_shared_link_message_new_url">Esto vuelve a publicar "%1$s" con la conversación tal como está ahora. Este servidor genera un enlace nuevo, así que quien tenga el anterior perderá el acceso.</string>
-    <string name="action_update_shared_link">Actualizar</string>
     <string name="dialog_title_delete_shared_link">Eliminar enlace compartido</string>
     <string name="dialog_delete_shared_link_message">Esto eliminará el enlace compartido de "%1$s". Las personas que tengan el enlace ya no podrán acceder a él.</string>
-    <string name="visibility_public">Público</string>
-    <string name="visibility_private">Privado</string>
     <string name="error_failed_to_load_memories">Error al cargar los recuerdos</string>
 
     <!-- Provider API Keys -->
     <string name="provider_keys_title">Claves de API de proveedores</string>
     <string name="provider_keys_subtitle">Establece tus propias claves para los endpoints que las requieran</string>
-    <string name="provider_keys_dialog_title">Establecer clave de API para %1$s</string>
-    <string name="provider_keys_status_set_expires">Caduca en %1$s</string>
-    <string name="provider_keys_status_set_never">Tu clave nunca caducará</string>
     <string name="provider_keys_status_unset">No establecida</string>
-    <string name="provider_keys_status_expired">Caducada</string>
+    <string name="provider_keys_status_unknown">No se pudo comprobar</string>
     <string name="provider_keys_status_loading">Comprobando el estado de la clave…</string>
     <string name="provider_keys_field_api_key_label">Clave</string>
     <string name="provider_keys_field_base_url_label">URL base</string>
@@ -568,47 +637,86 @@
     <string name="provider_keys_field_google_imported">Clave JSON de cuenta de servicio importada correctamente</string>
     <string name="provider_keys_field_google_paste_label">O pega el JSON de la cuenta de servicio</string>
     <string name="provider_keys_field_google_paste_only_hint">Pega abajo el JSON de la cuenta de servicio.</string>
-    <string name="provider_keys_field_google_service_key_or_gemini">Clave de servicio de Google o clave de API de Gemini</string>
 
     <string name="provider_keys_field_bedrock_access_key_id">ID de clave de acceso</string>
     <string name="provider_keys_field_bedrock_secret_access_key">Clave de acceso secreta</string>
     <string name="provider_keys_field_bedrock_session_token">Token de sesión</string>
     <string name="provider_keys_field_bedrock_session_token_optional_suffix">(Opcional)</string>
+    <string name="provider_keys_field_bedrock_bearer_token">Token de portador</string>
+    <string name="provider_keys_field_bedrock_bearer_token_placeholder">Clave de API de Bedrock</string>
+    <string name="provider_keys_field_required">Obligatorio</string>
+    <string name="provider_keys_bedrock_or_access_keys">O usa claves de acceso en su lugar</string>
+    <string name="provider_keys_field_google_either_required">Añade una clave de servicio o una clave de API de Gemini</string>
 
-    <string name="provider_keys_required_fields">Los siguientes campos son obligatorios: %1$s</string>
     <string name="provider_keys_revoke">Revocar</string>
     <string name="provider_keys_revoke_failed">Error al revocar la clave de API. Inténtalo de nuevo.</string>
     <string name="provider_keys_revoke_success">Clave de API revocada correctamente</string>
-    <string name="provider_keys_revoke_all">Revocar claves</string>
     <string name="provider_keys_revoke_all_confirm">¿Seguro que quieres revocar todas las claves?</string>
     <string name="provider_keys_revoke_all_failed">Error al revocar todas las claves</string>
     <string name="provider_keys_save_failed">Error al guardar la clave de API. Inténtalo de nuevo.</string>
     <string name="provider_keys_save_success">Clave de API guardada correctamente</string>
 
-    <string name="provider_keys_expiry_label">Caduca</string>
-    <string name="provider_keys_expiry_30m">en 30 minutos</string>
-    <string name="provider_keys_expiry_2h">en 2 horas</string>
-    <string name="provider_keys_expiry_12h">en 12 horas</string>
-    <string name="provider_keys_expiry_1d">en 1 día</string>
-    <string name="provider_keys_expiry_7d">en 7 días</string>
-    <string name="provider_keys_expiry_30d">en 30 días</string>
-    <string name="provider_keys_expiry_never">nunca</string>
+    <string name="provider_keys_expiry_label">La nueva clave caduca</string>
+    <string name="provider_keys_expiry_30m">30 min</string>
+    <string name="provider_keys_expiry_2h">2 h</string>
+    <string name="provider_keys_expiry_12h">12 h</string>
+    <string name="provider_keys_expiry_1d">1 día</string>
+    <string name="provider_keys_expiry_7d">7 días</string>
+    <string name="provider_keys_expiry_30d">30 días</string>
+    <string name="provider_keys_expiry_never">Nunca</string>
 
     <string name="provider_keys_empty_title">Ningún endpoint requiere claves proporcionadas por el usuario</string>
     <string name="provider_keys_empty_desc">Los endpoints que necesiten tu propia clave de API aparecerán aquí.</string>
-    <string name="provider_keys_revoke_all_action">Revocar todo</string>
+    <string name="provider_keys_load_failed_title">No se pudieron cargar tus proveedores</string>
+    <string name="provider_keys_load_failed_desc">Comprueba tu conexión e inténtalo de nuevo.</string>
+    <string name="provider_keys_status_never_expires">No caduca nunca</string>
+    <string name="provider_keys_status_expires_at">Caduca el %1$s</string>
+    <string name="provider_keys_status_expires_at_time">Caduca a las %1$s</string>
+    <string name="provider_keys_retry_check_cd">Volver a comprobar %1$s</string>
+    <string name="provider_keys_status_unset_needs">No establecida · %1$s</string>
+    <string name="provider_keys_needs_azure">clave, instancia, implementación, versión</string>
+    <string name="provider_keys_needs_key_and_url">clave, URL base</string>
+    <string name="provider_keys_needs_base_url">URL base</string>
+    <string name="provider_keys_needs_google">clave de servicio o clave de Gemini</string>
+    <string name="provider_keys_needs_access_keys">claves de acceso</string>
+    <string name="provider_keys_needs_bearer_or_access_keys">token bearer o claves de acceso</string>
+    <string name="provider_keys_summary_note">Las claves se guardan en tu servidor y se eliminan cuando caducan.</string>
+    <string name="provider_keys_revoke_all_button">Revocar todas las claves</string>
+    <plurals name="provider_keys_status_expires_in_minutes">
+        <item quantity="one">Caduca en %1$d min</item>
+        <item quantity="other">Caduca en %1$d min</item>
+    </plurals>
+    <plurals name="provider_keys_summary">
+        <item quantity="one">%1$d de %2$d clave establecida.</item>
+        <item quantity="other">%1$d de %2$d claves establecidas.</item>
+    </plurals>
+    <plurals name="provider_keys_row_summary">
+        <item quantity="one">%1$d de %2$d establecida</item>
+        <item quantity="other">%1$d de %2$d establecidas</item>
+    </plurals>
 
     <!-- Admin: role skill access -->
-    <string name="role_skills_settings_row">Acceso a habilidades (admin)</string>
-    <string name="role_skills_title">Acceso a habilidades</string>
-    <string name="role_skills_back">Atrás</string>
+    <string name="role_skills_settings_row">Permisos de habilidades</string>
+    <string name="role_skills_title">Permisos de habilidades</string>
     <string name="role_skills_description">Controla qué capacidades de habilidades tiene cada rol. Los cambios se aplican a todos los usuarios con el rol seleccionado.</string>
-    <string name="role_skills_role_label">Rol</string>
+    <string name="role_permissions_role_label">Rol</string>
     <string name="role_skills_use">Usar habilidades</string>
     <string name="role_skills_create">Crear y editar habilidades</string>
     <string name="role_skills_share">Compartir habilidades</string>
     <string name="role_skills_share_public">Compartir habilidades públicamente</string>
-    <string name="role_skills_save">Guardar</string>
+    <string name="role_memories_settings_row">Permisos de recuerdos</string>
+    <string name="role_memories_title">Permisos de recuerdos</string>
+    <string name="role_memories_description">Controla qué capacidades de recuerdos tiene cada rol. Los cambios se aplican a todos los usuarios con el rol seleccionado.</string>
+    <string name="role_memories_use">Permitir usar recuerdos</string>
+    <string name="role_memories_create">Permitir crear recuerdos</string>
+    <string name="role_memories_update">Permitir actualizar recuerdos</string>
+    <string name="role_memories_read">Permitir leer recuerdos</string>
+    <string name="role_memories_opt_out">Permitir a los usuarios desactivar los recuerdos</string>
+    <string name="role_permissions_saved">Guardado</string>
+    <string name="role_permissions_load_failed">No se pudieron cargar los permisos de este rol.</string>
+    <string name="role_permissions_save_failed">No se pudieron guardar los permisos. Inténtalo de nuevo.</string>
+    <string name="role_permissions_admin_access_warning">Desactivar el acceso de Administrador a esta función puede causar problemas inesperados hasta que la app vuelva a cargar tus permisos. Una vez guardado, la única forma de revertirlo es la opción interface de librechat.yaml, que afecta a todos los roles.</string>
+    <string name="role_permissions_more_info">Más información</string>
     <string name="artifact_shortcuts_title">Accesos directos en la pantalla de inicio</string>
     <string name="artifact_shortcuts_empty">Aún no hay artefactos fijados en la pantalla de inicio.</string>
     <string name="artifact_shortcuts_disabled_message">Se eliminó este acceso directo al artefacto.</string>
@@ -700,9 +808,10 @@
     <string name="date_time_preview">Vista previa</string>
     <string name="data_summary_off">Desactivado</string>
     <string name="data_summary_none">Ninguno</string>
+    <string name="data_memories_none">Ninguno</string>
     <plurals name="data_memories_count">
-        <item quantity="one">%1$d guardada</item>
-        <item quantity="other">%1$d guardadas</item>
+        <item quantity="one">%1$s guardado</item>
+        <item quantity="other">%1$s guardados</item>
     </plurals>
     <plurals name="data_mcp_servers_count">
         <item quantity="one">%1$d servidor</item>
@@ -714,4 +823,70 @@
     <string name="ui_style_note_simulated">Liquid Glass se simula en esta versión de iOS. iOS 26 o posterior lo muestra de forma nativa.</string>
     <string name="ui_style_note_blur_only">Este dispositivo muestra Liquid Glass como un desenfoque, sin refracción. Android 13 o posterior muestra el efecto completo.</string>
     <string name="ui_style_note_flat">Este dispositivo muestra Liquid Glass como una superficie translúcida plana.</string>
+    <!-- Message search -->
+    <string name="section_search">Búsqueda</string>
+    <string name="advanced_search">Búsqueda avanzada</string>
+    <string name="advanced_search_desc">Para usuarios avanzados. Añade distinguir mayúsculas, palabra completa, expresiones regulares y filtros de rol, modelo y fecha a la pantalla de búsqueda.</string>
+    <string name="server_user_ca_notice">De confianza mediante una autoridad de certificación instalada en este dispositivo</string>
+    <string name="export_coming_soon">La exportación llegará pronto</string>
+    <string name="mcp_tools_all">Todas las herramientas MCP</string>
+    <string name="mcp_server_unknown">Desconocido</string>
+    <string name="avatar_upload_unavailable_ios">La subida de avatares aún no está disponible en iOS.</string>
+    <string name="dialog_ok">Aceptar</string>
+    <plurals name="mcp_tool_count">
+        <item quantity="one">%1$d herramienta</item>
+        <item quantity="other">%1$d herramientas</item>
+    </plurals>
+    <string name="mcp_status_connected">Conectado</string>
+    <string name="mcp_status_connecting">Conectando…</string>
+    <string name="mcp_status_needs_sign_in">Requiere iniciar sesión</string>
+    <string name="mcp_status_needs_setup">Configúralo en la web</string>
+    <string name="mcp_status_on_demand">Se conecta cuando chateas</string>
+    <string name="mcp_status_disconnected">No conectado</string>
+    <string name="mcp_status_failed">No se puede conectar</string>
+    <string name="mcp_action_sign_in">Iniciar sesión</string>
+    <string name="mcp_action_connect">Conectar</string>
+    <string name="mcp_action_reconnect">Reconectar</string>
+    <string name="mcp_action_edit">Editar</string>
+    <string name="mcp_view_only">Solo lectura</string>
+    <string name="mcp_filter_all">Todos</string>
+    <string name="mcp_filter_needs_attention">Requieren atención (%1$d)</string>
+    <string name="mcp_search_hint">Buscar servidores</string>
+    <string name="mcp_search_no_results">Ningún servidor coincide</string>
+    <string name="mcp_empty_title">Dale herramientas a tus chats</string>
+    <string name="mcp_empty_body">Un servidor MCP permite a los modelos buscar, leer y actuar en otra app, como GitHub o tu calendario. Añade uno con su URL.</string>
+    <string name="mcp_empty_body_no_create">Un servidor MCP permite a los modelos buscar, leer y actuar en otra app, como GitHub o tu calendario. Pide a un administrador que añada uno.</string>
+    <string name="mcp_tools_title">Herramientas</string>
+    <string name="mcp_tools_filter_hint">Filtrar herramientas</string>
+    <string name="mcp_tools_no_match">Ninguna herramienta coincide</string>
+    <string name="mcp_needs_setup_detail">Este servidor necesita datos que solo tú puedes darle, como tu propia clave de API. Añádelos en el sitio web de LibreChat y vuelve a conectar.</string>
+    <string name="mcp_editor_section_about">Información</string>
+    <string name="mcp_editor_section_connection">Conexión</string>
+    <string name="mcp_editor_section_sign_in">Inicio de sesión</string>
+    <string name="mcp_editor_load_failed">No se pudo cargar este servidor.</string>
+    <string name="mcp_trust_label">Confío en este servidor</string>
+    <string name="mcp_trust_sublabel">Puede leer lo que le envías y actuar por ti en la app a la que se conecta. Añade solo servidores de confianza.</string>
+    <string name="memory_error_key_route_shadowed">Este servidor no puede editar un recuerdo con esta clave. Elimínalo y vuelve a añadirlo con otra clave.</string>
+    <string name="shared_chats_title">Chats compartidos</string>
+    <string name="shared_chats_summary">Enlaces a chats que has compartido</string>
+    <string name="shared_chats_untitled">Chat sin título</string>
+    <string name="shared_chats_shared_on">Compartido · %1$s</string>
+    <string name="shared_chats_options">Opciones de %1$s</string>
+    <string name="shared_chats_open_chat">Abrir chat</string>
+    <string name="shared_chats_view_shared">Ver versión compartida</string>
+    <string name="shared_chats_link_copied">Enlace copiado</string>
+    <string name="shared_chats_search">Buscar chats compartidos</string>
+    <string name="shared_chats_clear_search">Borrar búsqueda</string>
+    <string name="shared_chats_sort_label">Ordenar</string>
+    <string name="shared_chats_sort_newest">Más recientes</string>
+    <string name="shared_chats_sort_oldest">Más antiguos</string>
+    <string name="shared_chats_sort_title">Título A–Z</string>
+    <string name="shared_chats_empty">Aún no hay chats compartidos</string>
+    <string name="shared_chats_empty_description">Abre un chat y elige Compartir en su menú para crear un enlace. Tus enlaces aparecerán aquí.</string>
+    <string name="shared_chats_load_failed">No se pudieron cargar tus chats compartidos</string>
+    <string name="shared_chats_load_failed_description">Comprueba tu conexión e inténtalo de nuevo.</string>
+    <string name="shared_chats_load_more_failed">No se pudieron cargar más</string>
+    <string name="shared_chats_no_match">Ningún enlace coincide con «%1$s»</string>
+    <string name="shared_chats_refresh_failed">No se pudieron actualizar tus chats compartidos</string>
+    <string name="shared_chats_delete_failed">No se pudo eliminar el enlace</string>
 </resources>

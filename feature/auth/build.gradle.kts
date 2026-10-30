@@ -11,6 +11,7 @@ kotlin {
         commonMain.dependencies {
             implementation(project(":core:network"))
             implementation(project(":core:brand")) // TCHAT: ServerPinning for ServerUrlViewModel
+            implementation(project(":core:logging"))
         }
         named("androidUnitTest").dependencies {
             implementation(libs.kotlinx.serialization.json)

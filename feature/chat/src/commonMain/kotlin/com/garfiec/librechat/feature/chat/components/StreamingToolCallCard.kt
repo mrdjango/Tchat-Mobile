@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +52,12 @@ fun StreamingToolCallCard(
     baseUrl: String = "",
     streamingAttachments: List<Attachment> = emptyList(),
     showImageDescriptions: Boolean = true,
+    /** The server reported this call's sandbox is still cold-booting (`on_sandbox_starting`). */
+    sandboxStarting: Boolean = false,
+    /** This is the reply's most recent tool call, so a finished search may still be being read. */
+    isLatestStep: Boolean = false,
+    /** The reply text's length so far, to tell when the model has moved past a finished search. */
+    replyLength: Int = 0,
 ) {
     // Image-gen tool calls render as an ImageGenCard placeholder (matching web): a
     // faux-progress spinner while generating, swapping to the real image the moment
@@ -75,12 +83,14 @@ fun StreamingToolCallCard(
         // A batched ask reads its questions from `questions[]` and its answers from the output's
         // `{"answers": {…}}` map; neither is visible to the single-question parse below.
         val batch = remember(toolCall.input) { parseAskUserQuestionBatch(toolCall.input) }
+        val failed = toolCall.inputValidationError
         if (batch.isNotEmpty()) {
-            val answers = remember(toolCall.output) { parseAskUserAnswers(toolCall.output) }
+            val answers = remember(toolCall.output, failed) { askUserAnswersOrEmpty(toolCall.output, failed) }
             AskUserQuestionBatchRecordCard(
                 questions = batch,
                 answers = answers,
                 modifier = modifier,
+                failed = failed,
             )
             return
         }
@@ -89,30 +99,144 @@ fun StreamingToolCallCard(
             question = question,
             answer = toolCall.output.orEmpty(),
             modifier = modifier,
+            failed = failed,
         )
         return
     }
 
-    // Web search: as soon as `web_search` attachments arrive (streamed once per source
-    // processed) render the same "Searched the web" sources card the finalized message uses,
-    // so sources appear live instead of a generic spinner that only resolves on reload.
-    val webSearchSources = remember(toolCall, streamingAttachments) {
-        if (isWebSearchToolCall(toolCall.name.lowercase())) {
-            collectWebSearchSources(streamingAttachments, toolCall.id)
-        } else {
-            emptyList()
-        }
+    // A memory write draws the card the reload draws as soon as its output or a memory attachment
+    // arrives (web renders MemoryCall live and persisted alike), so a refused write is red at once
+    // rather than a generic green check until the message finalizes. Before then, the generic
+    // running card: empty output is not a failure.
+    val memoryArtifacts = remember(toolCall.name, toolCall.output, toolCall.id, streamingAttachments) {
+        streamingMemoryArtifacts(toolCall, streamingAttachments)
     }
-    if (webSearchSources.isNotEmpty()) {
-        WebSearchSourcesCard(results = webSearchSources, modifier = modifier)
-    } else {
-        GenericStreamingToolCard(
-            toolCall = toolCall,
-            baseUrl = baseUrl,
-            streamingAttachments = streamingAttachments,
+    if (memoryArtifacts.isNotEmpty()) {
+        val onManage = LocalOpenMemories.current
+        Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            memoryArtifacts.forEachIndexed { index, artifact ->
+                MemoryArtifactCard(
+                    artifact = artifact,
+                    onManage = onManage,
+                    stateKey = memoryCardStateKey(toolCall.id, index),
+                    live = true,
+                )
+            }
+        }
+        return
+    }
+
+    // A model-invoked skill streams like any tool call; a manual pick's card only comes with the
+    // final message (see PendingSkillCallRow), or with a resync after the run.
+    if (isSkillToolCall(toolCall.name)) {
+        val skillName = remember(toolCall.input) { parseSkillName(toolCall.input) }
+        val intent = remember(toolCall.input) { parseToolIntent(toolCall.input) }
+        SkillCallCard(
+            skillName = skillName,
+            verdict = toolCallVerdict(toolCall.closedStatus, toolCall.isComplete),
+            intent = intent,
+            durationMs = toolCall.durationMs,
+            output = toolCall.output,
+            stateKey = toolCall.id,
             modifier = modifier,
         )
+        return
     }
+
+    // Status only while the step runs — the wire carries no args at step start and no progressive
+    // output — then the code and output the completion reports, in the card the reload renders.
+    if (isCodeExecutionToolCall(toolCall.name.lowercase())) {
+        val result = remember(toolCall.name, toolCall.input, toolCall.output) {
+            parseCodeExecution(toolCall.name, toolCall.input, toolCall.output)
+        }
+        val verdict = toolCallVerdict(toolCall.closedStatus, toolCall.isComplete)
+        Column(modifier = modifier.fillMaxWidth()) {
+            CodeExecutionCard(
+                result = result ?: EMPTY_CODE_RESULT,
+                phase = codeExecutionPhase(verdict, sandboxStarting, result),
+                durationMs = toolCall.durationMs,
+                stateKey = toolCall.id,
+                live = true,
+            )
+            ToolCallAttachments(
+                attachments = streamingAttachments,
+                toolCallId = toolCall.id,
+                baseUrl = baseUrl,
+                modifier = Modifier.padding(top = 8.dp),
+                live = true,
+            )
+        }
+        return
+    }
+
+    val nameLower = toolCall.name.lowercase()
+    val verdict = toolCallVerdict(toolCall.closedStatus, toolCall.isComplete)
+    // The reply's length when this call finished: text growing past it means the model has moved on.
+    val replyLengthAtComplete =
+        // Saveable: this is a LazyColumn item, and a plain remember re-captured on scroll-back would
+        // put a settled search back to "Reading results".
+        rememberSaveable(toolCall.id, toolCall.isComplete) { if (toolCall.isComplete) replyLength else -1 }
+
+    // Web search: the phase line while it runs ("Searching the web" → "Processing results" →
+    // "Reading results"), then the same settled card the finalized message uses, with sources
+    // arriving live as each `web_search` attachment re-emits.
+    if (isWebSearchToolCall(nameLower)) {
+        val searchData =
+            remember(streamingAttachments, toolCall.id) { webSearchData(streamingAttachments, toolCall.id) }
+        val sources =
+            remember(streamingAttachments, toolCall.id) { collectWebSearchSources(streamingAttachments, toolCall.id) }
+        val outcome = searchOutcome(verdict, toolCall.output)
+        val searchCard = claimsWebSearchCard(nameLower, hasSources = sources.isNotEmpty())
+        if (searchCard && outcome == SearchOutcome.HIDDEN) return
+        if (searchCard && outcome == SearchOutcome.SHOWN) {
+            val phase = liveWebSearchPhase(
+                isComplete = verdict != ToolCallVerdict.RUNNING,
+                hasSources = sources.isNotEmpty(),
+                isLatestStep = isLatestStep,
+                replyMovedOn = replyLengthAtComplete >= 0 && replyLength > replyLengthAtComplete,
+            )
+            WebSearchCard(
+                sources = sources,
+                phase = phase,
+                modifier = modifier,
+                turn = webSearchTurn(searchData),
+                intent = remember(toolCall.input) { parseToolIntent(toolCall.input) },
+                query = remember(toolCall.input) { parseSearchQuery(toolCall.input) },
+                answerBox = remember(searchData) { webSearchAnswerBox(searchData) },
+                verticals = remember(searchData) { collectSearchVerticals(searchData) },
+                stateKey = toolCall.id,
+            )
+            return
+        }
+    }
+
+    // File search: "Searching your files" while it runs, then its sources card.
+    if (isFileSearchToolCall(nameLower) && searchOutcome(verdict, toolCall.output) != SearchOutcome.FAILED) {
+        val citations = remember(streamingAttachments, toolCall.id, toolCall.output) {
+            fileSearchResults(streamingAttachments, toolCall.id, toolCall.output)
+        }
+        // A settled search with nothing to list falls through to the generic card, so its output stays readable.
+        if (citations.isNotEmpty() || verdict != ToolCallVerdict.COMPLETED) {
+            val fileActions = rememberToolFileActions(baseUrl)
+            FileSearchSourcesCard(
+                citations = citations,
+                modifier = modifier,
+                stateKey = toolCall.id,
+                verdict = verdict,
+                intent = remember(toolCall.input) { parseToolIntent(toolCall.input) },
+                durationMs = toolCall.durationMs,
+                onOpen = { citation -> citation.asAttachment()?.let(fileActions::openToolFile) },
+            )
+            return
+        }
+    }
+
+    GenericStreamingToolCard(
+        toolCall = toolCall,
+        baseUrl = baseUrl,
+        streamingAttachments = streamingAttachments,
+        modifier = modifier,
+    )
 }
 
 /** The default streaming tool-call card: name, progress/complete state, expandable output, and
@@ -196,7 +320,7 @@ private fun GenericStreamingToolCard(
                         Spacer(modifier = Modifier.width(4.dp))
                         Icon(
                             imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = if (isExpanded) "Collapse" else "Expand",
+                            contentDescription = stringResource(if (isExpanded) Res.string.cd_collapse else Res.string.cd_expand),
                             modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -233,6 +357,10 @@ private fun GenericStreamingToolCard(
             toolCallId = toolCall.id,
             baseUrl = baseUrl,
             modifier = Modifier.padding(top = 8.dp),
+            live = true,
         )
     }
 }
+
+private val EMPTY_CODE_RESULT =
+    CodeExecutionResult(language = null, code = null, output = null, error = null, exitCode = null)

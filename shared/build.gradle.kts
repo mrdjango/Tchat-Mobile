@@ -22,14 +22,16 @@ kotlin {
             export(project(":core:model"))
             export(project(":core:network"))
             export(project(":core:data"))
-            // TEMPORARY: the Release link's whole-program static-initializer pass outgrew the 7 GB
-            // macOS runner (Java heap space in StaticInitializersOptimization, Kotlin 2.4.10). It
-            // is a pure optimization, so skipping it keeps the binary correct, at some runtime
-            // cost. Tracked as KT-89519; fixed by KT-87570, first available in Kotlin 2.5.0-Beta2.
-            // Remove after upgrading to a 2.5.0 build and confirming the CI OOM canary links in
-            // its usual time.
+            // TEMPORARY: Kotlin 2.4.10's Release optimization passes exceed the CI heap limit:
+            // StaticInitializersOptimization, then DevirtualizationAnalysis's constraint graph.
+            // Skipping these optimizations preserves correctness, with possible binary-size and
+            // runtime costs. The static-initializer issue is KT-89519, fixed by KT-87570 starting
+            // in Kotlin 2.5.0-Beta2; the devirtualization failure needs separate verification.
+            // After a compiler upgrade, re-enable each phase only after the CI OOM canary links
+            // within its usual time at the unchanged heap limit.
             if (buildType == NativeBuildType.RELEASE) {
-                freeCompilerArgs += "-Xdisable-phases=RemoveRedundantCallsToStaticInitializersPhase"
+                freeCompilerArgs += "-Xdisable-phases=" +
+                    "RemoveRedundantCallsToStaticInitializersPhase,DevirtualizationAnalysis"
             }
         }
     }
@@ -66,6 +68,9 @@ kotlin {
             implementation(libs.coil3.compose)
             implementation(libs.coil3.network.ktor)
             implementation(libs.coil3.svg)
+        }
+        commonTest.dependencies {
+            implementation(libs.coroutines.test)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)

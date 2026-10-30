@@ -17,7 +17,10 @@ import com.garfiec.librechat.core.data.pdf.PdfNormalizer
 import com.garfiec.librechat.core.data.pdf.PdfPasswordProtectedException
 import com.garfiec.librechat.core.data.pdf.hasEncryptKey
 import com.garfiec.librechat.core.data.pdf.isPdfUpload
+import com.garfiec.librechat.core.model.Attachment
 import com.garfiec.librechat.core.model.FileObject
+import com.garfiec.librechat.core.model.files.codeDownloadUrl
+import com.garfiec.librechat.core.model.files.isCodeDownloadFallback
 import com.garfiec.librechat.core.model.request.DeleteFileEntry
 import com.garfiec.librechat.core.model.request.DeleteFilesRequest
 import com.garfiec.librechat.core.model.response.DeleteFilesResponse
@@ -26,6 +29,7 @@ import com.garfiec.librechat.core.model.response.FileUploadConfig
 import com.garfiec.librechat.core.network.api.FILES_USAGE_MAX_IDS
 import com.garfiec.librechat.core.network.api.FilesApi
 import com.garfiec.librechat.core.network.api.FilesExtApi
+import com.garfiec.librechat.core.network.client.ServerUrlProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
@@ -38,6 +42,7 @@ class FileRepositoryImpl(
     private val filesExtApi: FilesExtApi,
     private val configRepository: ConfigRepository,
     private val pdfNormalizer: PdfNormalizer,
+    private val serverUrlProvider: ServerUrlProvider,
 ) : FileRepository {
 
     override suspend fun getFiles(): Result<List<FileObject>> =
@@ -226,42 +231,76 @@ class FileRepositoryImpl(
      * URL attempt's failures are swallowed (they're expected on non-CDN servers).
      */
     override suspend fun downloadFile(userId: String, fileId: String): Result<ByteArray> {
-        // Not safeApiCall: it would log every one of these expected failures at error level.
-        val direct = apiCallCatching<Result<ByteArray>?>({
-            val urlResponse = filesApi.getDownloadUrl(userId, fileId)
-            Result.Success(filesApi.downloadFromUrl(urlResponse.url))
-        }) {
-            // Expected on local-storage / OpenAI-storage / non-CDN servers, or a
-            // transient CDN failure — fall through to the server-proxy download.
-            null
-        }
+        val direct = if (directDownloadUnsupported) null else directDownload(userId, fileId)
         return direct ?: safeApiCall { filesApi.downloadFile(userId, fileId) }
+    }
+
+    /** The presigned-URL leg of [downloadFile]; null means "use the proxy". */
+    private suspend fun directDownload(userId: String, fileId: String): Result<ByteArray>? {
+        // Not safeApiCall: it would log every one of these expected failures at error level.
+        val url = apiCallCatching<String?>({ filesApi.getDownloadUrl(userId, fileId).url }) { e ->
+            if ((e as? ApiException)?.statusCode in DIRECT_DOWNLOAD_UNSUPPORTED_STATUSES) {
+                directDownloadUnsupported = true
+            }
+            null
+        } ?: return null
+        // A CDN failure says nothing about the route, so it falls back without latching.
+        return apiCallCatching<Result<ByteArray>?>({ Result.Success(filesApi.downloadFromUrl(url)) }) { null }
+    }
+
+    /**
+     * Set once `download-url` answers 501 (this server's storage has no direct-URL strategy, e.g.
+     * local) or 405, so later downloads on the same server go straight to the proxy instead of
+     * paying a round trip that cannot succeed. A 400 is per file (OpenAI storage without a model)
+     * and a 404 can be a missing file, so neither latches. In memory only; reset by [clear].
+     */
+    @Volatile
+    private var directDownloadUnsupported = false
+
+    override suspend fun downloadAttachment(attachment: Attachment, userId: String?): Result<ByteArray> {
+        val filepath = attachment.filepath
+        if (filepath != null && attachment.isCodeDownloadFallback) {
+            val url = codeDownloadUrl(filepath, serverUrlProvider.awaitBaseUrl())
+                ?: return Result.Error(IllegalStateException("No server to download $filepath from"))
+            return safeApiCall { filesApi.downloadFromUrl(url) }
+        }
+        val fileId = attachment.fileId
+            ?: return Result.Error(IllegalStateException("Attachment has no file id or download route"))
+        if (userId.isNullOrBlank()) return Result.Error(IllegalStateException("No user to download $fileId as"))
+        return downloadFile(userId, fileId)
     }
 
     override suspend fun getAgentFiles(agentId: String): Result<List<FileObject>> =
         safeApiCall { filesExtApi.getAgentFiles(agentId) }
 
     /**
-     * Polls the preview endpoint until terminal or the attempt budget is spent.
-     * Budget (~POLL_MAX_ATTEMPTS × POLL_INTERVAL_MS ≈ 60s) brackets the server's
-     * lazy-sweep cutoff, so a stuck-pending record resolves to `failed` within
-     * the loop rather than spinning forever. A non-terminal final poll is still
-     * returned as Success(status="pending") — the caller decides how to surface
-     * a slow/never-resolving preview. Transport errors surface via [safeApiCall].
+     * Polls the preview endpoint until terminal, until [POLL_MAX_CONSECUTIVE_ERRORS] requests in a
+     * row fail, or until [POLL_MAX_ATTEMPTS] requests are spent. The interval and the error cap are
+     * upstream's (`previewRefetchInterval`); the budget (~75 s) is ours and brackets the server's
+     * 60 s extraction timeout, after which its lazy sweep reports a stuck record as `failed`.
+     *
+     * One failed request does not end the loop: the poll runs after the stream has closed, often
+     * while the app is changing networks. A run of failures returns the last [Result.Error]; a
+     * budget spent while still pending returns that `pending` record. The caller decides how to
+     * show both.
      */
     override suspend fun pollFilePreview(fileId: String): Result<FilePreviewResponse> {
-        var attempt = 0
-        while (true) {
-            when (val result = safeApiCall { filesApi.getFilePreview(fileId) }) {
+        var consecutiveErrors = 0
+        var last: Result<FilePreviewResponse> = Result.Error(IllegalStateException("No preview poll ran"))
+        repeat(POLL_MAX_ATTEMPTS) { attempt ->
+            if (attempt > 0) delay(POLL_INTERVAL_MS)
+            val result = safeApiCall { filesApi.getFilePreview(fileId) }
+            last = result
+            when (result) {
                 is Result.Success -> {
-                    if (result.data.isTerminal || attempt >= POLL_MAX_ATTEMPTS) return result
+                    if (result.data.isTerminal) return result
+                    consecutiveErrors = 0
                 }
-                is Result.Error -> return result
+                is Result.Error -> if (++consecutiveErrors >= POLL_MAX_CONSECUTIVE_ERRORS) return result
                 is Result.Loading -> { /* safeApiCall never emits Loading */ }
             }
-            attempt++
-            delay(POLL_INTERVAL_MS)
         }
+        return last
     }
 
     /**
@@ -326,11 +365,14 @@ class FileRepositoryImpl(
 
     override fun clear() {
         usageHoldProbeVerdict = null
+        directDownloadUnsupported = false
     }
 
     private companion object {
-        const val POLL_INTERVAL_MS = 2_000L
+        const val POLL_INTERVAL_MS = 2_500L
         const val POLL_MAX_ATTEMPTS = 30
+        const val POLL_MAX_CONSECUTIVE_ERRORS = 5
         const val HTTP_NOT_FOUND = 404
+        val DIRECT_DOWNLOAD_UNSUPPORTED_STATUSES = setOf(501, 405)
     }
 }

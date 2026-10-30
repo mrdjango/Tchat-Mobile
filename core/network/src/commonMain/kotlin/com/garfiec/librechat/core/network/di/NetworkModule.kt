@@ -28,6 +28,7 @@ import com.garfiec.librechat.core.network.api.PromptsApi
 import com.garfiec.librechat.core.network.api.QueuedTurnsApi
 import com.garfiec.librechat.core.network.api.RolesApi
 import com.garfiec.librechat.core.network.api.SchedulesApi
+import com.garfiec.librechat.core.network.api.SearchApi
 import com.garfiec.librechat.core.network.api.ShareApi
 import com.garfiec.librechat.core.network.api.SkillsApi
 import com.garfiec.librechat.core.network.api.SpeechApi
@@ -38,9 +39,11 @@ import com.garfiec.librechat.core.network.api.TchatCreditApi
 import com.garfiec.librechat.core.network.api.TracesApi
 import com.garfiec.librechat.core.network.api.UserApi
 import com.garfiec.librechat.core.network.client.AuthInterceptorPlugin
+import com.garfiec.librechat.core.network.client.CertificateTrustRegistry
 import com.garfiec.librechat.core.network.client.GatewayDetectionPlugin
-import com.garfiec.librechat.core.network.client.ImageCookieCredentials
 import com.garfiec.librechat.core.network.client.LibreChatHttpClient
+import com.garfiec.librechat.core.network.client.OpenIdCookiePlugin
+import com.garfiec.librechat.core.network.client.RefreshCookieCredentials
 import com.garfiec.librechat.core.network.client.ServerHeadersPlugin
 import com.garfiec.librechat.core.network.client.ServerHeadersProvider
 import com.garfiec.librechat.core.network.client.ServerUrlProvider
@@ -58,7 +61,6 @@ import io.ktor.client.plugins.defaultRequest
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
-import io.ktor.http.takeFrom
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import org.koin.core.module.Module
@@ -84,6 +86,8 @@ val networkModule = module {
 
     single { librechatJson }
 
+    single { CertificateTrustRegistry() }
+
     // The switch barrier: one gate shared by both HTTP clients and (on iOS) the SSE transport, so a
     // single account switch flips URL + token key + identity atomically for all transports at once.
     single {
@@ -103,7 +107,7 @@ val networkModule = module {
             tokenManager = get(),
             serverUrlProvider = get(),
             redactor = get(),
-            imageCookieCredentials = get<ImageCookieCredentials>(),
+            refreshCookieCredentials = get<RefreshCookieCredentials>(),
             accountReadyGate = getOrNull(),
             switchGate = get(),
             serverHeadersProvider = get(),
@@ -122,6 +126,9 @@ val networkModule = module {
                 this.tokenManager = tokenManager
                 this.serverUrlProvider = serverUrlProvider
             }
+            install(OpenIdCookiePlugin) {
+                this.serverUrlProvider = serverUrlProvider
+            }
             install(ServerHeadersPlugin) {
                 this.serverHeadersProvider = serverHeadersProvider
                 this.serverUrlProvider = serverUrlProvider
@@ -138,7 +145,7 @@ val networkModule = module {
                 socketTimeoutMillis = Long.MAX_VALUE
             }
             defaultRequest {
-                applyBrowserDefaults(serverUrlProvider)
+                applyBrowserDefaults()
             }
         }
     }
@@ -160,8 +167,11 @@ val networkModule = module {
             // classifies as Retryable — it never routes to re-auth and never recovers, it just
             // silently stops working.
             //
-            // ServerUrlReadyPlugin could not host this: it intercepts before HttpRequestPipeline.Before,
-            // where `context.url.host` is still empty and no host-scoping is possible.
+            // Not folded into ServerUrlReadyPlugin, which now does set the host: the host-scoped,
+            // per-server header lookup belongs to ServerHeadersPlugin on all three clients.
+            install(OpenIdCookiePlugin) {
+                this.serverUrlProvider = serverUrlProvider
+            }
             install(ServerHeadersPlugin) {
                 this.serverHeadersProvider = serverHeadersProvider
                 this.serverUrlProvider = serverUrlProvider
@@ -174,10 +184,6 @@ val networkModule = module {
                 connectTimeoutMillis = 10_000
             }
             defaultRequest {
-                val baseUrl = serverUrlProvider.getBaseUrl()
-                if (baseUrl.isNotEmpty()) {
-                    url.takeFrom(baseUrl)
-                }
                 contentType(ContentType.Application.Json)
             }
         }
@@ -240,6 +246,7 @@ val networkModule = module {
     singleOf(::QueuedTurnsApi)
     singleOf(::RolesApi)
     singleOf(::SchedulesApi)
+    singleOf(::SearchApi)
     singleOf(::ShareApi)
     singleOf(::SkillsApi)
     singleOf(::SpeechApi)

@@ -2,8 +2,10 @@ package com.garfiec.librechat.feature.settings.di
 
 import android.app.Application
 import android.content.Context
+import androidx.lifecycle.SavedStateHandle
 import com.garfiec.librechat.core.common.AppInfo
 import com.garfiec.librechat.core.data.datastore.DateTimePrefsStore
+import com.garfiec.librechat.core.data.datastore.PreferenceStore
 import com.garfiec.librechat.core.data.datastore.ServerDataStore
 import com.garfiec.librechat.core.data.datastore.SettingsDataStore
 import com.garfiec.librechat.core.data.datastore.ThemeDataStore
@@ -19,16 +21,20 @@ import com.garfiec.librechat.core.data.repository.FavoritesRepository
 import com.garfiec.librechat.core.data.repository.KeyRepository
 import com.garfiec.librechat.core.data.repository.McpRepository
 import com.garfiec.librechat.core.data.repository.MemoryRepository
+import com.garfiec.librechat.core.data.repository.PermissionsRepository
 import com.garfiec.librechat.core.data.repository.PresetRepository
 import com.garfiec.librechat.core.data.repository.RoleRepository
+import com.garfiec.librechat.core.data.repository.SearchCapabilityRepository
 import com.garfiec.librechat.core.data.repository.ServerRepository
 import com.garfiec.librechat.core.data.repository.ShareRepository
 import com.garfiec.librechat.core.data.repository.SpeechRepository
 import com.garfiec.librechat.core.data.repository.UserRepository
+import com.garfiec.librechat.core.data.share.ShareLinkControllerFactory
 import com.garfiec.librechat.core.data.update.AppInstallSource
 import com.garfiec.librechat.core.data.update.AppUpdateRepository
 import com.garfiec.librechat.core.data.util.PermissionGate
 import com.garfiec.librechat.core.logging.DiagnosticLogRepository
+import com.garfiec.librechat.core.network.client.CertificateTrustRegistry
 import com.garfiec.librechat.feature.settings.util.ContentReader
 import com.garfiec.librechat.feature.settings.util.PlatformCacheCleaner
 import com.garfiec.librechat.feature.settings.viewmodel.delegate.SpeechSettingsFactory
@@ -43,19 +49,25 @@ class SettingsModuleVerificationTest {
             extraTypes = listOf(
                 Context::class,
                 Application::class,
+                // Supplied by a ViewModel's CreationExtras at resolution time, never declared.
+                SavedStateHandle::class,
                 AppInfo::class,
                 UserRepository::class,
                 AuthRepository::class,
                 ConfigRepository::class,
+                CertificateTrustRegistry::class,
                 ConversationRepository::class,
                 FavoritesRepository::class,
                 McpRepository::class,
+                PermissionsRepository::class,
                 MemoryRepository::class,
                 RoleRepository::class,
                 PermissionGate::class,
                 SpeechRepository::class,
                 BalanceRepository::class,
                 ShareRepository::class,
+                ShareLinkControllerFactory::class,
+                SearchCapabilityRepository::class,
                 KeyRepository::class,
                 ApiKeyRepository::class,
                 PresetRepository::class,
@@ -64,6 +76,7 @@ class SettingsModuleVerificationTest {
                 ServerRepository::class,
                 DateTimePrefsStore::class,
                 SettingsDataStore::class,
+                PreferenceStore::class,
                 ContentReader::class,
                 AttachmentWarmer::class,
                 PrefetchStatusReporter::class,

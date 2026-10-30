@@ -126,18 +126,114 @@ def file_at(upstream: Path, rev: str, path: str) -> str | None:
 # forms, and regex literals. Regexes are only recognised in value position, so a division
 # `a / b` is not mistaken for one -- which matters because upstream's MIME tables are
 # arrays of regex literals containing character classes like [\w.-].
-_SKIPPABLE = re.compile(
-    r"""
-      //[^\n]*                     # line comment
-    | /\*.*?\*/                    # block comment
-    | "(?:\\.|[^"\\])*"            # double-quoted
-    | '(?:\\.|[^'\\])*'            # single-quoted
-    | `(?:\\.|[^`\\])*`            # template literal
-    """,
-    re.VERBOSE | re.DOTALL,
-)
+#
+# One left-to-right scan rather than a regex alternation, because the forms nest: a
+# template literal's `${...}` can hold another template, and a regex literal can hold a
+# quote (`.replace(/'/g, ...)`). Either one, read as a flat pattern, opens a string that
+# runs to some unrelated quote further down and silently masks every declaration after it.
 
 _OPEN, _CLOSE = "([{", ")]}"
+
+
+def _quoted_end(text: str, i: int) -> int | None:
+    quote, j, n = text[i], i + 1, len(text)
+    while j < n:
+        if text[j] == "\\":
+            j += 2
+            continue
+        if text[j] == quote:
+            return j + 1
+        j += 1
+    return None
+
+
+def _regex_end(text: str, i: int) -> int | None:
+    j, n, in_class = i + 1, len(text), False
+    while j < n:
+        c = text[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "\n":
+            return None
+        if in_class:
+            in_class = c != "]"
+        elif c == "[":
+            in_class = True
+        elif c == "/":
+            j += 1
+            while j < n and text[j].isalpha():
+                j += 1
+            return j
+        j += 1
+    return None
+
+
+def _template_end(text: str, i: int) -> int | None:
+    j, n = i + 1, len(text)
+    while j < n:
+        c = text[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "`":
+            return j + 1
+        if text.startswith("${", j):
+            j = _expression_end(text, j + 2)
+            if j is None:
+                return None
+            continue
+        j += 1
+    return None
+
+
+def _skippable_at(text: str, i: int, prev: str) -> tuple[int, bool] | None:
+    """(end, is_value) of the comment/string/regex starting at `i`, or None if none does.
+
+    `prev` is the last significant character before `i`; it decides whether a `/` opens a
+    regex (value position) or is a division.
+    """
+    c = text[i]
+    if text.startswith("//", i):
+        end = text.find("\n", i)
+        return (len(text) if end == -1 else end), False
+    if text.startswith("/*", i):
+        end = text.find("*/", i + 2)
+        return None if end == -1 else (end + 2, False)
+    if c == "/":
+        if prev and (prev.isalnum() or prev in ")]_$"):
+            return None                  # division, not a regex
+        end = _regex_end(text, i)
+    elif c in "\"'":
+        end = _quoted_end(text, i)
+    elif c == "`":
+        end = _template_end(text, i)
+    else:
+        return None
+    return None if end is None else (end, True)
+
+
+def _expression_end(text: str, j: int) -> int | None:
+    """Index just past the `}` closing a template's `${`, skipping what is nested inside."""
+    depth, n, prev = 0, len(text), "("
+    while j < n:
+        hit = _skippable_at(text, j, prev)
+        if hit is not None:
+            j, is_value = hit
+            if is_value:
+                prev = "a"
+            continue
+        c = text[j]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            if depth == 0:
+                return j + 1
+            depth -= 1
+        if not c.isspace():
+            prev = c
+        j += 1
+    return None
 
 
 def _mask(text: str) -> str:
@@ -147,46 +243,21 @@ def _mask(text: str) -> str:
     aligned with the original, so a slice found here can be taken from the real text.
     """
     out = list(text)
-
-    for m in _SKIPPABLE.finditer(text):
-        for i in range(m.start(), m.end()):
-            if out[i] != "\n":
-                out[i] = " "
-
-    # Regex literals, scanned left to right on the already-masked text so we never start
-    # one inside a comment or string.
-    masked = "".join(out)
-    i, n = 0, len(masked)
+    i, n, prev = 0, len(text), ""
     while i < n:
-        if masked[i] != "/":
+        hit = _skippable_at(text, i, prev)
+        if hit is None:
+            if not text[i].isspace():
+                prev = text[i]
             i += 1
             continue
-        # Slice first, THEN rstrip: rstripping the whole file before slicing shortens it by
-        # any trailing whitespace and reads a character that many positions early.
-        prev = masked[:i].rstrip()[-1:]
-        if prev and (prev.isalnum() or prev in ")]_$"):
-            i += 1                       # division, not a regex
-            continue
-        j, closed = i + 1, False
-        while j < n:
-            c = masked[j]
-            if c == "\\":
-                j += 2
-                continue
-            if c == "\n":
-                break
-            if c == "/":
-                closed = True
-                break
-            j += 1
-        if not closed:
-            i += 1
-            continue
-        for k in range(i, j + 1):
+        end, is_value = hit
+        for k in range(i, end):
             if out[k] != "\n":
                 out[k] = " "
-        i = j + 1
-
+        if is_value:
+            prev = "a"                   # a literal is a value: a `/` after it divides
+        i = end
     return "".join(out)
 
 
@@ -584,6 +655,15 @@ export const MCPErrorCodes = {
   OAUTH_SECRET_REENTRY_REQUIRED: 'MCP_OAUTH_SECRET_REENTRY_REQUIRED',
 } as const;
 """, 3),
+    ("after a nested template and a quote in a regex (packages/api/src/files/documents/html.ts)", """
+let list = `<ol>${items.map((x) => `<li>${x}</li>`).join('')}</ol>`;
+let safe = s.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+const PPTX_PREVIEW_CDN = {
+  pptxPreview: {
+    src: 'https://cdn.jsdelivr.net/npm/pptx-preview@1.0.7/dist/pptx-preview.umd.js',
+  },
+} as const;
+""", 5),
     ("interface body", """
 export interface MCPServerStatus {
   requiresOAuth: boolean;

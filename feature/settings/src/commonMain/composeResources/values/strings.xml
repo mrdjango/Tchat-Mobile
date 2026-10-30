@@ -20,32 +20,24 @@
     <string name="action_verifying">Verifying…</string>
 
     <!-- Content descriptions -->
-    <string name="cd_add_memory">Add memory</string>
     <string name="cd_add_server">Add server</string>
     <string name="cd_back">Back</string>
     <string name="cd_change_avatar">Change avatar</string>
     <string name="cd_choose_image">Choose image</string>
-    <string name="cd_collapse_tools">Collapse tools</string>
     <string name="cd_copy_api_key">Copy API key</string>
-    <string name="cd_copy_link">Copy link</string>
+    <string name="shared_chats_copy_link">Copy link</string>
     <string name="cd_create_api_key">Create API key</string>
     <string name="cd_current_avatar">Current avatar</string>
     <string name="cd_delete">Delete</string>
     <string name="cd_delete_api_key">Delete API key</string>
-    <string name="cd_delete_memory">Delete memory</string>
     <string name="cd_delete_preset">Delete preset</string>
-    <string name="cd_delete_server">Delete server</string>
-    <string name="cd_delete_shared_link">Delete shared link</string>
-    <string name="cd_edit_memory">Edit memory</string>
     <string name="memory_redacted_key">Hidden entry</string>
     <string name="memory_redacted_value">This server's content policy hides what's stored here. You can still delete it.</string>
-    <string name="cd_edit_server">Edit server</string>
-    <string name="cd_expand_tools">Expand tools</string>
+    <string name="memory_redacted_value_no_delete">This server's content policy hides what's stored here.</string>
     <string name="cd_loading_profile">Loading profile</string>
     <string name="cd_make_private">Make private</string>
     <string name="cd_make_public">Make public</string>
     <string name="cd_preview_voice">Preview voice</string>
-    <string name="cd_reinitialize">Reinitialize</string>
     <string name="cd_avatar_preview">Avatar preview</string>
     <string name="cd_selected">Selected</string>
     <string name="cd_selected_avatar">Selected avatar</string>
@@ -53,11 +45,9 @@
     <string name="cd_test_tts_voice">Test selected TTS voice</string>
     <string name="cd_toggle_auto_read">Toggle auto-read responses</string>
     <string name="cd_toggle_auto_send_stt">Toggle auto-send after speech</string>
-    <string name="cd_toggle_memories">Toggle memories</string>
     <string name="cd_tts_voice_selector">Select TTS voice. Currently %1$s</string>
     <string name="cd_user_avatar">User avatar</string>
     <string name="cd_view_all_tools">View all tools</string>
-    <string name="cd_view_tools">View tools</string>
 
     <!-- Section headers -->
     <string name="section_about">About</string>
@@ -73,12 +63,15 @@
     <string name="section_danger_zone">Danger zone</string>
     <string name="section_language_region">Language &amp; region</string>
     <string name="section_layout">Layout</string>
+    <string name="section_search">Search</string>
+    <string name="advanced_search">Advanced search</string>
+    <string name="advanced_search_desc">For power users. Adds match case, whole word, regex, and role, model and date filters to the Search screen.</string>
     <string name="section_mcp_servers">MCP servers</string>
     <string name="section_prefetch">Background prefetch</string>
     <string name="prefetch_enabled">Prefetch conversations</string>
     <string name="prefetch_enabled_desc">Load recent and pinned conversations ahead of time so they open instantly. Runs while the app is idle, and periodically while charging.</string>
     <string name="prefetch_on_metered">Use mobile data</string>
-    <string name="prefetch_on_metered_desc">Allow prefetching on metered connections. Off by default to avoid unexpected data usage.</string>
+    <string name="prefetch_on_metered_desc">Allow prefetching on metered connections.</string>
     <string name="prefetch_depth">Depth</string>
     <string name="prefetch_depth_value">%1$d conversations</string>
     <string name="prefetch_depth_desc">How many recent conversations to keep cached. Pinned conversations are always included, however old.</string>
@@ -154,7 +147,6 @@
     <string name="title_mcp_servers">MCP servers</string>
     <string name="title_presets">Presets</string>
     <string name="title_settings">Settings</string>
-    <string name="title_shared_links">Shared links</string>
 
     <!-- Tabbed settings tabs -->
     <string name="tab_general">General</string>
@@ -231,6 +223,8 @@
     <string name="whats_new_error">Couldn't load the release notes</string>
     <string name="release_notes_title">Release notes</string>
     <string name="release_notes_desc">What changed in version %1$s</string>
+    <string name="privacy_policy_title">Privacy policy</string>
+    <string name="privacy_policy_desc">What the app does with your data</string>
     <string name="release_notes_not_found">No release notes for %1$s</string>
     <string name="release_notes_not_found_desc">This build has no published release on GitHub.</string>
     <string name="release_notes_previous">Previous versions</string>
@@ -242,7 +236,40 @@
 
     <!-- Balance -->
     <string name="token_credits">Token credits</string>
-    <string name="available_balance">Available balance</string>
+    <string name="balance_credit_conversion">1,000 credits = $0.001</string>
+    <string name="balance_load_error">Couldn't load balance</string>
+    <string name="auto_refill_title">Auto-refill</string>
+    <string name="auto_refill_off">Off</string>
+    <string name="auto_refill_unavailable">Details unavailable</string>
+    <string name="auto_refill_last">Last refill</string>
+    <string name="auto_refill_amount">Refill amount</string>
+    <string name="auto_refill_interval">Interval</string>
+    <string name="auto_refill_next">Next refill</string>
+    <string name="auto_refill_next_info">A refill happens only after this time, and only when a message would take your balance below zero.</string>
+    <plurals name="auto_refill_every_seconds">
+        <item quantity="one">Every %1$s second</item>
+        <item quantity="other">Every %1$s seconds</item>
+    </plurals>
+    <plurals name="auto_refill_every_minutes">
+        <item quantity="one">Every %1$s minute</item>
+        <item quantity="other">Every %1$s minutes</item>
+    </plurals>
+    <plurals name="auto_refill_every_hours">
+        <item quantity="one">Every %1$s hour</item>
+        <item quantity="other">Every %1$s hours</item>
+    </plurals>
+    <plurals name="auto_refill_every_days">
+        <item quantity="one">Every %1$s day</item>
+        <item quantity="other">Every %1$s days</item>
+    </plurals>
+    <plurals name="auto_refill_every_weeks">
+        <item quantity="one">Every %1$s week</item>
+        <item quantity="other">Every %1$s weeks</item>
+    </plurals>
+    <plurals name="auto_refill_every_months">
+        <item quantity="one">Every %1$s month</item>
+        <item quantity="other">Every %1$s months</item>
+    </plurals>
     <string name="cd_token_balance">Token balance: %1$s credits</string>
 
     <!-- Chat settings -->
@@ -265,6 +292,16 @@
     <string name="starred_models_off">Off</string>
     <string name="starred_models_grouped">Collapsible group at top</string>
     <string name="starred_models_top">At top, no grouping</string>
+    <string name="new_chat_start_title">Start new chats on</string>
+    <string name="new_chat_start_desc">When your server picks a model for new chats, choose whether to use it or the model you used last. Ignored when the server hides the model picker. If the server requires one of its own models, your last model counts only if it was one of those.</string>
+    <string name="new_chat_start_server">Server's choice</string>
+    <string name="new_chat_start_last_used">My last-used model</string>
+    <string name="web_search_first_title">Web search</string>
+    <string name="web_search_first_desc">Which search a chat's web search switch runs when both could. If your choice can't run in a chat, the other one is used. A model spec's own search wins, and Compare uses LibreChat search when it can, so both models search.</string>
+    <string name="web_search_first_librechat">LibreChat search first</string>
+    <string name="web_search_first_librechat_desc">Your server's search, with sources. Uses the model's built-in search when the server has none set up.</string>
+    <string name="web_search_first_built_in">Built-in search first</string>
+    <string name="web_search_first_built_in_desc">The model provider's own search (OpenAI, Claude, Gemini, OpenRouter). Uses LibreChat search for other models.</string>
     <string name="chat_header_title">Chat header</string>
     <string name="chat_header_summary_format">%1$s · %2$s</string>
     <string name="chat_header_content_label">Content</string>
@@ -286,8 +323,8 @@
     <string name="latex_native_desc">Shows raw LaTeX source for better scroll performance</string>
     <string name="auto_scroll">Auto-scroll during streaming</string>
     <string name="auto_scroll_desc">Automatically scroll to new content while a response is being generated</string>
-    <string name="show_thinking_blocks">Show thinking blocks</string>
-    <string name="show_thinking_blocks_desc">Display model reasoning steps when available</string>
+    <string name="thinking_open_by_default">Open thinking by default</string>
+    <string name="thinking_open_by_default_desc">Start a reply's reasoning expanded instead of collapsed</string>
     <string name="context_bar_title">Context usage</string>
     <string name="context_bar_desc">Where to show the context-window usage gauge</string>
     <string name="context_bar_hidden">Hidden</string>
@@ -325,7 +362,7 @@
     <string name="two_factor_auth">Two-factor authentication</string>
     <string name="enable_two_factor">Enable Two-factor authentication</string>
     <string name="disable_two_factor">Disable Two-factor authentication</string>
-    <string name="view_backup_codes">View backup codes</string>
+    <string name="regenerate_backup_codes">Regenerate backup codes</string>
 
     <!-- 2FA setup dialog -->
     <string name="dialog_title_enable_2fa">Enable Two-factor authentication</string>
@@ -339,7 +376,6 @@
     <string name="action_hide_qr">Hide QR code</string>
     <string name="cd_twofa_qr">QR code for enrolling on another device</string>
     <string name="twofa_disable_instructions">Enter your authenticator code to disable 2FA.</string>
-    <string name="hint_verification_code">Verification code</string>
 
     <!-- OTP verification dialogs -->
     <string name="otp_title_verify_identity">Verify identity</string>
@@ -355,6 +391,10 @@
     <!-- Backup codes dialog -->
     <string name="dialog_title_backup_codes">Backup codes</string>
     <string name="backup_codes_instructions">Save these backup codes in a safe place. Each code can only be used once.</string>
+    <string name="dialog_title_regenerate_backup_codes">Regenerate backup codes?</string>
+    <string name="regenerate_backup_codes_warning">Your current backup codes will stop working. You'll get a new set to save.</string>
+    <string name="action_regenerate">Regenerate</string>
+    <string name="backup_codes_saved_ack">I've saved these codes</string>
 
     <!-- Danger zone -->
     <string name="delete_account">Delete account</string>
@@ -382,7 +422,6 @@
     <string name="archived_all_count">Archived %1$d conversations</string>
     <string name="archived_conversations">Archived conversations</string>
     <string name="export_all_data">Export all data</string>
-    <string name="shared_links">Shared links</string>
     <string name="clear_cache_with_size">Clear Cache (%1$s)</string>
     <string name="clear_cache">Clear cache</string>
     <string name="revoke_all_api_keys">Revoke all API keys</string>
@@ -440,33 +479,79 @@
     <string name="tts_preview_voice">Preview voice</string>
 
     <!-- Memories -->
-    <string name="enable_memories">Enable memories</string>
-    <string name="enable_memories_desc">Allow the AI to remember information across conversations</string>
-    <string name="no_memories_saved">No memories saved yet</string>
-    <string name="memories_add_hint">Tap the + button to add a memory</string>
     <string name="add_memory">Add memory</string>
     <string name="edit_memory">Edit memory</string>
     <string name="dialog_title_delete_memory">Delete memory</string>
-    <string name="dialog_delete_memory_message">Are you sure you want to delete the memory "%1$s"?</string>
+    <string name="dialog_delete_memory_message">Are you sure you want to delete the memory “%1$s”?</string>
     <string name="memory_key_label">Key</string>
     <string name="memory_value_label">Value</string>
-    <string name="memory_key_hint">Use lowercase letters and underscores only</string>
-    <string name="memory_key_invalid">Key must only contain lowercase letters and underscores</string>
+    <string name="memory_key_hint">Use only lowercase letters a–z and underscores</string>
+    <string name="memory_key_invalid">Keys can only contain lowercase letters a–z and underscores</string>
     <string name="memory_key_exists">A memory with this key already exists</string>
+    <string name="memory_key_reserved">This key is reserved. Choose another.</string>
+    <string name="memory_key_too_long">Keys can be at most %1$s characters.</string>
+    <string name="memory_error_forbidden">You don't have permission to change memories.</string>
+    <string name="memory_error_toggle_forbidden">Your role can't turn memories on or off.</string>
+    <string name="memory_error_content_filtered">Blocked by your server's content filter.</string>
+    <string name="memory_error_agent">This agent's memories can't be changed.</string>
+    <string name="memory_error_network">Couldn't reach the server. Check your connection.</string>
+    <string name="memory_error_save">Couldn't save the memory.</string>
+    <string name="memory_error_delete">Couldn't delete the memory.</string>
+    <string name="memory_error_toggle">Couldn't change the memory setting.</string>
+    <string name="memory_error_not_found">This memory was deleted elsewhere.</string>
+    <string name="memory_error_not_found_readd">This memory was deleted elsewhere. Save to add it again.</string>
+    <!-- Memories index -->
+    <string name="memories_use_title">Use saved memories</string>
+    <string name="memories_use_desc">Chats can read and save memories</string>
+    <string name="memories_use_load_failed">Couldn't load this setting.</string>
+    <string name="memories_use_loading">Loading</string>
+    <string name="memories_usage_percent">%1$s%</string>
+    <plurals name="memories_usage_tokens">
+        <item quantity="one">%1$s / %2$s token</item>
+        <item quantity="other">%1$s / %2$s tokens</item>
+    </plurals>
+    <plurals name="memories_usage_a11y">
+        <item quantity="one">Memory usage: %1$s, %2$s of %3$s token</item>
+        <item quantity="other">Memory usage: %1$s, %2$s of %3$s tokens</item>
+    </plurals>
+    <plurals name="memory_token_count">
+        <item quantity="one">%1$s token</item>
+        <item quantity="other">%1$s tokens</item>
+    </plurals>
+    <string name="memory_agent_fallback">Agent memory</string>
+    <string name="memory_agent_numbered">%1$s (%2$s)</string>
+    <string name="memories_search_hint">Search memories</string>
+    <string name="memories_no_match">No memories match “%1$s”</string>
+    <string name="memories_personal_empty">No personal memories yet</string>
+    <string name="memories_filter_all">All</string>
+    <string name="memories_filter_personal">Personal</string>
+    <string name="memories_empty_title">No memories yet</string>
+    <string name="memories_empty_desc">Chats save things worth remembering here. You can also add one yourself.</string>
+    <string name="memories_empty_desc_no_create">Chats save things worth remembering here.</string>
+    <string name="memories_view_only">Your role can view memories but not add or change them.</string>
+    <string name="memories_no_access_title">No access to memories</string>
+    <string name="memories_no_access_desc">Your role doesn't have permission to view memories.</string>
+    <string name="memory_action_edit">Edit</string>
+    <string name="cd_memory_options">Options for %1$s</string>
+    <!-- Memory sheet -->
+    <string name="view_memory">View memory</string>
+    <string name="action_close">Close</string>
+    <string name="memory_value_counter">%1$s / %2$s</string>
+    <plurals name="memory_token_share">
+        <item quantity="one">%1$s token · %2$s% of your memory</item>
+        <item quantity="other">%1$s tokens · %2$s% of your memory</item>
+    </plurals>
+    <string name="memory_updated_at">Updated %1$s</string>
 
     <!-- MCP -->
     <string name="add_mcp_server">Add MCP server</string>
     <string name="edit_mcp_server">Edit MCP server</string>
-    <string name="no_mcp_servers">No MCP servers configured</string>
-    <string name="mcp_add_hint">Tap the + button to add a server</string>
     <string name="mcp_name_label">Name</string>
     <string name="mcp_description_label">Description</string>
     <string name="mcp_description_optional">Optional</string>
     <string name="mcp_url_label">URL</string>
-    <string name="mcp_type_label">Type</string>
     <string name="mcp_type_sse">SSE</string>
     <string name="mcp_type_streamable_http">Streamable HTTP</string>
-    <string name="mcp_auth_label">Authentication</string>
     <string name="mcp_auth_none">None</string>
     <string name="mcp_auth_api_key">API key</string>
     <string name="mcp_auth_oauth">OAuth</string>
@@ -487,7 +572,6 @@
     <string name="dialog_title_delete_server">Delete server</string>
     <string name="dialog_delete_server_message">Are you sure you want to delete "%1$s"?</string>
     <string name="error_failed_to_load_servers">Failed to load servers</string>
-    <string name="mcp_tools_count">%1$d tool%2$s</string>
     <string name="no_tools_available">No tools available</string>
     <!-- Fork settings -->
     <string name="fork_mode_direct_path">Visible messages</string>
@@ -531,29 +615,17 @@
     <string name="dialog_delete_preset_message">Are you sure you want to delete "%1$s"?</string>
 
     <!-- Shared links -->
-    <string name="no_shared_links">No shared links</string>
-    <string name="no_shared_links_desc">Share a conversation to see it here</string>
     <string name="mcp_oauth_secret_reentry_required">The OAuth endpoints changed, so the saved secret no longer applies. Enter it again.</string>
     <string name="mcp_api_key_reentry_required">The connection settings changed, so the saved API key no longer applies. Enter it again.</string>
-    <string name="cd_update_shared_link">Update shared link</string>
-    <string name="dialog_title_update_shared_link">Update shared link</string>
-    <string name="dialog_update_shared_link_message">This republishes "%1$s" with the conversation as it is now. The link stays the same, so anyone who already has it will see the updated content.</string>
-    <string name="dialog_update_shared_link_message_new_url">This republishes "%1$s" with the conversation as it is now. This server issues a new link, so anyone who already has the old one will lose access.</string>
-    <string name="action_update_shared_link">Update</string>
     <string name="dialog_title_delete_shared_link">Delete shared link</string>
     <string name="dialog_delete_shared_link_message">This will remove the shared link for "%1$s". Anyone with the link will no longer be able to access it.</string>
-    <string name="visibility_public">Public</string>
-    <string name="visibility_private">Private</string>
     <string name="error_failed_to_load_memories">Failed to load memories</string>
 
     <!-- Provider API Keys -->
     <string name="provider_keys_title">Provider API keys</string>
     <string name="provider_keys_subtitle">Set your own keys for endpoints that require them</string>
-    <string name="provider_keys_dialog_title">Set API Key for %1$s</string>
-    <string name="provider_keys_status_set_expires">Expires in %1$s</string>
-    <string name="provider_keys_status_set_never">Your key will never expire</string>
     <string name="provider_keys_status_unset">Not set</string>
-    <string name="provider_keys_status_expired">Expired</string>
+    <string name="provider_keys_status_unknown">Couldn't check</string>
     <string name="provider_keys_status_loading">Checking key status…</string>
     <string name="provider_keys_field_api_key_label">Key</string>
     <string name="provider_keys_field_base_url_label">Base URL</string>
@@ -574,47 +646,86 @@
     <string name="provider_keys_field_google_imported">Successfully imported service account JSON key</string>
     <string name="provider_keys_field_google_paste_label">Or paste service account JSON</string>
     <string name="provider_keys_field_google_paste_only_hint">Paste the service-account JSON below.</string>
-    <string name="provider_keys_field_google_service_key_or_gemini">Google Service Key or Gemini API Key</string>
 
     <string name="provider_keys_field_bedrock_access_key_id">Access key ID</string>
     <string name="provider_keys_field_bedrock_secret_access_key">Secret access key</string>
     <string name="provider_keys_field_bedrock_session_token">Session token</string>
     <string name="provider_keys_field_bedrock_session_token_optional_suffix">(Optional)</string>
+    <string name="provider_keys_field_bedrock_bearer_token">Bearer Token</string>
+    <string name="provider_keys_field_bedrock_bearer_token_placeholder">Bedrock API key</string>
+    <string name="provider_keys_field_required">Required</string>
+    <string name="provider_keys_bedrock_or_access_keys">Or use access keys instead</string>
+    <string name="provider_keys_field_google_either_required">Add a service key or a Gemini API key</string>
 
-    <string name="provider_keys_required_fields">The following fields are required: %1$s</string>
     <string name="provider_keys_revoke">Revoke</string>
     <string name="provider_keys_revoke_failed">Failed to revoke API key. Please try again.</string>
     <string name="provider_keys_revoke_success">API key revoked successfully</string>
-    <string name="provider_keys_revoke_all">Revoke keys</string>
     <string name="provider_keys_revoke_all_confirm">Are you sure you want to revoke all keys?</string>
     <string name="provider_keys_revoke_all_failed">Failed to revoke all keys</string>
     <string name="provider_keys_save_failed">Failed to save API key. Please try again.</string>
     <string name="provider_keys_save_success">API key saved successfully</string>
 
-    <string name="provider_keys_expiry_label">Expires</string>
-    <string name="provider_keys_expiry_30m">in 30 minutes</string>
-    <string name="provider_keys_expiry_2h">in 2 hours</string>
-    <string name="provider_keys_expiry_12h">in 12 hours</string>
-    <string name="provider_keys_expiry_1d">in 1 day</string>
-    <string name="provider_keys_expiry_7d">in 7 days</string>
-    <string name="provider_keys_expiry_30d">in 30 days</string>
-    <string name="provider_keys_expiry_never">never</string>
+    <string name="provider_keys_expiry_label">New key expires</string>
+    <string name="provider_keys_expiry_30m">30 min</string>
+    <string name="provider_keys_expiry_2h">2 h</string>
+    <string name="provider_keys_expiry_12h">12 h</string>
+    <string name="provider_keys_expiry_1d">1 day</string>
+    <string name="provider_keys_expiry_7d">7 days</string>
+    <string name="provider_keys_expiry_30d">30 days</string>
+    <string name="provider_keys_expiry_never">Never</string>
 
     <string name="provider_keys_empty_title">No endpoints require user-provided keys</string>
     <string name="provider_keys_empty_desc">Endpoints that need your own API key will appear here.</string>
-    <string name="provider_keys_revoke_all_action">Revoke all</string>
+    <string name="provider_keys_load_failed_title">Couldn't load your providers</string>
+    <string name="provider_keys_load_failed_desc">Check your connection and try again.</string>
+    <string name="provider_keys_status_never_expires">Never expires</string>
+    <string name="provider_keys_status_expires_at">Expires %1$s</string>
+    <string name="provider_keys_status_expires_at_time">Expires at %1$s</string>
+    <string name="provider_keys_retry_check_cd">Check %1$s again</string>
+    <string name="provider_keys_status_unset_needs">Not set · %1$s</string>
+    <string name="provider_keys_needs_azure">key, instance, deployment, version</string>
+    <string name="provider_keys_needs_key_and_url">key, base URL</string>
+    <string name="provider_keys_needs_base_url">base URL</string>
+    <string name="provider_keys_needs_google">service key or Gemini key</string>
+    <string name="provider_keys_needs_access_keys">access keys</string>
+    <string name="provider_keys_needs_bearer_or_access_keys">bearer token or access keys</string>
+    <string name="provider_keys_summary_note">Keys are stored on your server and deleted when they expire.</string>
+    <string name="provider_keys_revoke_all_button">Revoke all keys</string>
+    <plurals name="provider_keys_status_expires_in_minutes">
+        <item quantity="one">Expires in %1$d min</item>
+        <item quantity="other">Expires in %1$d min</item>
+    </plurals>
+    <plurals name="provider_keys_summary">
+        <item quantity="one">%1$d of %2$d key set.</item>
+        <item quantity="other">%1$d of %2$d keys set.</item>
+    </plurals>
+    <plurals name="provider_keys_row_summary">
+        <item quantity="one">%1$d of %2$d set</item>
+        <item quantity="other">%1$d of %2$d set</item>
+    </plurals>
 
     <!-- Admin: role skill access -->
-    <string name="role_skills_settings_row">Skill access (admin)</string>
-    <string name="role_skills_title">Skill access</string>
-    <string name="role_skills_back">Back</string>
+    <string name="role_skills_settings_row">Skill permissions</string>
+    <string name="role_skills_title">Skill permissions</string>
     <string name="role_skills_description">Control which skill capabilities each role has. Changes apply to all users with the selected role.</string>
-    <string name="role_skills_role_label">Role</string>
+    <string name="role_permissions_role_label">Role</string>
     <string name="role_skills_use">Use skills</string>
     <string name="role_skills_create">Create &amp; edit skills</string>
     <string name="role_skills_share">Share skills</string>
     <string name="role_skills_share_public">Share skills publicly</string>
-    <string name="role_skills_save">Save</string>
+    <string name="role_memories_settings_row">Memory permissions</string>
+    <string name="role_memories_title">Memory permissions</string>
+    <string name="role_memories_description">Control which memory capabilities each role has. Changes apply to all users with the selected role.</string>
+    <string name="role_memories_use">Allow using memories</string>
+    <string name="role_memories_create">Allow creating memories</string>
+    <string name="role_memories_update">Allow updating memories</string>
+    <string name="role_memories_read">Allow reading memories</string>
+    <string name="role_memories_opt_out">Allow users to turn memories off</string>
+    <string name="role_permissions_saved">Saved</string>
+    <string name="role_permissions_load_failed">Couldn't load this role's permissions.</string>
+    <string name="role_permissions_save_failed">Couldn't save the permissions. Try again.</string>
+    <string name="role_permissions_admin_access_warning">Turning off Admin access to this feature may cause unexpected issues until the app reloads your permissions. Once saved, the only way to undo it is the interface setting in librechat.yaml, which affects all roles.</string>
+    <string name="role_permissions_more_info">More info</string>
 
     <!-- Home-screen artifact shortcuts -->
     <string name="artifact_shortcuts_title">Home-screen shortcuts</string>
@@ -713,12 +824,75 @@
     <string name="date_time_preview">Preview</string>
     <string name="data_summary_off">Off</string>
     <string name="data_summary_none">None</string>
+    <string name="data_memories_none">None</string>
     <plurals name="data_memories_count">
-        <item quantity="one">%1$d saved</item>
-        <item quantity="other">%1$d saved</item>
+        <item quantity="one">%1$s saved</item>
+        <item quantity="other">%1$s saved</item>
     </plurals>
     <plurals name="data_mcp_servers_count">
         <item quantity="one">%1$d server</item>
         <item quantity="other">%1$d servers</item>
     </plurals>
+    <string name="server_user_ca_notice">Trusted via a certificate authority installed on this device</string>
+    <string name="export_coming_soon">Export is coming soon</string>
+    <string name="mcp_tools_all">All MCP Tools</string>
+    <string name="mcp_server_unknown">Unknown</string>
+    <string name="avatar_upload_unavailable_ios">Avatar upload is not yet available on iOS.</string>
+    <string name="dialog_ok">OK</string>
+    <plurals name="mcp_tool_count">
+        <item quantity="one">%1$d tool</item>
+        <item quantity="other">%1$d tools</item>
+    </plurals>
+    <string name="mcp_status_connected">Connected</string>
+    <string name="mcp_status_connecting">Connecting…</string>
+    <string name="mcp_status_needs_sign_in">Sign-in needed</string>
+    <string name="mcp_status_needs_setup">Set up on the web</string>
+    <string name="mcp_status_on_demand">Connects when you chat</string>
+    <string name="mcp_status_disconnected">Not connected</string>
+    <string name="mcp_status_failed">Can't connect</string>
+    <string name="mcp_action_sign_in">Sign in</string>
+    <string name="mcp_action_connect">Connect</string>
+    <string name="mcp_action_reconnect">Reconnect</string>
+    <string name="mcp_action_edit">Edit</string>
+    <string name="mcp_view_only">View only</string>
+    <string name="mcp_filter_all">All</string>
+    <string name="mcp_filter_needs_attention">Needs attention (%1$d)</string>
+    <string name="mcp_search_hint">Search servers</string>
+    <string name="mcp_search_no_results">No servers match</string>
+    <string name="mcp_empty_title">Give your chats tools</string>
+    <string name="mcp_empty_body">An MCP server lets models search, read and act in another app, such as GitHub or your calendar. Add one with its URL.</string>
+    <string name="mcp_empty_body_no_create">An MCP server lets models search, read and act in another app, such as GitHub or your calendar. Ask an admin to add one.</string>
+    <string name="mcp_tools_title">Tools</string>
+    <string name="mcp_tools_filter_hint">Filter tools</string>
+    <string name="mcp_tools_no_match">No tools match</string>
+    <string name="mcp_needs_setup_detail">This server needs details only you can give it, such as your own API key. Add them on the LibreChat website, then reconnect.</string>
+    <string name="mcp_editor_section_about">About</string>
+    <string name="mcp_editor_section_connection">Connection</string>
+    <string name="mcp_editor_section_sign_in">Sign-in</string>
+    <string name="mcp_editor_load_failed">Couldn't load this server.</string>
+    <string name="mcp_trust_label">I trust this server</string>
+    <string name="mcp_trust_sublabel">It can read what you send it and act for you in the app it connects to. Only add servers you trust.</string>
+    <string name="memory_error_key_route_shadowed">This server can't edit a memory with this key. Delete it and add it again under another key.</string>
+    <string name="shared_chats_title">Shared chats</string>
+    <string name="shared_chats_summary">Links to chats you've shared</string>
+    <string name="shared_chats_untitled">Untitled chat</string>
+    <string name="shared_chats_shared_on">Shared · %1$s</string>
+    <string name="shared_chats_options">Options for %1$s</string>
+    <string name="shared_chats_open_chat">Open chat</string>
+    <string name="shared_chats_view_shared">View shared version</string>
+    <string name="shared_chats_link_copied">Link copied</string>
+    <string name="shared_chats_search">Search shared chats</string>
+    <string name="shared_chats_clear_search">Clear search</string>
+    <string name="shared_chats_sort_label">Sort</string>
+    <string name="shared_chats_sort_newest">Newest</string>
+    <string name="shared_chats_sort_oldest">Oldest</string>
+    <string name="shared_chats_sort_title">Title A–Z</string>
+    <string name="shared_chats_empty">No shared chats yet</string>
+    <string name="shared_chats_empty_description">Open a chat and choose Share from its menu to create a link. Your links show up here.</string>
+    <string name="shared_chats_load_failed">Couldn't load your shared chats</string>
+    <string name="shared_chats_load_failed_description">Check your connection and try again.</string>
+    <string name="shared_chats_load_more_failed">Couldn't load more</string>
+    <string name="shared_chats_no_match">No links match "%1$s"</string>
+    <string name="shared_chats_refresh_failed">Couldn't refresh your shared chats</string>
+    <string name="shared_chats_delete_failed">Couldn't delete the link</string>
 </resources>

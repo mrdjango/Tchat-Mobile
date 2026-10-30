@@ -3,9 +3,11 @@ package com.garfiec.librechat.feature.conversations.navigation
 import androidx.navigation3.runtime.EntryProviderScope
 import androidx.navigation3.runtime.NavKey
 import com.garfiec.librechat.feature.conversations.screen.ArchivedConversationsScreen
-import com.garfiec.librechat.feature.conversations.screen.ConversationListScreen
+import com.garfiec.librechat.feature.conversations.screen.BookmarkChatsScreen
+import com.garfiec.librechat.feature.conversations.screen.BookmarksScreen
 import com.garfiec.librechat.feature.conversations.screen.ProjectChatsScreen
 import com.garfiec.librechat.feature.conversations.screen.ProjectsScreen
+import com.garfiec.librechat.feature.conversations.search.SearchScreen
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
@@ -13,12 +15,26 @@ import kotlinx.serialization.modules.subclass
 
 @Serializable sealed interface ConversationsRoute : NavKey
 
-@Serializable data object Conversations : ConversationsRoute
-
 @Serializable data object ArchivedConversations : ConversationsRoute
 
 /** Browse-all-folders index (v0.8.7). */
 @Serializable data object Projects : ConversationsRoute
+
+/** The Bookmarks index (conversation tags), opened from the drawer's footer. */
+@Serializable data object Bookmarks : ConversationsRoute
+
+/**
+ * One bookmark's chats, opened from its card on the index. [tag] is the name it had then: the
+ * screen follows a rename itself, so the key stays the one to remove it by.
+ */
+@Serializable data class BookmarkChats(
+    val tag: String,
+) : ConversationsRoute
+
+/** Full message search, opened from the drawer with its query (or empty). */
+@Serializable data class Search(
+    val query: String = "",
+) : ConversationsRoute
 
 /** Per-project filtered conversation list ("Show all" / folder tap) — v0.8.7. */
 @Serializable data class ProjectChats(
@@ -28,25 +44,50 @@ import kotlinx.serialization.modules.subclass
 
 fun EntryProviderScope<NavKey>.conversationsEntries(
     onConversationClick: (String) -> Unit,
-    onNavigateToArchive: () -> Unit = {},
     onNavigateToProject: (projectId: String, projectName: String) -> Unit = { _, _ -> },
+    onNewChatInProject: (projectId: String, projectName: String) -> Unit = { _, _ -> },
+    /** A bookmark card was tapped: open that bookmark's chats. */
+    onNavigateToBookmark: (tag: String) -> Unit = {},
     onBack: () -> Unit = {},
+    /** Removes the given entry wherever it sits; for a screen closing itself, which may not be on top. */
+    onRemove: (NavKey) -> Unit = {},
+    onOpenMessage: (conversationId: String, messageId: String, query: String, inReasoning: Boolean) -> Unit =
+        { conversationId, _, _, _ -> onConversationClick(conversationId) },
 ) {
-    entry<Conversations> {
-        ConversationListScreen(
-            onConversationClick = onConversationClick,
-            onNavigateToArchive = onNavigateToArchive,
-        )
-    }
     entry<ArchivedConversations> {
         ArchivedConversationsScreen(
             onNavigateBack = onBack,
+            onConversationClick = onConversationClick,
         )
     }
     entry<Projects> {
         ProjectsScreen(
             onProjectClick = onNavigateToProject,
             onNavigateBack = onBack,
+            onNewChatInProject = onNewChatInProject,
+        )
+    }
+    entry<Bookmarks> { route ->
+        BookmarksScreen(
+            onBookmarkClick = onNavigateToBookmark,
+            onNavigateBack = onBack,
+            onCloseSelf = { onRemove(route) },
+        )
+    }
+    entry<BookmarkChats> { route ->
+        BookmarkChatsScreen(
+            tag = route.tag,
+            onConversationClick = onConversationClick,
+            onNavigateBack = onBack,
+            onCloseSelf = { onRemove(route) },
+        )
+    }
+    entry<Search> { route ->
+        SearchScreen(
+            initialQuery = route.query,
+            onNavigateBack = onBack,
+            onOpenMessage = onOpenMessage,
+            onOpenConversation = onConversationClick,
         )
     }
     entry<ProjectChats> { route ->
@@ -55,15 +96,19 @@ fun EntryProviderScope<NavKey>.conversationsEntries(
             projectName = route.projectName,
             onConversationClick = onConversationClick,
             onNavigateBack = onBack,
+            onCloseSelf = { onRemove(route) },
+            onNewChatInProject = onNewChatInProject,
         )
     }
 }
 
 val conversationsSerializersModule = SerializersModule {
     polymorphic(NavKey::class) {
-        subclass(Conversations::class, Conversations.serializer())
         subclass(ArchivedConversations::class, ArchivedConversations.serializer())
         subclass(Projects::class, Projects.serializer())
+        subclass(Bookmarks::class, Bookmarks.serializer())
+        subclass(BookmarkChats::class, BookmarkChats.serializer())
         subclass(ProjectChats::class, ProjectChats.serializer())
+        subclass(Search::class, Search.serializer())
     }
 }

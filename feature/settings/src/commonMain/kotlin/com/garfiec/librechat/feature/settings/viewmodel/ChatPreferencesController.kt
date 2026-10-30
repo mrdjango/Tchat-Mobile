@@ -1,5 +1,6 @@
 package com.garfiec.librechat.feature.settings.viewmodel
 
+import com.garfiec.librechat.core.data.datastore.AppPreferences
 import com.garfiec.librechat.core.data.datastore.ArtifactDisplayMode
 import com.garfiec.librechat.core.data.datastore.ArtifactDisplayPrefs
 import com.garfiec.librechat.core.data.datastore.ChatFontSize
@@ -9,9 +10,11 @@ import com.garfiec.librechat.core.data.datastore.ContextBarPlacement
 import com.garfiec.librechat.core.data.datastore.DuringRunAction
 import com.garfiec.librechat.core.data.datastore.InlineArtifactPrefs
 import com.garfiec.librechat.core.data.datastore.LatexRenderer
+import com.garfiec.librechat.core.data.datastore.PreferenceStore
 import com.garfiec.librechat.core.data.datastore.SettingsDataStore
 import com.garfiec.librechat.core.data.datastore.StarredModelsDisplay
 import com.garfiec.librechat.core.data.datastore.UploadRoutingMode
+import com.garfiec.librechat.core.data.datastore.WebSearchPreference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,7 +26,7 @@ import kotlinx.coroutines.launch
 private data class DataStorePreferences(
     val chatFontSize: ChatFontSize,
     val autoScrollEnabled: Boolean,
-    val showThinkingBlocks: Boolean,
+    val thinkingOpenByDefault: Boolean,
 )
 
 /** Extra DataStore preferences (separate combine since Kotlin combine maxes at 5). */
@@ -62,6 +65,8 @@ private data class AdditionalPreferences(
     val duringRunAction: DuringRunAction = DuringRunAction.STEER,
     val uploadRoutingMode: UploadRoutingMode = UploadRoutingMode.AUTO,
     val showSiteIcons: Boolean = false,
+    val preferLastUsedModel: Boolean = false,
+    val webSearchFirst: WebSearchPreference = WebSearchPreference.LIBRECHAT_FIRST,
 )
 
 /**
@@ -74,6 +79,7 @@ private data class AdditionalPreferences(
 @Suppress("TooManyFunctions") // debt: 19 functions
 class ChatPreferencesController(
     private val settingsDataStore: SettingsDataStore,
+    private val preferenceStore: PreferenceStore,
     baseState: StateFlow<ChatSettingsUiState>,
     private val scope: CoroutineScope,
 ) {
@@ -81,17 +87,17 @@ class ChatPreferencesController(
     private val dataStorePreferences: StateFlow<DataStorePreferences> = combine(
         settingsDataStore.chatFontSize,
         settingsDataStore.autoScrollEnabled,
-        settingsDataStore.showThinkingBlocks,
-    ) { fontSize, autoScroll, showThinking ->
+        settingsDataStore.thinkingOpenByDefault,
+    ) { fontSize, autoScroll, thinkingOpen ->
         DataStorePreferences(
             chatFontSize = fontSize,
             autoScrollEnabled = autoScroll,
-            showThinkingBlocks = showThinking,
+            thinkingOpenByDefault = thinkingOpen,
         )
     }.stateIn(scope, SharingStarted.Eagerly, DataStorePreferences(
         chatFontSize = ChatFontSize.MEDIUM,
         autoScrollEnabled = true,
-        showThinkingBlocks = true,
+        thinkingOpenByDefault = false,
     ))
 
     private val extraPreferences: StateFlow<ExtraPreferences> = combine(
@@ -178,10 +184,19 @@ class ChatPreferencesController(
         additional.copy(sttOnDevice = sttOnDevice)
     }.combine(settingsDataStore.sttEndOfSpeech) { additional, sttEndOfSpeech ->
         additional.copy(sttEndOfSpeech = sttEndOfSpeech)
-    }.combine(settingsDataStore.siteIconsChoice) { additional, siteIcons ->
+    }.combine(preferenceStore.observe(AppPreferences.SiteIcons)) { additional, siteIcons ->
         // Never chosen reads as off: the chat screen asks before anything loads.
         additional.copy(showSiteIcons = siteIcons ?: false)
-    }.stateIn(scope, SharingStarted.Eagerly, AdditionalPreferences(false, "", "", true))
+    }.combine(preferenceStore.observe(AppPreferences.PreferLastUsedModel)) { additional, preferLastUsed ->
+        additional.copy(preferLastUsedModel = preferLastUsed)
+    }.combine(preferenceStore.observe(AppPreferences.WebSearchFirst)) { additional, webSearchFirst ->
+        additional.copy(webSearchFirst = webSearchFirst)
+    }.stateIn(
+        scope,
+        SharingStarted.Eagerly,
+        // Seeded with the channel default so a store build's toggle doesn't flash off on open.
+        AdditionalPreferences(false, "", "", true, showSiteIcons = preferenceStore.initial(AppPreferences.SiteIcons) ?: false),
+    )
 
     /** The single public UI state that merges DataStore preferences with imperative state. */
     val uiState: StateFlow<ChatSettingsUiState> = combine(
@@ -195,7 +210,7 @@ class ChatPreferencesController(
         state.copy(
             chatFontSize = prefs.chatFontSize,
             autoScrollEnabled = prefs.autoScrollEnabled,
-            showThinkingBlocks = prefs.showThinkingBlocks,
+            thinkingOpenByDefault = prefs.thinkingOpenByDefault,
             autoReadEnabled = extra.autoRead,
             selectedVoice = selectedVoice,
             showImageDescriptions = extra.showImageDescriptions,
@@ -222,6 +237,8 @@ class ChatPreferencesController(
             duringRunAction = additional.duringRunAction,
             uploadRoutingMode = additional.uploadRoutingMode,
             showSiteIcons = additional.showSiteIcons,
+            preferLastUsedModel = additional.preferLastUsedModel,
+            webSearchFirst = additional.webSearchFirst,
         )
     }.stateIn(scope, SharingStarted.Eagerly, ChatSettingsUiState())
 
@@ -247,8 +264,8 @@ class ChatPreferencesController(
         scope.launch { settingsDataStore.setAutoScrollEnabled(enabled) }
     }
 
-    fun setShowThinkingBlocks(show: Boolean) {
-        scope.launch { settingsDataStore.setShowThinkingBlocks(show) }
+    fun setThinkingOpenByDefault(open: Boolean) {
+        scope.launch { settingsDataStore.setThinkingOpenByDefault(open) }
     }
 
     fun setContextBarPlacement(placement: ContextBarPlacement) {
@@ -268,7 +285,15 @@ class ChatPreferencesController(
     }
 
     fun setShowSiteIcons(show: Boolean) {
-        scope.launch { settingsDataStore.setShowSiteIcons(show) }
+        scope.launch { preferenceStore.set(AppPreferences.SiteIcons, show) }
+    }
+
+    fun setPreferLastUsedModel(prefer: Boolean) {
+        scope.launch { preferenceStore.set(AppPreferences.PreferLastUsedModel, prefer) }
+    }
+
+    fun setWebSearchFirst(first: WebSearchPreference) {
+        scope.launch { preferenceStore.set(AppPreferences.WebSearchFirst, first) }
     }
 
     fun setDismissKeyboardOnSend(enabled: Boolean) {

@@ -2,11 +2,13 @@ package com.garfiec.librechat.feature.chat.components
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FindInPage
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.garfiec.librechat.core.common.ToolConstants
 import com.garfiec.librechat.feature.chat.resources.Res
@@ -18,12 +20,21 @@ import com.garfiec.librechat.feature.chat.resources.tool_file_search
 import com.garfiec.librechat.feature.chat.resources.tool_file_search_desc
 import com.garfiec.librechat.feature.chat.resources.tool_memory
 import com.garfiec.librechat.feature.chat.resources.tool_memory_desc
+import com.garfiec.librechat.feature.chat.resources.tool_skills
+import com.garfiec.librechat.feature.chat.resources.tool_skills_desc
 import com.garfiec.librechat.feature.chat.resources.tool_url_context
 import com.garfiec.librechat.feature.chat.resources.tool_url_context_desc
 import com.garfiec.librechat.feature.chat.resources.tool_web_search
 import com.garfiec.librechat.feature.chat.resources.tool_web_search_desc
+import com.garfiec.librechat.feature.chat.resources.web_search_built_in
+import com.garfiec.librechat.feature.chat.resources.web_search_built_in_plain
+import com.garfiec.librechat.feature.chat.resources.web_search_checking
+import com.garfiec.librechat.feature.chat.resources.web_search_librechat
 import com.garfiec.librechat.feature.chat.tchat.IMAGE_GEN_TOOL_KEY
+import com.garfiec.librechat.feature.chat.util.WebSearchKind
+import com.garfiec.librechat.feature.chat.util.WebSearchRoute
 import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * Single source of truth for the icon + label + description of the ephemeral chat tools,
@@ -51,5 +62,17 @@ internal fun ephemeralToolMeta(toolKey: String): EphemeralToolMeta? = when (tool
     // TCHAT: Image Gen's switch in the tools sheet.
     IMAGE_GEN_TOOL_KEY ->
         EphemeralToolMeta(Icons.Default.Image, Res.string.tchat_image_gen, Res.string.tchat_image_gen_tool_desc)
+    ToolConstants.SKILLS ->
+        EphemeralToolMeta(Icons.Default.Extension, Res.string.tool_skills, Res.string.tool_skills_desc)
     else -> null
+}
+
+/** The name of the search [kind] runs, for the web-search control's second line; null when none can. */
+@Composable
+internal fun webSearchName(kind: WebSearchKind): String? = when (kind.route) {
+    WebSearchRoute.NONE -> null
+    WebSearchRoute.LIBRECHAT -> stringResource(Res.string.web_search_librechat)
+    WebSearchRoute.CHECKING -> stringResource(Res.string.web_search_checking)
+    WebSearchRoute.BUILT_IN -> kind.provider?.let { stringResource(Res.string.web_search_built_in, it.displayName) }
+        ?: stringResource(Res.string.web_search_built_in_plain)
 }

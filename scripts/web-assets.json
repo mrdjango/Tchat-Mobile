@@ -184,6 +184,34 @@
         { "from": "umd/react-dom.production.min.js", "to": "react-dom.production.min.js" },
         { "from": "LICENSE", "to": "LICENSE" }
       ]
+    },
+    {
+      "id": "jszip",
+      "dir": "jszip",
+      "version": "3.10.1",
+      "license": "MIT",
+      "source": { "type": "npm", "package": "jszip" },
+      "used_by": ["commonMain/components/artifact/OfficePreviewLocalizer.kt"],
+      "why": "Unzips a DOCX for docx-preview, which reads the global JSZip. The server's DOCX preview document (packages/api/src/files/documents/html.ts, DOCX_PREVIEW_CDN) loads it from jsDelivr; the client rewrites that tag to this copy. Dual-licensed MIT OR GPL-3.0-or-later; distributed under MIT. The minified build bundles pako (MIT), noticed in its header.",
+      "pin_reason": "Exact match to the server's DOCX_PREVIEW_CDN pin, which is what the client rewrites. The rewrite is version-exact, so a server on any other version gets its tag stripped and shows its mammoth fallback rather than running code it was not written against. Bump only in lockstep with upstream's DOCX_PREVIEW_CDN (watched in scripts/mirrors.json as office-preview-docx-cdn). These bytes equal the server's SRI pin: sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG.",
+      "files": [
+        { "from": "dist/jszip.min.js", "to": "jszip.min.js" },
+        { "from": "LICENSE.markdown", "to": "LICENSE.markdown" }
+      ]
+    },
+    {
+      "id": "docx-preview",
+      "dir": "docx-preview",
+      "version": "0.3.7",
+      "license": "Apache-2.0",
+      "source": { "type": "npm", "package": "docx-preview" },
+      "used_by": ["commonMain/components/artifact/OfficePreviewLocalizer.kt"],
+      "why": "Renders a DOCX office preview at page fidelity. The server's DOCX preview document loads it from jsDelivr (DOCX_PREVIEW_CDN); the client rewrites that tag to this copy. Without it the document shows its server-rendered mammoth fallback.",
+      "pin_reason": "Exact match to the server's DOCX_PREVIEW_CDN pin, for the same reason as jszip: the rewrite is version-exact and a mismatch falls back rather than runs. Bump with jszip, in lockstep with upstream. These bytes equal the server's SRI pin: sha384-Fw+ZM2MtvxCe867uRzZY5GtGP+gs0NLvrlJS768RZWuKhOHMN4Fln3i3gMt1NSyQ. The server's PPTX renderer, pptx-preview, is deliberately NOT vendored: its package.json says ISC, but the tarball ships no LICENSE and its README restricts the source to personal study and forbids republishing or modifying it, so it is not FOSS. PPTX previews show the server's slide-list fallback instead.",
+      "files": [
+        { "from": "dist/docx-preview.min.js", "to": "docx-preview.min.js" },
+        { "from": "LICENSE", "to": "LICENSE" }
+      ]
     }
   ]
 }

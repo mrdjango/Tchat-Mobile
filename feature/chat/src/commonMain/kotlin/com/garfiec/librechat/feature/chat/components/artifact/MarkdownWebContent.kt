@@ -25,6 +25,9 @@ object MarkdownWebContent {
             .replace("\\", "\\\\")
             .replace("`", "\\`")
             .replace("$", "\\$")
+            // `</script>` in the content would otherwise end this inline script and run the rest
+            // as page markup. `\u003c` is the same character once the template literal is read.
+            .replace("<", "\\u003c")
 
         return """
             <!DOCTYPE html>

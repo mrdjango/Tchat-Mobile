@@ -16,8 +16,6 @@
     <string name="close">إغلاق</string>
 
     <!-- Content descriptions -->
-    <string name="cd_create_agent">إنشاء وكيل</string>
-    <string name="cd_search">بحث</string>
     <string name="cd_back">رجوع</string>
     <string name="cd_more_actions">إجراءات إضافية</string>
     <string name="cd_more_options">خيارات إضافية</string>
@@ -34,11 +32,26 @@
     <!-- Marketplace screen -->
     <string name="search_agents_hint">البحث في الوكلاء…</string>
     <string name="no_agents_found">لم يتم العثور على وكلاء</string>
-    <string name="no_agents_available">لا يوجد وكلاء متاحون</string>
     <string name="agents_not_available_title">الوكلاء غير متاحين</string>
     <string name="agents_not_available_description">قام مسؤول الخادم بتعطيل الوكلاء لحسابك.</string>
     <string name="try_different_search">جرّب مصطلح بحث مختلفًا</string>
     <string name="check_back_later">تحقّق لاحقًا من وجود وكلاء جدد</string>
+    <string name="agents_chip_top_picks">الأبرز</string>
+    <string name="agents_chip_all">الكل</string>
+    <string name="agents_chip_editable">قابلة للتعديل</string>
+    <string name="agents_top_pick">من الأبرز</string>
+    <string name="agents_new_agent">وكيل جديد</string>
+    <string name="agent_unnamed">وكيل بلا اسم</string>
+    <string name="agents_clear_search">مسح البحث</string>
+    <string name="agents_no_matches_in">لا توجد نتائج في %1$s</string>
+    <string name="agents_none_in">لا يوجد وكلاء في %1$s</string>
+    <string name="agents_search_all">البحث في كل الوكلاء</string>
+    <string name="agents_show_all">عرض كل الوكلاء</string>
+    <string name="agents_empty_title">لا يوجد وكلاء بعد</string>
+    <string name="agents_empty_description_create">أنشئ وكيلًا بتعليماته ونموذجه وأدواته الخاصة.</string>
+    <string name="agents_load_failed">تعذّر تحميل الوكلاء</string>
+    <string name="agents_load_more_failed">تعذّر تحميل المزيد من الوكلاء</string>
+    <string name="agents_retry">إعادة المحاولة</string>
     <string name="error_unknown">حدث خطأ غير معروف</string>
     <string name="unknown_author">غير معروف</string>
 
@@ -47,12 +60,8 @@
     <string name="delete_agent">حذف الوكيل</string>
     <string name="delete_agent_confirm">هل أنت متأكد أنك تريد حذف "%1$s"؟ لا يمكن التراجع عن ذلك.</string>
     <string name="delete_this_agent">هذا الوكيل</string>
-    <string name="by_author">بواسطة %1$s</string>
-    <string name="label_description">الوصف</string>
-    <string name="no_description">لا يوجد وصف</string>
     <string name="label_category">الفئة</string>
     <string name="label_model">النموذج</string>
-    <string name="default_value">افتراضي</string>
     <string name="label_tools">الأدوات</string>
     <string name="label_conversation_starters">محفّزات المحادثة</string>
 
@@ -236,13 +245,20 @@
     <string name="acl_public_label">عام</string>
     <string name="acl_public_description">السماح لأي شخص لديه وصول إلى الخادم</string>
     <string name="acl_role">الدور</string>
-    <string name="acl_revoke">إبطال</string>
+    <string name="acl_revoke_principal">إبطال وصول %1$s</string>
     <string name="acl_search_hint">البحث عن المستخدمين أو المجموعات…</string>
     <string name="acl_search_empty">لا توجد تطابقات</string>
+    <string name="acl_search_failed">تعذّر البحث الآن.</string>
+    <string name="acl_search_unavailable">لا يمكن لدورك البحث عن أشخاص أو مجموعات. اطلب من المسؤول تفعيل أداة اختيار الأشخاص لدورك.</string>
+    <string name="acl_roles_failed">تعذّر تحميل الأدوار، لذا لا يمكن إضافة أحد بعد.</string>
+    <string name="acl_load_failed">تعذّر تحميل من لديه حق الوصول.</string>
+    <string name="acl_share_check_failed">تعذّر التحقق مما إذا كان بإمكانك مشاركة هذا الوكيل.</string>
+    <string name="acl_retry">إعادة المحاولة</string>
     <string name="acl_grant_dialog_title">إضافة مستخدم أو مجموعة</string>
     <string name="acl_principal_user">مستخدم</string>
     <string name="acl_principal_group">مجموعة</string>
     <string name="acl_principal_role">دور</string>
+    <string name="acl_principal_unknown">غير معروف</string>
     <string name="acl_create_mode_notice">تتوفر عناصر التحكم في المشاركة والوصول بعد حفظ الوكيل.</string>
 
     <!-- Tool select dialog -->
@@ -306,5 +322,41 @@
     <string name="builtin_file_context_desc">يضع الملفات المرفقة كاملة في سياق الوكيل.</string>
     <string name="builtin_ask_user">سؤال المستخدم</string>
     <string name="builtin_ask_user_desc">يوقف التشغيل مؤقتًا ليطرح عليك سؤالًا توضيحيًا.</string>
-    <string name="agent_contact_title">جهة الاتصال</string>
+    <string name="agent_category_hr">الموارد البشرية</string>
+    <string name="agent_category_rd">البحث والتطوير</string>
+    <string name="agent_category_finance">المالية</string>
+    <string name="agent_category_it">تقنية المعلومات</string>
+    <string name="agent_category_sales">المبيعات</string>
+    <string name="agent_category_aftersales">خدمة ما بعد البيع</string>
+    <string name="agent_category_idea">أفكار</string>
+    <string name="agent_category_travel">السفر</string>
+    <string name="agent_category_learning">التعلّم</string>
+    <string name="agent_category_writing">الكتابة</string>
+    <string name="agent_category_shopping">التسوق</string>
+    <string name="agent_category_code">البرمجة</string>
+    <string name="agent_category_misc">متفرقات</string>
+    <string name="agent_category_roleplay">لعب الأدوار</string>
+    <string name="visibility_team">الفريق</string>
+    <string name="agent_contact_line">جهة الاتصال: %1$s</string>
+    <string name="agent_pin">تثبيت في قائمة النماذج</string>
+    <string name="agent_unpin">إلغاء التثبيت من قائمة النماذج</string>
+    <string name="agent_copy_link">نسخ الرابط</string>
+    <string name="agent_link_copied">تم نسخ الرابط</string>
+    <string name="agent_updated_relative">تم التحديث %1$s</string>
+    <string name="agent_updated_on">تم التحديث في %1$s</string>
+    <string name="agent_public">عام</string>
+    <string name="agent_try_asking">جرّب أن تسأل</string>
+    <string name="agent_load_failed">تعذّر تحميل هذا الوكيل</string>
+    <string name="agent_delete_failed">تعذّر حذف هذا الوكيل</string>
+    <string name="agent_duplicate_failed">تعذّر تكرار هذا الوكيل</string>
+    <string name="agent_pin_failed">تعذّر تحديث العناصر المثبتة</string>
+    <string name="agent_contact_send_email">إرسال بريد إلكتروني</string>
+    <plurals name="agent_pin_limit">
+        <item quantity="zero">يمكنك تثبيت ما يصل إلى %1$d من المفضلة.</item>
+        <item quantity="one">يمكنك تثبيت عنصر مفضل واحد فقط.</item>
+        <item quantity="two">يمكنك تثبيت عنصرين مفضلين فقط.</item>
+        <item quantity="few">يمكنك تثبيت ما يصل إلى %1$d عناصر مفضلة.</item>
+        <item quantity="many">يمكنك تثبيت ما يصل إلى %1$d عنصرًا مفضلًا.</item>
+        <item quantity="other">يمكنك تثبيت ما يصل إلى %1$d عنصر مفضل.</item>
+    </plurals>
 </resources>

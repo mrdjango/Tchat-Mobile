@@ -25,4 +25,16 @@ data class McpServer(
     val obo: McpOboConfig? = null,
     // TCHAT: `chatMenu: false` keeps a server out of the chat's MCP picker (Tchat's always-on web-fetch).
     val chatMenu: Boolean? = null,
+    /**
+     * The stored record's id, and the key its permissions are listed under. Null for a server
+     * defined in the server's YAML: there is no record, so it can't be edited or deleted.
+     */
+    val dbId: String? = null,
+    /** Reachable only through an agent that uses it, not shared with the user directly. */
+    val consumeOnly: Boolean = false,
+    /**
+     * Connects only inside a chat request (its config reads request placeholders), so it is
+     * legitimately disconnected the rest of the time.
+     */
+    val requestScoped: Boolean = false,
 )

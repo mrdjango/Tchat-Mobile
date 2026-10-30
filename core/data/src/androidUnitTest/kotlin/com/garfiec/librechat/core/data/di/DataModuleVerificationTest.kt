@@ -3,6 +3,7 @@ package com.garfiec.librechat.core.data.di
 import android.app.Application
 import android.content.Context
 import androidx.datastore.core.DataStore
+import com.garfiec.librechat.core.common.ChannelPolicy
 import com.garfiec.librechat.core.common.conversation.OpenConversationRegistry
 import com.garfiec.librechat.core.common.lifecycle.DeferredWorkWindow
 import com.garfiec.librechat.core.common.lifecycle.ForegroundSignal
@@ -34,6 +35,7 @@ import com.garfiec.librechat.core.network.api.PromptsApi
 import com.garfiec.librechat.core.network.api.QueuedTurnsApi
 import com.garfiec.librechat.core.network.api.RolesApi
 import com.garfiec.librechat.core.network.api.SchedulesApi
+import com.garfiec.librechat.core.network.api.SearchApi
 import com.garfiec.librechat.core.network.api.ShareApi
 import com.garfiec.librechat.core.network.api.SkillsApi
 import com.garfiec.librechat.core.network.api.SpeechApi
@@ -72,12 +74,14 @@ class DataModuleVerificationTest {
                 ForegroundSignal::class,
                 DeferredWorkWindow::class,
                 OpenConversationRegistry::class,
+                ChannelPolicy::class,
                 RequestActivityTracker::class,
                 SseClient::class,
                 AuthApi::class,
                 UserApi::class,
                 ChatApi::class,
                 ConversationsApi::class,
+                SearchApi::class,
                 EndpointTokenApi::class,
                 ProjectsApi::class,
                 MessagesApi::class,

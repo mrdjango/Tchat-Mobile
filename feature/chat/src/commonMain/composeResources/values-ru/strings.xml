@@ -10,6 +10,7 @@
     <string name="action_insert">Вставить</string>
     <string name="action_open">Открыть</string>
     <string name="action_share">Поделиться</string>
+    <string name="action_share_link_active">Поделиться · Ссылка активна</string>
     <string name="action_search">Поиск</string>
     <string name="action_archive">В архив</string>
     <string name="action_duplicate">Дублировать</string>
@@ -19,7 +20,17 @@
     <string name="new_chat">Новый чат</string>
     <string name="load_preset">Загрузить пресет</string>
     <string name="save_as_preset">Сохранить как пресет</string>
-    <string name="save_and_submit">Сохранить и отправить</string>
+    <string name="saving">Сохранение…</string>
+    <string name="rerun">Запустить снова</string>
+    <string name="update_and_rerun">Обновить и запустить снова</string>
+    <string name="edit_part_response">Ответ</string>
+    <string name="edit_part_thoughts">Размышления</string>
+    <string name="edit_status_part_empty">Часть сообщения не может быть пустой.</string>
+    <string name="edit_status_save_before_rerun">Сохраните изменения перед повторным запуском.</string>
+    <string name="edit_status_unsaved_changes">Несохранённые изменения.</string>
+    <string name="edit_status_rerun_discards_changes">Повторный запуск создаст ответ заново и отменит ваши изменения.</string>
+    <string name="edit_status_rerun_needs_user_turn">Для повторного запуска нужно сообщение пользователя.</string>
+    <string name="notice_message_save_failed">Не удалось сохранить изменение.</string>
     <string name="preset_name_label">Имя пресета</string>
     <string name="code">Код</string>
     <string name="preview">Предпросмотр</string>
@@ -29,7 +40,24 @@
     <!-- Neutral label for the active agent when its name hasn't resolved yet (never a model string). -->
     <string name="chat_agent_fallback_label">Агент</string>
     <string name="compare_models">Сравнить модели</string>
+    <string name="compare_with">Сравнить с</string>
+    <string name="compare_start">Начать</string>
+    <string name="compare_setup_hint">Каждое сообщение отправляется обеим моделям. Нажмите A или B, чтобы выбрать модель.</string>
+    <string name="compare_same_model">Та же модель, второй ответ</string>
+    <string name="compare_pick_below">Выберите ниже</string>
+    <string name="compare_message_both">Сообщение обеим моделям</string>
+    <string name="compare_pick_to_send">Выберите модель B для отправки</string>
+    <string name="compare_not_picked">Ещё не выбрана</string>
+    <string name="compare_empty_lane">Отправьте сообщение, чтобы увидеть здесь её ответ.</string>
+    <string name="compare_empty_pick_right">Выберите справа модель для сравнения.</string>
+    <string name="compare_empty_ready">Нажмите «Начать», затем отправьте сообщение. Обе модели ответят рядом.</string>
+    <string name="compare_browse_all">Все модели</string>
+    <string name="compare_pick_second_model">Выберите вторую модель</string>
+    <string name="cd_change_compared_models">Изменить сравниваемые модели</string>
+    <string name="compare_lane_a">A</string>
+    <string name="compare_lane_b">B</string>
     <string name="how_can_i_help">Чем я могу помочь вам сегодня?</string>
+    <string name="chat_in_project">В «%1$s»</string>
     <string name="recording">Запись…</string>
     <string name="hint_message_model">Сообщение для %1$s</string>
     <string name="hint_message">Сообщение…</string>
@@ -61,6 +89,9 @@
     <string name="cd_more_options">Дополнительно</string>
     <string name="cd_scroll_to_bottom">Прокрутить вниз</string>
     <string name="cd_select_model">Выбрать модель</string>
+    <string name="cd_starter_send">Отправить</string>
+    <string name="cd_starter_edit">Изменить перед отправкой</string>
+    <string name="starters_try_asking">Попробуйте спросить</string>
     <string name="cd_librechat">Switchboard</string>
     <string name="cd_comparison_enabled">Сравнение включено</string>
 
@@ -100,7 +131,6 @@
     <string name="cd_code_execution_result">Результат выполнения кода</string>
     <string name="cd_exit_code_success">Код выхода 0 (успех)</string>
     <string name="cd_exit_code_failure">Код выхода %1$d (ошибка)</string>
-    <string name="exit_code">выход %1$d</string>
     <string name="label_code">Код</string>
     <string name="label_output">Вывод:</string>
     <string name="label_error">Ошибка:</string>
@@ -179,8 +209,6 @@
     <string name="trace_error_unsupported">Сервис трассировки этого сервера не может возвращать трассировки.</string>
 
     <!-- Office-doc preview attachments (deferred preview, v0.8.6+) -->
-    <string name="office_preview_preparing">Подготовка предпросмотра %1$s…</string>
-    <string name="office_preview_failed">Не удалось показать предпросмотр %1$s (%2$s)</string>
     <string name="office_preview_unavailable">%1$s — предпросмотр недоступен</string>
 
     <!-- Content descriptions - Tool calls -->
@@ -200,8 +228,15 @@
     <string name="tool_model">Модель</string>
     <string name="tool_model_parameters">Параметры модели</string>
     <string name="tool_model_parameters_desc">Настройте температуру, токены и другое</string>
+    <string name="param_set_by_spec">Настройки этой модели задаёт сервер, здесь их изменить нельзя.</string>
+    <string name="tool_set_by_spec">Включено сервером для этой модели</string>
     <string name="tool_web_search">Веб-поиск</string>
     <string name="tool_web_search_desc">Искать информацию в интернете</string>
+    <string name="web_search_librechat">Поиск LibreChat</string>
+    <string name="web_search_checking">Проверка поиска LibreChat…</string>
+    <string name="web_search_built_in">Встроенный поиск %1$s</string>
+    <string name="web_search_built_in_plain">Встроенный поиск</string>
+    <string name="web_search_set_by_spec">%1$s, включено сервером для этой модели</string>
     <string name="web_searched">Выполнен поиск в интернете</string>
     <string name="tool_url_context">Контекст URL</string>
     <string name="tool_url_context_desc">Разрешить модели читать указанные вами URL и видео YouTube</string>
@@ -226,7 +261,7 @@
     <string name="cd_files_attached_with_text">Прикреплено файлов: %1$d, отправлено как текст: %2$d. Нажмите для предпросмотра</string>
     <string name="upload_routing_sheet_title">Как отправить эти файлы?</string>
     <string name="upload_routing_sheet_title_single">Как отправить этот файл?</string>
-    <string name="upload_routing_option_provider">Напрямую в модель</string>
+    <string name="upload_routing_option_provider">В модель</string>
     <string name="upload_routing_option_text">Как текст</string>
     <string name="upload_routing_why_provider">Модель сама читает файл.</string>
     <string name="upload_routing_why_text">Сервер читает файл и отправляет его текст.</string>
@@ -254,8 +289,14 @@
     <string name="audio_decode_failed">Не удалось декодировать аудио</string>
 
     <!-- Citation -->
-    <string name="citation_number">Источник %1$d</string>
-    <string name="cd_open_citation_url">Открыть URL источника</string>
+    <string name="citation_sources_title">Источники</string>
+    <string name="cd_citation">Источник: %1$s</string>
+    <plurals name="cd_citation_more">
+        <item quantity="one">Источник: %1$s и ещё %2$d</item>
+        <item quantity="few">Источник: %1$s и ещё %2$d</item>
+        <item quantity="many">Источник: %1$s и ещё %2$d</item>
+        <item quantity="other">Источник: %1$s и ещё %2$d</item>
+    </plurals>
 
     <!-- Fork options -->
     <string name="fork_conversation">Ответвить беседу</string>
@@ -286,18 +327,33 @@
     <string name="cd_mcp_resource">Ресурс MCP: %1$s</string>
 
     <!-- Memory artifact -->
-    <string name="cd_memory_artifact">Артефакт памяти: %1$s</string>
-    <string name="memory_artifact_untitled">Без названия</string>
     <string name="label_memory">Память</string>
-    <string name="cd_memory_artifacts">Обновления памяти: %1$d</string>
+    <string name="memory_manage">Управление</string>
+    <string name="cd_memory_manage">Управление памятью</string>
+    <plurals name="cd_memory_artifacts_summary">
+        <item quantity="one">%1$s, %2$s изменение</item>
+        <item quantity="few">%1$s, %2$s изменения</item>
+        <item quantity="many">%1$s, %2$s изменений</item>
+        <item quantity="other">%1$s, %2$s изменения</item>
+    </plurals>
     <string name="memory_updated">Сохранённая память обновлена</string>
     <string name="memory_error">Ошибка памяти</string>
-    <string name="memory_updated_items">Обновлённые воспоминания</string>
-    <string name="memory_deleted_items">Удалённые воспоминания</string>
-    <string name="memory_deleted">Воспоминание удалено</string>
+    <string name="memory_updated_items">Обновлённые записи памяти</string>
+    <string name="memory_deleted_items">Удалённые записи памяти</string>
+    <string name="memory_deleted">Запись памяти удалена</string>
     <string name="memory_storage_full">Хранилище памяти заполнено</string>
-    <string name="memory_already_exceeded">Хранилище памяти уже заполнено — превышение на %1$d токенов. Удалите существующие воспоминания, прежде чем добавлять новые.</string>
-    <string name="memory_would_exceed">Невозможно сохранить — лимит будет превышен на %1$d токенов. Удалите существующие воспоминания, чтобы освободить место.</string>
+    <plurals name="memory_already_exceeded">
+        <item quantity="one">Хранилище памяти уже заполнено — превышение на %1$s токен. Удалите существующие записи памяти, прежде чем добавлять новые.</item>
+        <item quantity="few">Хранилище памяти уже заполнено — превышение на %1$s токена. Удалите существующие записи памяти, прежде чем добавлять новые.</item>
+        <item quantity="many">Хранилище памяти уже заполнено — превышение на %1$s токенов. Удалите существующие записи памяти, прежде чем добавлять новые.</item>
+        <item quantity="other">Хранилище памяти уже заполнено — превышение на %1$s токена. Удалите существующие записи памяти, прежде чем добавлять новые.</item>
+    </plurals>
+    <plurals name="memory_would_exceed">
+        <item quantity="one">Невозможно сохранить — лимит будет превышен на %1$s токен. Удалите существующие записи памяти, чтобы освободить место.</item>
+        <item quantity="few">Невозможно сохранить — лимит будет превышен на %1$s токена. Удалите существующие записи памяти, чтобы освободить место.</item>
+        <item quantity="many">Невозможно сохранить — лимит будет превышен на %1$s токенов. Удалите существующие записи памяти, чтобы освободить место.</item>
+        <item quantity="other">Невозможно сохранить — лимит будет превышен на %1$s токена. Удалите существующие записи памяти, чтобы освободить место.</item>
+    </plurals>
     <string name="files_searched">Выполнен поиск по вашим файлам</string>
     <string name="cd_file_search_source">Источник поиска по файлам: %1$s</string>
     <string name="file_search_relevance">%1$d%%</string>
@@ -318,10 +374,7 @@
     <!-- Message files -->
     <string name="file_fallback">Файл</string>
     <string name="attachment_fallback">Вложение</string>
-    <string name="pdf_document">PDF-документ</string>
     <string name="pdf_load_failed">Не удалось загрузить PDF</string>
-    <string name="cd_share_pdf">Поделиться PDF</string>
-    <string name="cd_open_pdf">Открыть PDF</string>
     <string name="retry">Повторить</string>
     <string name="messages_unavailable_title">Сообщения недоступны</string>
     <string name="messages_unavailable_body">Не удалось загрузить эту беседу, а офлайн-копия на этом устройстве не сохранена.</string>
@@ -333,8 +386,12 @@
     <string name="cd_unpin_favorite">Открепить из избранного</string>
     <string name="cd_collapse_section">Свернуть %1$s</string>
     <string name="cd_expand_section">Развернуть %1$s</string>
-    <string name="set_api_key_action">Задать API-ключ</string>
-    <string name="cd_set_api_key">Настроить API-ключ для %1$s</string>
+    <string name="set_api_key_action">Добавить ключ</string>
+    <string name="cd_set_api_key">Добавить ключ для %1$s</string>
+    <!-- Under an endpoint or spec name in the model picker when its key is missing. -->
+    <string name="model_selector_needs_key">Нужен ваш ключ</string>
+    <!-- Same place, in the minute before the server deletes an expired key. -->
+    <string name="model_selector_key_expired">Срок действия ключа истёк</string>
 
     <!-- Preset picker -->
     <string name="select_preset">Выбрать пресет</string>
@@ -446,22 +503,31 @@
     <string name="dialog_title_fill_variables">Заполнить переменные</string>
 
     <!-- Comparison mode -->
-    <string name="continue_with_response">Продолжить с этим ответом</string>
-    <string name="waiting_for_response">Ожидание ответа…</string>
+    <string name="keep_this_answer">Оставить этот ответ</string>
+    <string name="reply_stopped">Остановлено</string>
+    <string name="action_continue_reply">Продолжить</string>
+    <string name="action_keep_and_continue">Оставить и продолжить</string>
 
     <!-- Provider Keys chat-time errors. -->
     <string name="provider_keys_chat_error_no_key">Ключ не найден. Укажите ключ и попробуйте снова.</string>
-    <!-- {0} = endpoint name, {1} = expiredAt (server-locale string, NOT ISO) -->
+    <!-- {0} = endpoint name, {1} = expiry date and time, already formatted in the user's locale -->
     <string name="provider_keys_chat_error_expired">Указанный ключ для %1$s истёк %2$s. Укажите новый ключ и попробуйте снова.</string>
     <string name="provider_keys_chat_error_invalid">Указан недействительный ключ. Укажите действительный ключ и попробуйте снова.</string>
-    <!-- Snackbar action label that deep-links to Settings → Provider Keys -->
-    <string name="provider_keys_chat_error_cta">Открыть настройки ключей</string>
+    <string name="provider_keys_chat_error_no_key_for">Ключ для %1$s не найден. Укажите ключ и попробуйте снова.</string>
+    <string name="provider_keys_chat_error_invalid_for">Указан недействительный ключ для %1$s. Укажите действительный ключ и попробуйте снова.</string>
+    <string name="provider_keys_chat_error_expired_no_label">Срок действия указанного ключа истёк %1$s. Укажите новый ключ и попробуйте снова.</string>
+    <string name="provider_keys_chat_error_no_base_url">Базовый URL не найден. Укажите его и попробуйте снова.</string>
+    <string name="provider_keys_chat_error_no_base_url_for">Базовый URL для %1$s не найден. Укажите его и попробуйте снова.</string>
+    <string name="provider_keys_chat_error_invalid_base_url">Указанный базовый URL ведёт на запрещённый адрес. Используйте действительный внешний URL и попробуйте снова.</string>
+    <string name="provider_keys_chat_error_invalid_base_url_for">Указанный базовый URL для %1$s ведёт на запрещённый адрес. Используйте действительный внешний URL и попробуйте снова.</string>
     <string name="queued_messages_dropped_account_switch">Сообщения в очереди удалены после смены учётной записи</string>
 
     <!-- Send block reasons (shown in error snackbar when send can't proceed) -->
     <string name="send_block_select_agent">Выберите агента перед отправкой сообщения.</string>
     <string name="send_block_select_model">Выберите модель перед отправкой сообщения.</string>
+    <string name="send_block_select_second_model">Перед отправкой выберите модель B из списка.</string>
     <string name="send_block_agents_unavailable">Агенты недоступны на этом сервере. Выберите другую модель.</string>
+    <string name="send_block_api_key_required">Добавьте свой API-ключ для %1$s, чтобы отправлять сообщения.</string>
     <string name="send_block_agent_not_available">Выбранный агент недоступен на этом сервере. Выберите другого агента.</string>
     <string name="send_block_model_not_available">Выбранная модель недоступна на этом сервере. Выберите другую модель.</string>
     <string name="send_block_model_load_failed">Пока не удалось загрузить выбранную модель. Попробуйте снова или выберите другую модель.</string>
@@ -544,6 +610,9 @@
     <string name="error_auth_banned">Вход с этой учётной записи или из этой сети заблокирован. Обратитесь к администратору.</string>
     <string name="error_auth_cross_origin">Сервер отклонил вход как выполненный с другого сайта. Сообщите об этом — это ошибка приложения, а не проблема с паролем.</string>
     <string name="error_share_limit">Слишком много запросов на создание общих ссылок. Подождите немного и попробуйте снова.</string>
+    <string name="error_message_limit">Вы достигли лимита сообщений на этом сервере. Подождите немного и попробуйте снова.</string>
+    <string name="error_ban">Эта учётная запись временно ограничена на этом сервере. Попробуйте позже или обратитесь к администратору сервера.</string>
+    <string name="error_convo_access">Эта беседа принадлежит другой учётной записи, поэтому её нельзя продолжить отсюда.</string>
     <string name="ask_user_question_record_asked">Вопрос задан</string>
     <string name="ask_user_question_record_asking">Вопрос задаётся</string>
     <string name="ask_user_question_record_answer_label">Ваш ответ:</string>
@@ -557,6 +626,21 @@
     <string name="cd_collapse_ask_user_question">Свернуть подробности вопроса</string>
     <string name="tool_memory">Память</string>
     <string name="tool_memory_desc">Разрешить ассистенту запоминать подробности из этого чата</string>
+    <string name="tool_skills">Навыки</string>
+    <string name="tool_skills_desc">Разрешить ассистенту использовать ваши навыки в этом чате</string>
+    <string name="cd_skills_enabled">Навыки включены</string>
+    <string name="picker_type_prompt">Промпт</string>
+    <string name="picker_type_skill">Навык</string>
+    <string name="picker_no_matches">Нет совпадений</string>
+    <string name="picker_loading_skills">Загрузка навыков…</string>
+    <string name="picker_skills_failed">Не удалось загрузить навыки</string>
+    <string name="cd_pending_skills">Навыки для следующего сообщения</string>
+    <string name="cd_remove_skill">Убрать навык %1$s</string>
+    <string name="cd_skill_always_applied">Всегда применяемый навык: %1$s</string>
+    <string name="cd_skill_used">Использован навык: %1$s</string>
+    <string name="skill_call_running">Выполняется %1$s</string>
+    <string name="skill_call_finished">Выполнен %1$s</string>
+    <string name="skill_call_fallback_name">навык</string>
     <string name="cd_steer_message">Скорректировать этот ответ</string>
     <string name="cd_cancel_steer">Отменить корректировку</string>
     <string name="cd_during_run_options">Выберите действие при отправке сейчас</string>
@@ -564,6 +648,8 @@
     <string name="during_run_queue">Добавить в очередь</string>
     <string name="during_run_always_steer">Всегда корректировать во время генерации</string>
     <string name="during_run_always_queue">Всегда ставить в очередь во время генерации</string>
+    <string name="steer_pending_hint">Попадёт в ответ на следующем шаге инструмента. Если ответ завершится раньше, сообщение отправится после него.</string>
+    <string name="steer_queued_as_follow_up">Ваше сообщение не успело попасть в этот ответ, поэтому оно поставлено в очередь и отправится после него.</string>
     <string name="system_event_label">Система</string>
     <string name="wakeup_explainer">Этот сохранённый результат пробудил агента, чтобы продолжить беседу.</string>
     <string name="wakeup_subagent_completed">Задача субагента завершена</string>
@@ -636,21 +722,206 @@
     <string name="compact_confirm_not_now">Не сейчас</string>
     <string name="compact_confirm_action">Сжать</string>
     <string name="cd_temporary_chat">Временный чат</string>
+    <string name="temporary_chat_title">Временный чат</string>
+    <string name="temporary_chat_subtitle">Этот разговор не сохранится в истории</string>
     <string name="notice_rename_failed">Не удалось переименовать беседу</string>
     <string name="notice_delete_failed">Не удалось удалить беседу</string>
     <string name="notice_archive_failed">Не удалось архивировать беседу</string>
     <string name="notice_duplicate_failed">Не удалось создать копию беседы</string>
-    <string name="notice_share_link_failed">Не удалось создать ссылку для общего доступа</string>
     <string name="notice_preset_save_failed">Не удалось сохранить пресет</string>
     <string name="notice_preset_delete_failed">Не удалось удалить пресет</string>
     <string name="notice_preset_update_failed">Не удалось обновить пресет</string>
     <string name="notice_continue_response_failed">Не удалось продолжить с выбранным ответом</string>
     <string name="notice_favorites_limit">Можно закрепить не более %1$d избранных.</string>
     <string name="notice_favorites_update_failed">Не удалось обновить избранное.</string>
+    <string name="notice_bookmark_update_failed">Не удалось обновить закладки. Попробуйте ещё раз.</string>
+    <string name="notice_bookmark_create_failed">Не удалось создать закладку. Попробуйте ещё раз.</string>
+    <string name="notice_bookmarks_load_failed">Не удалось загрузить закладки этого чата</string>
     <string name="notice_upload_failed">Не удалось загрузить %1$s: %2$s</string>
     <string name="notice_upload_failed_unknown">Не удалось загрузить %1$s: неизвестная ошибка</string>
     <string name="notice_upload_unreadable">Не удалось загрузить %1$s: не удалось прочитать файл</string>
     <string name="notice_upload_too_large">%1$s превышает ограничение сервера в %2$s.</string>
     <string name="notice_speech_permission_denied">Нет разрешения на распознавание речи</string>
     <string name="notice_speech_unavailable">Распознавание речи недоступно. Проверьте «Настройки» &gt; «Конфиденциальность» &gt; «Распознавание речи».</string>
+    <string name="notice_send_refused">Сервер отклонил это сообщение.</string>
+    <string name="notice_skills_not_sent">Некоторые навыки нельзя использовать в этом чате, и они не были отправлены.</string>
+    <string name="notice_skills_removed_from_queued">Некоторые навыки нельзя использовать в этом чате, и они были удалены из сообщения в очереди.</string>
+    <plurals name="notice_message_limit_retry_minutes">
+        <item quantity="one">Вы достигли лимита сообщений на этом сервере. Попробуйте снова через %1$d минуту.</item>
+        <item quantity="few">Вы достигли лимита сообщений на этом сервере. Попробуйте снова через %1$d минуты.</item>
+        <item quantity="many">Вы достигли лимита сообщений на этом сервере. Попробуйте снова через %1$d минут.</item>
+        <item quantity="other">Вы достигли лимита сообщений на этом сервере. Попробуйте снова через %1$d минуты.</item>
+    </plurals>
+    <plurals name="notice_message_limit_retry_hours">
+        <item quantity="one">Вы достигли лимита сообщений на этом сервере. Попробуйте снова через %1$d час.</item>
+        <item quantity="few">Вы достигли лимита сообщений на этом сервере. Попробуйте снова через %1$d часа.</item>
+        <item quantity="many">Вы достигли лимита сообщений на этом сервере. Попробуйте снова через %1$d часов.</item>
+        <item quantity="other">Вы достигли лимита сообщений на этом сервере. Попробуйте снова через %1$d часа.</item>
+    </plurals>
+    <plurals name="notice_message_limit_retry_days">
+        <item quantity="one">Вы достигли лимита сообщений на этом сервере. Попробуйте снова через %1$d день.</item>
+        <item quantity="few">Вы достигли лимита сообщений на этом сервере. Попробуйте снова через %1$d дня.</item>
+        <item quantity="many">Вы достигли лимита сообщений на этом сервере. Попробуйте снова через %1$d дней.</item>
+        <item quantity="other">Вы достигли лимита сообщений на этом сервере. Попробуйте снова через %1$d дня.</item>
+    </plurals>
+    <string name="queue_held_after_refusal">Сервер отклонил ваше сообщение. Оно ждёт в очереди и не отправится само. Нажмите «Отправить очередь», когда будете готовы.</string>
+    <string name="jump_message_not_found">Этого сообщения больше нет в чате.</string>
+    <string name="jump_branch_switched">Показан ответ %1$d из %2$d — ветка с этим сообщением.</string>
+    <string name="load_image_from_host">Загрузить изображение с %1$s</string>
+    <string name="workspace_changes">Изменения в рабочей области</string>
+    <plurals name="n_files_changed">
+        <item quantity="one">Изменён %1$d файл</item>
+        <item quantity="few">Изменено %1$d файла</item>
+        <item quantity="many">Изменено %1$d файлов</item>
+        <item quantity="other">Изменено %1$d файла</item>
+    </plurals>
+    <string name="file_created">Новый</string>
+    <string name="file_updated">Изменён</string>
+    <string name="show_all_n">Показать все (%1$d)</string>
+    <string name="cd_download_file">Скачать %1$s</string>
+    <string name="cd_open_file">Открыть %1$s</string>
+    <string name="preview_preparing">Подготовка предпросмотра…</string>
+    <string name="preview_failed_download">Предпросмотр недоступен · скачайте, чтобы открыть</string>
+    <plurals name="text_n_lines">
+        <item quantity="one">%1$d строка</item>
+        <item quantity="few">%1$d строки</item>
+        <item quantity="many">%1$d строк</item>
+        <item quantity="other">%1$d строки</item>
+    </plurals>
+    <string name="sandbox_starting">Запуск изолированной среды</string>
+    <string name="analyzing">Анализ</string>
+    <string name="analyzing_finished">Анализ завершен</string>
+    <plurals name="show_all_n_lines">
+        <item quantity="one">Показать %1$d строку</item>
+        <item quantity="few">Показать все %1$d строки</item>
+        <item quantity="many">Показать все %1$d строк</item>
+        <item quantity="other">Показать все %1$d строки</item>
+    </plurals>
+    <string name="cd_copy_output">Скопировать вывод</string>
+    <string name="expired">Срок истёк</string>
+    <string name="expired_explainer">Файлы из песочницы кода хранятся 24 часа. Срок хранения этого файла истёк, и его больше нельзя скачать.</string>
+    <string name="file_download_failed">Не удалось скачать %1$s</string>
+    <plurals name="files_count_summary">
+        <item quantity="one">%1$d файл</item>
+        <item quantity="few">%1$d файла</item>
+        <item quantity="many">%1$d файлов</item>
+        <item quantity="other">%1$d файла</item>
+    </plurals>
+    <plurals name="plus_n_more">
+        <item quantity="one">и ещё %1$d</item>
+        <item quantity="few">и ещё %1$d</item>
+        <item quantity="many">и ещё %1$d</item>
+        <item quantity="other">и ещё %1$d</item>
+    </plurals>
+    <string name="greeting_late_night">Доброй ночи</string>
+    <string name="greeting_early_morning">Доброе раннее утро</string>
+    <string name="greeting_morning">Доброе утро</string>
+    <string name="greeting_afternoon">Добрый день</string>
+    <string name="greeting_evening">Добрый вечер</string>
+    <string name="greeting_weekend_morning">Доброго утра выходного дня</string>
+    <string name="greeting_weekend_afternoon">Хорошего дня в выходные</string>
+    <string name="greeting_weekend_evening">Хорошего вечера выходного дня</string>
+    <string name="diagram_error_prefix">Ошибка диаграммы:</string>
+    <string name="stt_mic_permission_required">Для голосового ввода нужно разрешение на микрофон</string>
+    <string name="stt_speak_now">Говорите…</string>
+    <string name="stt_recognition_unavailable">Распознавание речи недоступно на этом устройстве</string>
+    <string name="artifact_preview_failed">Не удалось загрузить предпросмотр</string>
+    <string name="cd_mcp_server_enabled">MCP-сервер %1$s включён</string>
+    <string name="cd_code_block">Блок кода</string>
+    <string name="cd_code_block_language">Блок кода %1$s</string>
+    <string name="log_output_title">Вывод журнала</string>
+    <string name="cd_attached_image">Прикреплённое изображение</string>
+    <string name="model_selector_search">Поиск моделей…</string>
+    <string name="model_selector_my_agents">Мои агенты</string>
+    <string name="model_selector_spec_only_note">Этот сервер принимает только варианты, перечисленные выше.</string>
+    <string name="agent_handoff_to">Агент %1$s</string>
+    <string name="agent_handoff_run">Запуск: %1$s</string>
+    <string name="sibling_position">Ответ %1$d из %2$d</string>
+    <string name="cd_assistant_responding">Ассистент отвечает: %1$s</string>
+    <string name="tool_call_fallback">Вызов инструмента</string>
+    <string name="prompt_filter_title">Фильтр и сортировка</string>
+    <string name="prompt_sort_recent">Недавние</string>
+    <string name="prompt_sort_popular">Популярные</string>
+    <string name="prompt_sort_alphabetical">По алфавиту</string>
+    <string name="prompt_editor_create_title">Создать промпт</string>
+    <string name="prompt_editor_edit_title">Изменить промпт</string>
+    <string name="prompt_command_placeholder">moya-komanda</string>
+    <string name="prompt_variables_hint">Используйте {{variable_name}}, чтобы добавить переменные</string>
+    <string name="prompt_editor_create">Создать</string>
+    <string name="prompts_load_failed">Не удалось загрузить промпты</string>
+    <string name="prompts_empty_category">В этой категории нет промптов</string>
+    <string name="prompts_empty">Промптов пока нет</string>
+    <string name="prompts_empty_category_hint">Выберите другую категорию или сбросьте фильтр</string>
+    <string name="prompts_empty_hint">Нажмите +, чтобы создать</string>
+    <string name="prompt_shared">Общий доступ</string>
+    <string name="prompt_private">Личный</string>
+    <string name="prompt_permission_view_only">Только просмотр</string>
+    <string name="prompt_permission_can_edit">Может редактировать</string>
+    <string name="prompt_preview_placeholder">Введите значения переменных, чтобы увидеть предпросмотр</string>
+    <string name="cd_sync_scroll_on">Панели прокручиваются вместе. Отвязать</string>
+    <string name="cd_sync_scroll_off">Панели прокручиваются по отдельности. Связать</string>
+    <!-- Shared chat viewer -->
+    <string name="shared_chat_title_fallback">Общий чат</string>
+    <string name="shared_chat_subtitle">Общий чат · %1$s</string>
+    <string name="shared_chat_continue">Продолжить этот чат</string>
+    <string name="shared_chat_open_in_browser">Открыть в браузере</string>
+    <string name="shared_chat_langfuse">Открыть сеанс в Langfuse</string>
+    <string name="shared_chat_link_updated">Ссылка обновлена. Показана последняя версия.</string>
+    <string name="shared_chat_continue_rate_limited">Слишком много запросов на продолжение чатов. Повторите попытку позже.</string>
+    <string name="shared_chat_continue_failed">Не удалось продолжить этот чат</string>
+    <string name="shared_chat_continue_unsupported">Этот сервер не поддерживает продолжение общих чатов</string>
+    <string name="shared_chat_refresh_failed">Не удалось обновить этот общий чат</string>
+    <string name="shared_chat_continue_blocked">Ваш сервер запретил копирование этого чата</string>
+    <string name="shared_chat_continue_blocked_reason">Ваш сервер запретил копирование этого чата: %1$s</string>
+    <string name="shared_chat_not_found">Общая ссылка не найдена</string>
+    <string name="shared_chat_not_found_description">Возможно, её удалили или ссылка неверна.</string>
+    <string name="shared_chat_no_access">Вы не можете открыть этот общий чат</string>
+    <string name="shared_chat_no_access_description">Доступ к нему не открыт для этого аккаунта.</string>
+    <string name="shared_chat_rate_limited">Слишком много запросов к общим ссылкам</string>
+    <string name="shared_chat_rate_limited_description">Повторите попытку через минуту.</string>
+    <string name="shared_chat_blocked">Ваш сервер заблокировал этот общий чат</string>
+    <string name="shared_chat_load_failed">Не удалось загрузить этот общий чат</string>
+    <string name="shared_chat_user">Пользователь</string>
+    <string name="shared_chat_file_failed">Не удалось открыть этот файл</string>
+
+    <!-- Web and file search sources -->
+    <string name="web_searching">Поиск в сети</string>
+    <string name="web_searching_again">Повторный поиск в Интернете</string>
+    <string name="web_search_processing">Результаты обработки</string>
+    <string name="web_search_reading">Результаты чтения</string>
+    <string name="web_search_details">Подробности поиска</string>
+    <string name="web_search_query">Запрос</string>
+    <string name="web_search_images">Результаты изображений</string>
+    <string name="web_search_shopping">Результаты покупок</string>
+    <string name="web_search_places">Места</string>
+    <string name="files_searching">Поиск в ваших файлах</string>
+    <string name="searching_web_and_files">Поиск в интернете и файлах</string>
+    <string name="searched_web_and_files">Поиск в интернете и файлах выполнен</string>
+    <string name="search_cancelled">Отменен</string>
+    <string name="sources_tab_all">Все</string>
+    <string name="sources_tab_news">Новости</string>
+    <string name="sources_tab_images">Изображения</string>
+    <string name="sources_tab_files">Файлы</string>
+    <string name="sources_agent_files">Файлы агента</string>
+    <string name="sources_agent_file">Исходный документ</string>
+    <string name="web_search_load_images">Загрузить изображения</string>
+    <string name="cd_open_cited_file">Открыть %1$s</string>
+    <plurals name="web_search_sources">
+        <item quantity="one">%1$d источник</item>
+        <item quantity="few">%1$d источников</item>
+        <item quantity="many">%1$d источников</item>
+        <item quantity="other">%1$d источников</item>
+    </plurals>
+    <plurals name="sources_more">
+        <item quantity="one">+%1$d источник</item>
+        <item quantity="few">+%1$d источников</item>
+        <item quantity="many">+%1$d источников</item>
+        <item quantity="other">+%1$d источников</item>
+    </plurals>
+    <plurals name="files_more">
+        <item quantity="one">+%1$d файл</item>
+        <item quantity="few">+%1$d файлов</item>
+        <item quantity="many">+%1$d файлов</item>
+        <item quantity="other">+%1$d файлов</item>
+    </plurals>
 </resources>

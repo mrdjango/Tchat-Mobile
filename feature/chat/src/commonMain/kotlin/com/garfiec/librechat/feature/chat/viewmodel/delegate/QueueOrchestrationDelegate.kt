@@ -10,6 +10,8 @@ import com.garfiec.librechat.core.model.queuedturn.AgentQueuedTurnReceipt
 import com.garfiec.librechat.core.model.queuedturn.QueuedTurnFileRef
 import com.garfiec.librechat.feature.chat.components.AttachedFile
 import com.garfiec.librechat.feature.chat.util.isImageType
+import com.garfiec.librechat.feature.chat.util.requiresSpec
+import com.garfiec.librechat.feature.chat.viewmodel.ChatNotice
 import com.garfiec.librechat.feature.chat.viewmodel.ChatRequestBuilder
 import com.garfiec.librechat.feature.chat.viewmodel.ComposerSnapshot
 import com.garfiec.librechat.feature.chat.viewmodel.QueueOrchestrationHandle
@@ -48,9 +50,15 @@ class QueueOrchestrationDelegate(
         val spec = sendDispatchDelegate.buildSendSpec(text) ?: return
         // Composer-origin queue takes the staged quotes with it (web takeComposerContext): they
         // pair with THIS queued message instead of gluing onto whatever the user sends next.
-        val withQuotes = spec.copy(quotes = sendDispatchDelegate.takePendingQuotes(spec.endpoint))
+        // The skill chips go with it the same way. A server-owned row sends them on the enqueue
+        // claim: the server queues turns only for persisted agents, whose run honours them.
+        val withContext = spec.copy(
+            quotes = sendDispatchDelegate.takePendingQuotes(spec.endpoint),
+            manualSkills = sendDispatchDelegate.takePendingManualSkills(spec.endpoint),
+        )
         sendDispatchDelegate.clearComposer()
-        enqueueSpec(withQuotes)
+        enqueueSpec(withContext)
+        sendDispatchDelegate.noticeHeldBackManualSkills()
     }
 
     /**
@@ -94,10 +102,18 @@ class QueueOrchestrationDelegate(
      *
      * `clientRequestId` is minted here and not taken from [QueuedMessage.localId]: localId
      * survives an edit, and reusing an id for different text is a 409.
+     *
+     * Never under `enforce` ([requiresSpec]). The server's queued turn carries no spec: the enqueue
+     * schema has no such field (upstream v0.8.8 `packages/data-provider/src/types/queuedTurns.ts`),
+     * and the worker re-posts the turn to the chat route without one
+     * (`packages/api/src/agents/triggers/host.ts`), where `buildEndpointOption` refuses it with
+     * "No model spec selected", whatever spec the composer held. The local drain sends the spec and
+     * runs the send preflight.
      */
     private fun serverOwnedSpec(spec: QueuedMessage): QueuedMessage {
         val state = handle.state
         if (!state.gates.serverQueueSupported) return spec
+        if (state.modelSpecs.requiresSpec) return spec
         if (state.selectedEndpoint != EndpointConstants.AGENTS) return spec
         if (!state.isStreaming) return spec
         val parentMessageId = state.displayMessages.lastOrNull()?.message?.messageId ?: return spec
@@ -126,11 +142,7 @@ class QueueOrchestrationDelegate(
             localId = receipt.clientRequestId,
             text = receipt.text,
             attachments = receipt.files.orEmpty().map { it.toAttachedFile(state.serverUrl) },
-            endpoint = state.selectedEndpoint,
-            model = state.selectedModel,
-            agentId = state.selectedModel.takeIf {
-                state.selectedEndpoint == EndpointConstants.AGENTS
-            },
+            choice = state.selection.choice,
             dispatch = requestBuilder.currentDispatch(),
             accountId = activeAccountProvider.currentAccountId()?.value,
         )
@@ -242,17 +254,22 @@ class QueueOrchestrationDelegate(
         expectedPredecessorCreatedAt = null,
     )
 
+    /**
+     * Swaps the composer over to [item]. The skill chips go with it: the draft's are stashed and
+     * the item's own picks shown, so a `$` pick during the edit lands on this message and the
+     * draft's chips come back untouched when the edit ends.
+     */
     private fun beginQueuedEdit(item: QueuedMessage, index: Int, withdrawnFromServer: Boolean = false) {
         val stashed = captureComposer()
-        applyComposer(item.toComposerSnapshot())
-        handle.update {
-            editingQueuedItem = QueuedEditSession(
+        applyComposer(
+            item.toComposerSnapshot(),
+            editSession = QueuedEditSession(
                 original = item,
                 originalIndex = index,
                 stashed = stashed,
                 withdrawnFromServer = withdrawnFromServer,
-            )
-        }
+            ),
+        )
     }
 
     /** "Update" in queued-edit mode: re-queue the edited item at its original slot (or drop it if
@@ -264,15 +281,26 @@ class QueueOrchestrationDelegate(
             // The upload wait is async — bail if the edit was cancelled (or replaced) meanwhile,
             // so we don't reinsert a duplicate after cancelQueuedEdit already restored the item.
             if (handle.state.editingQueuedItem != session) return@withUploadGate
-            val edited = sendDispatchDelegate.buildSendSpec(text)
-                ?.copy(localId = session.original.localId, quotes = session.original.quotes)
+            val edited = sendDispatchDelegate.buildSendSpec(text)?.let { spec ->
+                spec.copy(
+                    localId = session.original.localId,
+                    quotes = session.original.quotes,
+                    // The chips on screen during the edit are this item's own (see
+                    // [beginQueuedEdit]), so what the user added or removed there is what it sends.
+                    manualSkills = sendDispatchDelegate.sendablePendingManualSkills(spec.endpoint),
+                )
+            }
             if (edited != null) {
                 restoreQueued(session, edited)
             } else {
                 // Composer emptied → treat as delete; the item is simply not put back.
                 queueDelegate.clearPauseIfEmpty()
             }
+            // The composer goes back to the draft below, so a chip the chat can't run is gone
+            // from the item for good: say so.
+            val removedSkills = edited != null && edited.manualSkills.size < handle.state.pendingManualSkills.size
             finishQueuedEdit(session)
+            if (removedSkills) handle.setError(ChatNotice.SKILLS_REMOVED_FROM_QUEUED.marker())
         }
     }
 
@@ -300,8 +328,7 @@ class QueueOrchestrationDelegate(
     }
 
     private fun finishQueuedEdit(session: QueuedEditSession) {
-        applyComposer(session.stashed)
-        handle.update { editingQueuedItem = null }
+        applyComposer(session.stashed, editSession = null)
         // Draining was frozen during the edit; resume it now if the queue is idle (a reply may
         // have finished while editing).
         tryResumeDrain()
@@ -438,34 +465,48 @@ class QueueOrchestrationDelegate(
         return ComposerSnapshot(
             text = state.inputText,
             attachments = fileHandler.attachedFiles.value,
-            endpoint = state.selectedEndpoint,
-            model = state.selectedModel,
+            choice = state.selection.choice,
             enabledTools = state.enabledTools,
             mcpServerNames = state.selectedMcpServerNames,
+            specTools = state.selection.specTools,
             modelParameters = state.modelParameters,
+            manualSkills = state.pendingManualSkills,
+            skillsToggle = state.skillsToggle,
         )
     }
 
-    /** Writes a [ComposerSnapshot] back onto the composer (text, attachments, model, tools, params).
+    /** Writes a [ComposerSnapshot] back onto the composer (text, attachments, model, tools, params,
+     *  skill chips, Skills toggle) and starts or ends the queued edit ([editSession]) in the same
+     *  emission. The toggle is set in memory only. Because the edit flag flips in the emission that
+     *  swaps the spec, `SkillsToggleDelegate` reads it as a swap rather than a spec pick and keeps
+     *  the value. The stashed value is still the conversation's own: nothing toggled or picked
+     *  during the edit is written to the conversation's slot.
      *  Sets [ChatUiState.inputText] directly rather than via `ChatViewModel.onInputChanged` so swapping composer
      *  contents for an edit never overwrites the persisted on-disk new-message draft. */
-    private fun applyComposer(snapshot: ComposerSnapshot) {
+    private fun applyComposer(snapshot: ComposerSnapshot, editSession: QueuedEditSession?) {
         fileHandler.restoreAttachedFiles(snapshot.attachments)
         handle.update {
+            editingQueuedItem = editSession
             inputText = snapshot.text
             // The snapshot replaces the whole tray, so an undecided batch from before the edit
             // no longer belongs to anything on screen.
             pendingUploadRouting = null
-            selectedEndpoint = snapshot.endpoint
-            selectedModel = snapshot.model
+            choice = snapshot.choice
             enabledTools = snapshot.enabledTools
             selectedMcpServerNames = snapshot.mcpServerNames
+            specTools = snapshot.specTools
             modelParameters = snapshot.modelParameters
+            pendingManualSkills = snapshot.manualSkills
+            skillsToggle = snapshot.skillsToggle
         }
     }
 
     /** Puts a drained item back at the head after the send gate refused it. */
-    fun requeueRefusedDrain(spec: QueuedMessage): Unit = queueDelegate.reinsert(0, spec)
+    fun requeueRefusedDrain(spec: QueuedMessage): Unit = queueDelegate.requeueRefusedDrain(spec)
+
+    fun releaseCompareSetupHold(): Boolean = queueDelegate.releaseCompareSetupHold()
+
+    fun clearCompareSetupHold(): Unit = queueDelegate.clearCompareSetupHold()
 
     /**
      * Restarts the queued-turn reconcile poll, whose first read is unconditional.

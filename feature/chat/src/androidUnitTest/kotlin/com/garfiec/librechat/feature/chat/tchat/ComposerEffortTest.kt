@@ -4,6 +4,7 @@ import com.garfiec.librechat.core.model.EndpointConfig
 import com.garfiec.librechat.core.model.EndpointCustomParams
 import com.garfiec.librechat.core.ui.components.ModelParameters
 import com.garfiec.librechat.feature.chat.viewmodel.ChatUiState
+import com.garfiec.librechat.feature.chat.viewmodel.ModelChoice
 import com.garfiec.librechat.feature.chat.viewmodel.ModelSelectionState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -21,8 +22,7 @@ class ComposerEffortTest {
     private fun state(endpoint: String, model: String = "deepseek-v4-flash", params: ModelParameters = ModelParameters()) =
         ChatUiState(
             selection = ModelSelectionState(
-                selectedEndpoint = endpoint,
-                selectedModel = model,
+                choice = ModelChoice.Raw(endpoint, model),
                 endpointConfigs = configs,
                 modelParameters = params,
             ),

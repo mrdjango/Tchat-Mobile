@@ -9,15 +9,27 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import com.garfiec.librechat.core.ui.resources.snackbar_dismiss
 import com.garfiec.librechat.feature.chat.components.localizedStreamError
+import com.garfiec.librechat.feature.chat.resources.Res
+import com.garfiec.librechat.feature.chat.resources.compare_pick_to_send
+import com.garfiec.librechat.feature.chat.resources.jump_branch_switched
+import com.garfiec.librechat.feature.chat.resources.jump_message_not_found
 import com.garfiec.librechat.feature.chat.tchat.ImageModelRepairSnackbarEffect
+import com.garfiec.librechat.feature.chat.viewmodel.ChatNoticeHandoff
 import com.garfiec.librechat.feature.chat.viewmodel.ChatUiState
 import com.garfiec.librechat.feature.chat.viewmodel.ChatViewModel
+import kotlinx.coroutines.flow.filterNotNull
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.koinInject
+import com.garfiec.librechat.core.ui.resources.Res as CoreUiRes
 
 /**
  * Hosts the chat screen's one-shot side effects so [ChatScreen] reads as layout.
  * Covers: new-conversation navigation handoff, error snackbars, the provider-key error
- * snackbar, and back-navigation after a delete/archive clears the conversation. Share, fork,
+ * snackbar, a notice handed back by a screen that closed itself ([ChatNoticeHandoff]), and
+ * back-navigation after a delete/archive clears the conversation. Share, fork,
  * duplicate and lifecycle live in [ChatScreenOutcomes].
  */
 // debt — ViewModelForwarding: screen split across files; state not hoisted yet
@@ -50,14 +62,27 @@ internal fun ChatScreenEffects(
     }
 
     val errorMessage = uiState.error?.let { localizedStreamError(it) }
+    val dismissLabel = stringResource(CoreUiRes.string.snackbar_dismiss)
     LaunchedEffect(errorMessage) {
         if (errorMessage != null) {
             snackbarHostState.showSnackbar(
                 message = errorMessage,
-                actionLabel = "Dismiss",
+                actionLabel = dismissLabel,
                 duration = SnackbarDuration.Long,
             )
             viewModel.dismissError()
+        }
+    }
+
+    // A key saved or revoked on Provider Keys (opened from here) pops straight back; its
+    // confirmation lands here instead of on the closed screen.
+    // Cleared before it shows, so a re-entry can't repeat it; the collector, not a keyed effect,
+    // so clearing it doesn't cancel the snackbar it is showing.
+    val noticeHandoff = koinInject<ChatNoticeHandoff>()
+    LaunchedEffect(noticeHandoff) {
+        noticeHandoff.pending.filterNotNull().collect { message ->
+            noticeHandoff.consume(message)
+            snackbarHostState.showSnackbar(message = getString(message))
         }
     }
 
@@ -72,6 +97,32 @@ internal fun ChatScreenEffects(
         snackbarHostState = snackbarHostState,
     )
     ImageModelRepairSnackbarEffect(viewModel = viewModel, snackbarHostState = snackbarHostState) // TCHAT
+
+    SteerQueuedSnackbarEffect(
+        viewModel = viewModel,
+        snackbarHostState = snackbarHostState,
+    )
+
+    // A send (voice auto-send) arrived during Compare setup: it waits for model B.
+    SignalSnackbarEffect(
+        signal = viewModel.sendHeldForCompareSetup,
+        message = Res.string.compare_pick_to_send,
+        snackbarHostState = snackbarHostState,
+    )
+
+    // A search hit's message wasn't in the chat (deleted, or on a branch the server no longer has).
+    SignalSnackbarEffect(
+        signal = viewModel.messageNotFound,
+        message = Res.string.jump_message_not_found,
+        snackbarHostState = snackbarHostState,
+    )
+
+    // A search hit lived on another branch: say the chat now shows that one.
+    LaunchedEffect(viewModel) {
+        viewModel.jumpBranchSwitched.collect { switch ->
+            snackbarHostState.showSnackbar(message = getString(Res.string.jump_branch_switched, switch.index, switch.count))
+        }
+    }
 
     // Navigate back after delete/archive (conversationId becomes null)
     var hadConversation by remember { mutableStateOf(uiState.conversationId != null) }

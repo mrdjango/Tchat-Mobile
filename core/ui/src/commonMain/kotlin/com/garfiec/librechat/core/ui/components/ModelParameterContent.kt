@@ -1,6 +1,7 @@
 package com.garfiec.librechat.core.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,11 +16,16 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.garfiec.librechat.core.model.ParameterDefinition
 import com.garfiec.librechat.core.model.ParameterType
+import com.garfiec.librechat.core.ui.resources.*
+import com.garfiec.librechat.core.ui.resources.Res
+import org.jetbrains.compose.resources.stringResource
 
 @Stable
 data class ModelParameters(
@@ -33,7 +39,12 @@ data class ModelParameters(
     val maxContextTokens: Int? = null,
     val topK: Int? = null,
     val resendFiles: Boolean = false,
-    val thinking: Boolean = false,
+    /**
+     * Null until set: the providers that offer thinking default it to on (Anthropic, Bedrock), so a
+     * `false` default would show the switch off over a run that thinks, and an explicit off would
+     * match it and never be sent.
+     */
+    val thinking: Boolean? = null,
     val thinkingBudget: String = "Auto",
     val webSearch: Boolean = false,
     val urlContext: Boolean = false,
@@ -62,7 +73,7 @@ data class ModelParameters(
         // light up the per-field reset icon on a fresh, untouched state.
         "topK" -> topK?.toString() ?: ""
         "resendFiles" -> resendFiles.toString()
-        "thinking" -> thinking.toString()
+        "thinking" -> thinking?.toString().orEmpty()
         "thinkingBudget" -> thinkingBudget
         "web_search" -> webSearch.toString()
         "url_context" -> urlContext.toString()
@@ -91,7 +102,7 @@ data class ModelParameters(
             copy(topK = if (intVal == 0) null else intVal)
         }
         "resendFiles" -> copy(resendFiles = value.toBooleanStrictOrNull() ?: resendFiles)
-        "thinking" -> copy(thinking = value.toBooleanStrictOrNull() ?: thinking)
+        "thinking" -> copy(thinking = value.toBooleanStrictOrNull())
         "thinkingBudget" -> copy(thinkingBudget = value)
         "web_search" -> copy(webSearch = value.toBooleanStrictOrNull() ?: webSearch)
         "url_context" -> copy(urlContext = value.toBooleanStrictOrNull() ?: urlContext)
@@ -127,6 +138,8 @@ data class ModelParameters(
     /** True when the value rendered for [definition] differs from its definition default. */
     fun valueDiffersFromDefault(definition: ParameterDefinition): Boolean {
         val current = getValueForKey(definition.key)
+        // Unset means the server's default, which is what the definition's default stands for.
+        if (current.isEmpty()) return false
         val default = definition.default.orEmpty()
         // For numeric fields, compare as numbers so "1.0" == "1" doesn't show as differing.
         val currentNum = current.toDoubleOrNull()
@@ -159,7 +172,17 @@ fun ModelParameterContent(
      *  scrollable Column on the agent editor screen). Default true preserves
      *  the bottom-sheet use case. */
     applyVerticalScroll: Boolean = true,
+    /**
+     * Set when something other than this sheet decides the parameters (a server enforcing a model
+     * spec's preset): shown above the controls, which are dimmed and take no input, and the reset
+     * buttons are hidden. Null for an editable sheet.
+     */
+    readOnlyNote: String? = null,
+    /** Parameter keys this host drives elsewhere, so the sheet leaves their controls out. */
+    hiddenKeys: Set<String> = emptySet(),
 ) {
+    val readOnly = readOnlyNote != null
+    val onChange: (ModelParameters) -> Unit = if (readOnly) ({}) else onParametersChange
     val definitions = remember(
         selectedEndpoint,
         dynamicParameterDefinitions,
@@ -168,6 +191,7 @@ fun ModelParameterContent(
         selectedProvider,
         selectedModel,
         dropParams,
+        hiddenKeys,
     ) {
         if (!dynamicParameterDefinitions.isNullOrEmpty()) {
             dynamicParameterDefinitions
@@ -180,7 +204,7 @@ fun ModelParameterContent(
                 dropParams = dropParams,
                 thinkingDisplayUpdatesSupported = thinkingDisplayUpdatesSupported,
             )
-        }
+        }.filter { it.key !in hiddenKeys }
     }
 
     // Which out-of-list values are not sent, so the slider can say "Unset" for those alone. Unknown
@@ -216,7 +240,7 @@ fun ModelParameterContent(
     ) {
         if (showHeader) {
             Text(
-                text = "Model Parameters",
+                text = stringResource(Res.string.param_sheet_title),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.semantics { heading() },
             )
@@ -224,10 +248,19 @@ fun ModelParameterContent(
             Spacer(modifier = Modifier.height(4.dp))
         }
 
+        if (readOnlyNote != null) {
+            Text(
+                text = readOnlyNote,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
         definitions.forEach { definition ->
             val currentValue = parameters.getValueForKey(definition.key)
             val differs = parameters.valueDiffersFromDefault(definition)
 
+            ReadOnlyGate(readOnly) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -235,26 +268,26 @@ fun ModelParameterContent(
             when (definition.type) {
                 ParameterType.TEXT -> {
                     DynamicInput(
-                        label = definition.label,
+                        label = definition.localizedLabel(),
                         value = currentValue,
                         onValueChange = { newValue ->
-                            onParametersChange(parameters.withUpdatedKey(definition.key, newValue))
+                            onChange(parameters.withUpdatedKey(definition.key, newValue))
                         },
-                        placeholder = definition.placeholder
-                            ?: definition.default?.ifEmpty { "Default" }
-                            ?: "Default",
+                        placeholder = definition.localizedPlaceholder()
+                            ?: definition.default?.ifEmpty { null }
+                            ?: stringResource(Res.string.param_default),
                         description = definition.localizedDescription(),
                     )
                 }
 
                 ParameterType.TEXTAREA -> {
                     DynamicTextarea(
-                        label = definition.label,
+                        label = definition.localizedLabel(),
                         value = currentValue,
                         onValueChange = { newValue ->
-                            onParametersChange(parameters.withUpdatedKey(definition.key, newValue))
+                            onChange(parameters.withUpdatedKey(definition.key, newValue))
                         },
-                        placeholder = definition.placeholder
+                        placeholder = definition.localizedPlaceholder()
                             ?: definition.default?.ifEmpty { null },
                         description = definition.localizedDescription(),
                     )
@@ -267,10 +300,10 @@ fun ModelParameterContent(
                     val floatValue = currentValue.toFloatOrNull() ?: (definition.default?.toFloatOrNull() ?: min)
 
                     DynamicSlider(
-                        label = definition.label,
+                        label = definition.localizedLabel(),
                         value = floatValue.coerceIn(min, max),
                         onValueChange = { newValue ->
-                            onParametersChange(parameters.withUpdatedKey(definition.key, newValue.toString()))
+                            onChange(parameters.withUpdatedKey(definition.key, newValue.toString()))
                         },
                         min = min,
                         max = max,
@@ -284,10 +317,10 @@ fun ModelParameterContent(
                         ?: (definition.default?.toBooleanStrictOrNull() ?: false)
 
                     DynamicCheckbox(
-                        label = definition.label,
+                        label = definition.localizedLabel(),
                         checked = checked,
                         onCheckedChange = { newChecked ->
-                            onParametersChange(parameters.withUpdatedKey(definition.key, newChecked.toString()))
+                            onChange(parameters.withUpdatedKey(definition.key, newChecked.toString()))
                         },
                         description = definition.localizedDescription(),
                     )
@@ -301,14 +334,14 @@ fun ModelParameterContent(
                     }
 
                     DynamicDropdown(
-                        label = definition.label,
+                        label = definition.localizedLabel(),
                         selectedValue = displayValue,
                         options = definition.options ?: emptyList(),
                         onValueChange = { newValue ->
-                            onParametersChange(parameters.withUpdatedKey(definition.key, newValue))
+                            onChange(parameters.withUpdatedKey(definition.key, newValue))
                         },
                         description = definition.localizedDescription(),
-                        optionLabels = definition.optionLabels,
+                        optionLabels = definition.localizedOptionLabels(),
                     )
                 }
 
@@ -320,14 +353,14 @@ fun ModelParameterContent(
                         currentValue
                     }
                     DynamicEnumSlider(
-                        label = definition.label,
+                        label = definition.localizedLabel(),
                         selectedValue = displayValue,
                         options = opts,
                         onValueChange = { newValue ->
-                            onParametersChange(parameters.withUpdatedKey(definition.key, newValue))
+                            onChange(parameters.withUpdatedKey(definition.key, newValue))
                         },
                         description = definition.localizedDescription(),
-                        optionLabels = definition.optionLabels,
+                        optionLabels = definition.localizedOptionLabels(),
                         removedValues = modelRemoved[definition.key].orEmpty(),
                     )
                 }
@@ -340,43 +373,47 @@ fun ModelParameterContent(
                     }
 
                     DynamicTagsInput(
-                        label = definition.label,
+                        label = definition.localizedLabel(),
                         tags = tags,
                         onTagsChange = { newTags ->
-                            onParametersChange(
+                            onChange(
                                 parameters.withUpdatedKey(definition.key, newTags.joinToString("\n")),
                             )
                         },
                         description = definition.localizedDescription(),
                         maxTags = definition.max?.toInt() ?: 4,
+                        placeholder = definition.tagsPlaceholder(),
                     )
                 }
             }
 
-                if (differs) {
+                if (differs && !readOnly) {
                     TextButton(
                         onClick = {
-                            onParametersChange(parameters.resetKeyToDefault(definition))
+                            onChange(parameters.resetKeyToDefault(definition))
                         },
                         modifier = Modifier.align(Alignment.End),
                     ) {
-                        Text("Restore default")
+                        Text(stringResource(Res.string.param_restore_default))
                     }
                 }
+            }
             }
         }
 
         // Reset visible definitions to their defaults; dynamicValues for keys
         // not in the current schema are preserved (other endpoints' state stays
         // intact when the user is just resetting the active endpoint's view).
-        AdaptiveOutlinedButton(
-            onClick = {
-                val reset = definitions.fold(parameters) { acc, def -> acc.resetKeyToDefault(def) }
-                onParametersChange(reset)
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Reset to Defaults")
+        if (!readOnly) {
+            AdaptiveOutlinedButton(
+                onClick = {
+                    val reset = definitions.fold(parameters) { acc, def -> acc.resetKeyToDefault(def) }
+                    onChange(reset)
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(Res.string.param_reset_to_defaults))
+            }
         }
 
         // Save As Preset
@@ -385,10 +422,33 @@ fun ModelParameterContent(
                 onClick = onSaveAsPreset,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Save As Preset")
+                Text(stringResource(Res.string.param_save_as_preset))
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+private const val READ_ONLY_ALPHA = 0.38f
+
+/**
+ * Dims [content] and covers it with a layer that takes its touches, so the controls never see one.
+ * The layer consumes nothing, so a drag that starts on it still scrolls the sheet. Values still
+ * read out.
+ */
+@Composable
+private fun ReadOnlyGate(readOnly: Boolean, content: @Composable () -> Unit) {
+    Box(modifier = if (readOnly) Modifier.alpha(READ_ONLY_ALPHA) else Modifier) {
+        content()
+        if (readOnly) {
+            Box(
+                modifier = Modifier.matchParentSize().pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) awaitPointerEvent()
+                    }
+                },
+            )
+        }
     }
 }

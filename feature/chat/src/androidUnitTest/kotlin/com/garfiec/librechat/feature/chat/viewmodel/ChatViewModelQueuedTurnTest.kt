@@ -3,17 +3,23 @@ package com.garfiec.librechat.feature.chat.viewmodel
 import androidx.lifecycle.viewModelScope
 import com.garfiec.librechat.core.common.BackendBuildClass
 import com.garfiec.librechat.core.common.DetectedBackend
+import com.garfiec.librechat.core.common.ToolConstants
 import com.garfiec.librechat.core.common.result.Result
 import com.garfiec.librechat.core.data.datastore.ChatFontSize
 import com.garfiec.librechat.core.data.datastore.ChatHeaderAlignment
 import com.garfiec.librechat.core.data.datastore.ChatHeaderContent
 import com.garfiec.librechat.core.data.datastore.ContextBarPlacement
 import com.garfiec.librechat.core.data.datastore.DuringRunAction
+import com.garfiec.librechat.core.data.datastore.LastUsedSelection
 import com.garfiec.librechat.core.data.datastore.StarredModelsDisplay
 import com.garfiec.librechat.core.model.EndpointConfig
 import com.garfiec.librechat.core.model.Message
 import com.garfiec.librechat.core.model.PendingSteer
+import com.garfiec.librechat.core.model.Preset
 import com.garfiec.librechat.core.model.StreamEvent
+import com.garfiec.librechat.core.model.config.ModelSpec
+import com.garfiec.librechat.core.model.config.ModelSpecs
+import com.garfiec.librechat.core.model.config.StartupConfig
 import com.garfiec.librechat.core.model.queuedturn.AgentQueuedTurnReceipt
 import com.garfiec.librechat.core.model.queuedturn.EnqueueQueuedTurnRequest
 import com.garfiec.librechat.core.model.queuedturn.QUEUED_TURN_RECONCILIATION_MS
@@ -183,6 +189,29 @@ class ChatViewModelQueuedTurnTest {
     }
 
     @Test
+    fun `a queued turn takes the skill chips onto its enqueue claim`() = queuedTurnTest(
+        arrange = {
+            // An agents server that advertises skills: a persisted agent's run honours the
+            // claim's manualSkills (upstream host.ts copies them into the run's body).
+            every { configRepository.endpointConfigs } returns MutableStateFlow(
+                mapOf(ENDPOINT to EndpointConfig(capabilities = listOf(ToolConstants.SKILLS))),
+            )
+        },
+    ) { vm ->
+        vm.addPendingManualSkill("pdf-tools")
+        vm.onInputChanged(TEXT)
+        vm.queueMessage()
+        runCurrent()
+
+        val request = slot<EnqueueQueuedTurnRequest>()
+        coVerify(exactly = 1) { queuedTurnRepository.enqueue(capture(request)) }
+        assertThat(request.captured.manualSkills).containsExactly("pdf-tools")
+        assertThat(vm.uiState.value.pendingManualSkills).isEmpty()
+        // Reconciled from the receipt, the row still holds the picks an edit would restore.
+        assertThat(vm.uiState.value.messageQueue.single().manualSkills).containsExactly("pdf-tools")
+    }
+
+    @Test
     fun `the row is server-owned and does not drain when the run ends`() = queuedTurnTest { vm ->
         vm.onInputChanged(TEXT)
         vm.queueMessage()
@@ -236,6 +265,37 @@ class ChatViewModelQueuedTurnTest {
         assertThat(queued.server).isNull()
         assertThat(queued.clientRequestId).isNull()
         assertThat(queued.parentMessageId).isNull()
+    }
+
+    /**
+     * The server's queued turn carries no spec, so `enforce` refuses it and the follow-up stays
+     * local (`QueueOrchestrationDelegate.serverOwnedSpec`).
+     */
+    @Test
+    fun `under enforce the follow-up stays local`() = queuedTurnTest(
+        arrange = {
+            // The spec config reaches the selection through the seeder's combine, which waits on this.
+            every { settingsDataStore.lastUsedSelection } returns flowOf(LastUsedSelection.NONE)
+            every { configRepository.startupConfig } returns MutableStateFlow(
+                StartupConfig(
+                    modelSpecs = ModelSpecs(
+                        list = listOf(ModelSpec(name = "helper", preset = Preset(endpoint = ENDPOINT, agentId = AGENT_ID))),
+                        enforce = true,
+                    ),
+                ),
+            )
+        },
+    ) { vm ->
+        assertThat(vm.uiState.value.isStreaming).isTrue()
+
+        vm.onInputChanged(TEXT)
+        vm.queueMessage()
+        runCurrent()
+
+        coVerify(exactly = 0) { queuedTurnRepository.enqueue(any()) }
+        val queued = vm.uiState.value.messageQueue.single()
+        assertThat(queued.server).isNull()
+        assertThat(queued.text).isEqualTo(TEXT)
     }
 
     /**
@@ -476,6 +536,59 @@ class ChatViewModelQueuedTurnTest {
         coVerify(exactly = 3) { queuedTurnRepository.enqueue(capture(requests)) }
         assertThat(requests.map { it.text }).containsExactly("first", "first, fixed", "second").inOrder()
         assertThat(vm.uiState.value.messageQueue.map { it.server != null }).containsExactly(true, true)
+    }
+
+    /**
+     * A withdrawn row is rebuilt locally and claimed again, and the second claim's picks are the
+     * chips on screen during the edit, not the draft's staged ones and not the first claim's.
+     */
+    @Test
+    fun `a withdrawn queued edit claims again with the chips picked during it`() = queuedTurnTest(
+        arrange = {
+            every { configRepository.endpointConfigs } returns MutableStateFlow(
+                mapOf(ENDPOINT to EndpointConfig(capabilities = listOf(ToolConstants.SKILLS))),
+            )
+        },
+    ) { vm ->
+        vm.addPendingManualSkill("pdf-tools")
+        vm.onInputChanged(TEXT)
+        vm.queueMessage()
+        runCurrent()
+        val queued = vm.uiState.value.messageQueue.single()
+        assertThat(queued.server).isNotNull()
+        coEvery { queuedTurnRepository.cancel(queued.server!!.id!!) } answers {
+            serverRows.removeAll { it.clientRequestId == queued.clientRequestId }
+            QueuedTurnOutcome.Committed(
+                AgentQueuedTurnReceipt(
+                    queuedTurnId = queued.server!!.id!!,
+                    clientRequestId = queued.clientRequestId!!,
+                    text = queued.text,
+                    status = QueuedTurnStatus.CANCELLED,
+                ),
+            )
+        }
+        // A chip staged for the next new message, before the edit starts.
+        vm.addPendingManualSkill("draft-skill")
+
+        vm.editQueued(queued.localId)
+        runCurrent()
+        coVerify(exactly = 1) { queuedTurnRepository.cancel(any()) }
+        assertThat(vm.uiState.value.isEditingQueued).isTrue()
+        assertThat(vm.uiState.value.pendingManualSkills).containsExactly("pdf-tools")
+
+        vm.addPendingManualSkill("translator")
+        vm.removePendingManualSkill("pdf-tools")
+        vm.commitQueuedEdit()
+        runCurrent()
+
+        val requests = mutableListOf<EnqueueQueuedTurnRequest>()
+        coVerify(exactly = 2) { queuedTurnRepository.enqueue(capture(requests)) }
+        assertThat(requests[0].manualSkills).containsExactly("pdf-tools")
+        assertThat(requests[1].manualSkills).containsExactly("translator")
+        assertThat(requests[1].clientRequestId).isNotEqualTo(requests[0].clientRequestId)
+        assertThat(vm.uiState.value.messageQueue.single().manualSkills).containsExactly("translator")
+        // The draft gets its own chip back, and nothing picked for the edit leaks onto it.
+        assertThat(vm.uiState.value.pendingManualSkills).containsExactly("draft-skill")
     }
 
     /**
@@ -975,6 +1088,7 @@ class ChatViewModelQueuedTurnTest {
         revision = 1,
         position = 1,
         expectedPredecessorCreatedAt = request.expectedPredecessorCreatedAt,
+        manualSkills = request.manualSkills,
     )
 
     private fun queuedTurnTest(
@@ -986,8 +1100,7 @@ class ChatViewModelQueuedTurnTest {
         // to capture, so without it there is nothing for the assertions to be about.
         selectionHandoff.put(
             conversationId = CONVERSATION_ID,
-            endpoint = ENDPOINT,
-            model = AGENT_ID,
+            choice = ModelChoice.Raw(ENDPOINT, AGENT_ID),
             optimisticUserMessage = Message(
                 messageId = USER_MESSAGE_ID,
                 conversationId = CONVERSATION_ID,

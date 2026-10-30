@@ -1,5 +1,6 @@
 package com.garfiec.librechat.feature.auth.di
 
+import com.garfiec.librechat.feature.auth.diagnostics.DiagnosticLogExportViewModel
 import com.garfiec.librechat.feature.auth.viewmodel.ForgotPasswordViewModel
 import com.garfiec.librechat.feature.auth.viewmodel.LoginViewModel
 import com.garfiec.librechat.feature.auth.viewmodel.RegisterViewModel
@@ -57,4 +58,5 @@ val authModule = module {
         )
     }
     viewModelOf(::TermsViewModel)
+    viewModelOf(::DiagnosticLogExportViewModel)
 }

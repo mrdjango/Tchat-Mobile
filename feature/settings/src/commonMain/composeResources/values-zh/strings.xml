@@ -20,32 +20,24 @@
     <string name="action_verifying">验证中…</string>
 
     <!-- Content descriptions -->
-    <string name="cd_add_memory">添加记忆</string>
     <string name="cd_add_server">添加服务器</string>
     <string name="cd_back">返回</string>
     <string name="cd_change_avatar">更换头像</string>
     <string name="cd_choose_image">选择图片</string>
-    <string name="cd_collapse_tools">收起工具</string>
     <string name="cd_copy_api_key">复制 API 密钥</string>
-    <string name="cd_copy_link">复制链接</string>
+    <string name="shared_chats_copy_link">复制链接</string>
     <string name="cd_create_api_key">创建 API 密钥</string>
     <string name="cd_current_avatar">当前头像</string>
     <string name="cd_delete">删除</string>
     <string name="cd_delete_api_key">删除 API 密钥</string>
-    <string name="cd_delete_memory">删除记忆</string>
     <string name="cd_delete_preset">删除预设</string>
-    <string name="cd_delete_server">删除服务器</string>
-    <string name="cd_delete_shared_link">删除分享链接</string>
-    <string name="cd_edit_memory">编辑记忆</string>
     <string name="memory_redacted_key">已隐藏的条目</string>
     <string name="memory_redacted_value">此服务器的内容策略隐藏了此处存储的内容。你仍可以将其删除。</string>
-    <string name="cd_edit_server">编辑服务器</string>
-    <string name="cd_expand_tools">展开工具</string>
+    <string name="memory_redacted_value_no_delete">此服务器的内容策略隐藏了此处存储的内容。</string>
     <string name="cd_loading_profile">正在加载个人资料</string>
     <string name="cd_make_private">设为私有</string>
     <string name="cd_make_public">设为公开</string>
     <string name="cd_preview_voice">试听语音</string>
-    <string name="cd_reinitialize">重新初始化</string>
     <string name="cd_avatar_preview">头像预览</string>
     <string name="cd_selected">已选择</string>
     <string name="cd_selected_avatar">已选头像</string>
@@ -53,11 +45,9 @@
     <string name="cd_test_tts_voice">测试所选 TTS 语音</string>
     <string name="cd_toggle_auto_read">切换自动朗读回复</string>
     <string name="cd_toggle_auto_send_stt">切换语音后自动发送</string>
-    <string name="cd_toggle_memories">切换记忆</string>
     <string name="cd_tts_voice_selector">选择 TTS 语音。当前为 %1$s</string>
     <string name="cd_user_avatar">用户头像</string>
     <string name="cd_view_all_tools">查看全部工具</string>
-    <string name="cd_view_tools">查看工具</string>
 
     <!-- Section headers -->
     <string name="section_about">关于</string>
@@ -78,7 +68,7 @@
     <string name="prefetch_enabled">预加载对话</string>
     <string name="prefetch_enabled_desc">提前加载最近和已固定的对话，以便即时打开。在应用空闲时运行，充电时也会定期运行。</string>
     <string name="prefetch_on_metered">使用移动数据</string>
-    <string name="prefetch_on_metered_desc">允许在按流量计费的网络上预加载。默认关闭，以避免意外的流量消耗。</string>
+    <string name="prefetch_on_metered_desc">允许在按流量计费的网络上预加载。</string>
     <string name="prefetch_depth">数量</string>
     <string name="prefetch_depth_value">%1$d 个对话</string>
     <string name="prefetch_depth_desc">要缓存的最近对话数量。已固定的对话无论多旧都会包含在内。</string>
@@ -154,7 +144,6 @@
     <string name="title_mcp_servers">MCP 服务器</string>
     <string name="title_presets">预设</string>
     <string name="title_settings">设置</string>
-    <string name="title_shared_links">分享链接</string>
 
     <!-- Tabbed settings tabs -->
     <string name="tab_general">通用</string>
@@ -225,6 +214,8 @@
     <string name="whats_new_error">无法加载发布说明</string>
     <string name="release_notes_title">发布说明</string>
     <string name="release_notes_desc">版本 %1$s 的更新内容</string>
+    <string name="privacy_policy_title">隐私政策</string>
+    <string name="privacy_policy_desc">应用如何处理你的数据</string>
     <string name="release_notes_not_found">没有 %1$s 的发布说明</string>
     <string name="release_notes_not_found_desc">此版本在 GitHub 上没有已发布的版本。</string>
     <string name="release_notes_previous">以前的版本</string>
@@ -236,7 +227,34 @@
 
     <!-- Balance -->
     <string name="token_credits">Token 额度</string>
-    <string name="available_balance">可用余额</string>
+    <string name="balance_credit_conversion">1,000 额度 = 0.001 美元</string>
+    <string name="balance_load_error">无法加载余额</string>
+    <string name="auto_refill_title">自动充值</string>
+    <string name="auto_refill_off">关闭</string>
+    <string name="auto_refill_unavailable">详情不可用</string>
+    <string name="auto_refill_last">上次充值</string>
+    <string name="auto_refill_amount">充值金额</string>
+    <string name="auto_refill_interval">间隔</string>
+    <string name="auto_refill_next">下次充值</string>
+    <string name="auto_refill_next_info">只有在此时间之后，且发送消息会使余额低于零时，才会充值。</string>
+    <plurals name="auto_refill_every_seconds">
+        <item quantity="other">每 %1$s 秒</item>
+    </plurals>
+    <plurals name="auto_refill_every_minutes">
+        <item quantity="other">每 %1$s 分钟</item>
+    </plurals>
+    <plurals name="auto_refill_every_hours">
+        <item quantity="other">每 %1$s 小时</item>
+    </plurals>
+    <plurals name="auto_refill_every_days">
+        <item quantity="other">每 %1$s 天</item>
+    </plurals>
+    <plurals name="auto_refill_every_weeks">
+        <item quantity="other">每 %1$s 周</item>
+    </plurals>
+    <plurals name="auto_refill_every_months">
+        <item quantity="other">每 %1$s 个月</item>
+    </plurals>
     <string name="cd_token_balance">Token 余额：%1$s 额度</string>
     <string name="chat_group_display">显示</string>
     <string name="chat_group_behavior">行为</string>
@@ -259,6 +277,16 @@
     <string name="starred_models_off">关闭</string>
     <string name="starred_models_grouped">顶部可折叠分组</string>
     <string name="starred_models_top">置于顶部，不分组</string>
+    <string name="new_chat_start_title">新对话起始模型</string>
+    <string name="new_chat_start_desc">当服务器为新对话指定模型时，选择使用该模型还是你上次使用的模型。如果服务器隐藏了模型选择器，此设置无效。如果服务器要求使用其自有模型，只有当你上次使用的模型属于其中之一时才会生效。</string>
+    <string name="new_chat_start_server">服务器指定</string>
+    <string name="new_chat_start_last_used">上次使用的模型</string>
+    <string name="web_search_first_title">网页搜索</string>
+    <string name="web_search_first_desc">当两种搜索都可用时,聊天中的网页搜索开关运行哪一种。如果你的选择在某个聊天中无法使用,则改用另一种。模型规格自带的搜索优先;在“比较”中会尽量使用 LibreChat 搜索,让两个模型都能搜索。</string>
+    <string name="web_search_first_librechat">优先 LibreChat 搜索</string>
+    <string name="web_search_first_librechat_desc">你服务器的搜索,附带来源。服务器未设置搜索时,使用模型的内置搜索。</string>
+    <string name="web_search_first_built_in">优先内置搜索</string>
+    <string name="web_search_first_built_in_desc">模型提供商自己的搜索(OpenAI、Claude、Gemini、OpenRouter)。其他模型使用 LibreChat 搜索。</string>
     <string name="chat_header_title">聊天标题栏</string>
     <string name="chat_header_summary_format">%1$s · %2$s</string>
     <string name="chat_header_content_label">内容</string>
@@ -280,8 +308,8 @@
     <string name="latex_native_desc">显示原始 LaTeX 源码以获得更流畅的滚动性能</string>
     <string name="auto_scroll">流式输出时自动滚动</string>
     <string name="auto_scroll_desc">在生成回复时自动滚动到新内容</string>
-    <string name="show_thinking_blocks">显示思考块</string>
-    <string name="show_thinking_blocks_desc">在可用时显示模型的推理步骤</string>
+    <string name="thinking_open_by_default">默认展开思考</string>
+    <string name="thinking_open_by_default_desc">回复的推理默认展开显示，而不是折叠</string>
     <string name="context_bar_title">上下文用量</string>
     <string name="context_bar_desc">上下文窗口用量指示器的显示位置</string>
     <string name="context_bar_hidden">隐藏</string>
@@ -319,7 +347,7 @@
     <string name="two_factor_auth">两步验证</string>
     <string name="enable_two_factor">启用两步验证</string>
     <string name="disable_two_factor">禁用两步验证</string>
-    <string name="view_backup_codes">查看备用码</string>
+    <string name="regenerate_backup_codes">重新生成备用码</string>
 
     <!-- 2FA setup dialog -->
     <string name="dialog_title_enable_2fa">启用两步验证</string>
@@ -333,7 +361,6 @@
     <string name="action_hide_qr">隐藏二维码</string>
     <string name="cd_twofa_qr">用于在其他设备上注册的二维码</string>
     <string name="twofa_disable_instructions">输入身份验证器验证码以禁用两步验证。</string>
-    <string name="hint_verification_code">验证码</string>
 
     <!-- OTP verification dialogs -->
     <string name="otp_title_verify_identity">验证身份</string>
@@ -349,6 +376,10 @@
     <!-- Backup codes dialog -->
     <string name="dialog_title_backup_codes">备用码</string>
     <string name="backup_codes_instructions">请将这些备用码保存在安全的地方。每个备用码只能使用一次。</string>
+    <string name="dialog_title_regenerate_backup_codes">重新生成备用码？</string>
+    <string name="regenerate_backup_codes_warning">当前的备用码将失效。你将获得一组新的备用码，请妥善保存。</string>
+    <string name="action_regenerate">重新生成</string>
+    <string name="backup_codes_saved_ack">我已保存这些备用码</string>
 
     <!-- Danger zone -->
     <string name="delete_account">删除账户</string>
@@ -376,7 +407,6 @@
     <string name="archived_all_count">已归档 %1$d 个对话</string>
     <string name="archived_conversations">已归档对话</string>
     <string name="export_all_data">导出全部数据</string>
-    <string name="shared_links">分享链接</string>
     <string name="clear_cache_with_size">清除缓存 (%1$s)</string>
     <string name="clear_cache">清除缓存</string>
     <string name="revoke_all_api_keys">吊销所有 API 密钥</string>
@@ -434,33 +464,75 @@
     <string name="tts_preview_voice">试听语音</string>
 
     <!-- Memories -->
-    <string name="enable_memories">启用记忆</string>
-    <string name="enable_memories_desc">允许 AI 在不同对话间记住信息</string>
-    <string name="no_memories_saved">尚未保存任何记忆</string>
-    <string name="memories_add_hint">点击 + 按钮添加记忆</string>
     <string name="add_memory">添加记忆</string>
     <string name="edit_memory">编辑记忆</string>
     <string name="dialog_title_delete_memory">删除记忆</string>
-    <string name="dialog_delete_memory_message">确定要删除记忆 "%1$s" 吗？</string>
+    <string name="dialog_delete_memory_message">确定要删除记忆“%1$s”吗？</string>
     <string name="memory_key_label">键</string>
     <string name="memory_value_label">值</string>
-    <string name="memory_key_hint">仅可使用小写字母和下划线</string>
-    <string name="memory_key_invalid">键只能包含小写字母和下划线</string>
+    <string name="memory_key_hint">仅可使用小写英文字母 a–z 和下划线</string>
+    <string name="memory_key_invalid">键只能包含小写英文字母 a–z 和下划线</string>
     <string name="memory_key_exists">已存在使用此键的记忆</string>
+    <string name="memory_key_reserved">此键已被保留，请选择其他键。</string>
+    <string name="memory_key_too_long">键最多只能包含 %1$s 个字符。</string>
+    <string name="memory_error_forbidden">你没有更改记忆的权限。</string>
+    <string name="memory_error_toggle_forbidden">你的角色无法开启或关闭记忆。</string>
+    <string name="memory_error_content_filtered">已被服务器的内容过滤器拦截。</string>
+    <string name="memory_error_agent">无法更改此智能体的记忆。</string>
+    <string name="memory_error_network">无法连接到服务器，请检查网络连接。</string>
+    <string name="memory_error_save">无法保存记忆。</string>
+    <string name="memory_error_delete">无法删除记忆。</string>
+    <string name="memory_error_toggle">无法更改记忆设置。</string>
+    <string name="memory_error_not_found">此记忆已在其他地方被删除。</string>
+    <string name="memory_error_not_found_readd">此记忆已在其他地方被删除。保存即可重新添加。</string>
+    <!-- Memories index -->
+    <string name="memories_use_title">使用已保存的记忆</string>
+    <string name="memories_use_desc">聊天可以读取和保存记忆</string>
+    <string name="memories_use_load_failed">无法加载此设置。</string>
+    <string name="memories_use_loading">正在加载</string>
+    <string name="memories_usage_percent">%1$s%</string>
+    <plurals name="memories_usage_tokens">
+        <item quantity="other">%1$s / %2$s 个令牌</item>
+    </plurals>
+    <plurals name="memories_usage_a11y">
+        <item quantity="other">记忆用量：%1$s，%3$s 个令牌中已用 %2$s</item>
+    </plurals>
+    <plurals name="memory_token_count">
+        <item quantity="other">%1$s 个令牌</item>
+    </plurals>
+    <string name="memory_agent_fallback">智能体记忆</string>
+    <string name="memory_agent_numbered">%1$s（%2$s）</string>
+    <string name="memories_search_hint">搜索记忆</string>
+    <string name="memories_no_match">没有与“%1$s”匹配的记忆</string>
+    <string name="memories_personal_empty">还没有个人记忆</string>
+    <string name="memories_filter_all">全部</string>
+    <string name="memories_filter_personal">个人</string>
+    <string name="memories_empty_title">还没有记忆</string>
+    <string name="memories_empty_desc">聊天会把值得记住的内容保存在这里。你也可以自己添加。</string>
+    <string name="memories_empty_desc_no_create">聊天会把值得记住的内容保存在这里。</string>
+    <string name="memories_view_only">你的角色可以查看记忆，但不能添加或更改。</string>
+    <string name="memories_no_access_title">无法访问记忆</string>
+    <string name="memories_no_access_desc">你的角色没有查看记忆的权限。</string>
+    <string name="memory_action_edit">编辑</string>
+    <string name="cd_memory_options">%1$s 的选项</string>
+    <!-- Memory sheet -->
+    <string name="view_memory">查看记忆</string>
+    <string name="action_close">关闭</string>
+    <string name="memory_value_counter">%1$s / %2$s</string>
+    <plurals name="memory_token_share">
+        <item quantity="other">%1$s 个令牌 · 占记忆的 %2$s%</item>
+    </plurals>
+    <string name="memory_updated_at">更新于 %1$s</string>
 
     <!-- MCP -->
     <string name="add_mcp_server">添加 MCP 服务器</string>
     <string name="edit_mcp_server">编辑 MCP 服务器</string>
-    <string name="no_mcp_servers">未配置 MCP 服务器</string>
-    <string name="mcp_add_hint">点击 + 按钮添加服务器</string>
     <string name="mcp_name_label">名称</string>
     <string name="mcp_description_label">描述</string>
     <string name="mcp_description_optional">可选</string>
     <string name="mcp_url_label">URL</string>
-    <string name="mcp_type_label">类型</string>
     <string name="mcp_type_sse">SSE</string>
     <string name="mcp_type_streamable_http">Streamable HTTP</string>
-    <string name="mcp_auth_label">身份验证</string>
     <string name="mcp_auth_none">无</string>
     <string name="mcp_auth_api_key">API 密钥</string>
     <string name="mcp_auth_oauth">OAuth</string>
@@ -481,7 +553,6 @@
     <string name="dialog_title_delete_server">删除服务器</string>
     <string name="dialog_delete_server_message">确定要删除 "%1$s" 吗？</string>
     <string name="error_failed_to_load_servers">加载服务器失败</string>
-    <string name="mcp_tools_count">%1$d 个工具%2$s</string>
     <string name="no_tools_available">没有可用的工具</string>
     <!-- Fork settings -->
     <string name="fork_mode_direct_path">可见消息</string>
@@ -525,29 +596,17 @@
     <string name="dialog_delete_preset_message">确定要删除 "%1$s" 吗？</string>
 
     <!-- Shared links -->
-    <string name="no_shared_links">没有分享链接</string>
-    <string name="no_shared_links_desc">分享一个对话即可在此查看</string>
     <string name="mcp_oauth_secret_reentry_required">OAuth 端点已更改，已保存的密钥不再适用。请重新输入。</string>
     <string name="mcp_api_key_reentry_required">连接设置已更改，已保存的 API 密钥不再适用。请重新输入。</string>
-    <string name="cd_update_shared_link">更新分享链接</string>
-    <string name="dialog_title_update_shared_link">更新分享链接</string>
-    <string name="dialog_update_shared_link_message">这将以对话的当前内容重新发布 "%1$s"。链接保持不变，已有该链接的人将看到更新后的内容。</string>
-    <string name="dialog_update_shared_link_message_new_url">这将以对话的当前内容重新发布 "%1$s"。此服务器会生成新链接，持有旧链接的人将无法再访问。</string>
-    <string name="action_update_shared_link">更新</string>
     <string name="dialog_title_delete_shared_link">删除分享链接</string>
     <string name="dialog_delete_shared_link_message">这将移除 "%1$s" 的分享链接。拥有该链接的人将无法再访问它。</string>
-    <string name="visibility_public">公开</string>
-    <string name="visibility_private">私有</string>
     <string name="error_failed_to_load_memories">加载记忆失败</string>
 
     <!-- Provider API Keys -->
     <string name="provider_keys_title">提供商 API 密钥</string>
     <string name="provider_keys_subtitle">为需要密钥的端点设置你自己的密钥</string>
-    <string name="provider_keys_dialog_title">为 %1$s 设置 API 密钥</string>
-    <string name="provider_keys_status_set_expires">%1$s 后过期</string>
-    <string name="provider_keys_status_set_never">你的密钥永不过期</string>
     <string name="provider_keys_status_unset">未设置</string>
-    <string name="provider_keys_status_expired">已过期</string>
+    <string name="provider_keys_status_unknown">无法检查</string>
     <string name="provider_keys_status_loading">正在检查密钥状态…</string>
     <string name="provider_keys_field_api_key_label">密钥</string>
     <string name="provider_keys_field_base_url_label">基础 URL</string>
@@ -568,47 +627,83 @@
     <string name="provider_keys_field_google_imported">已成功导入服务账号 JSON 密钥</string>
     <string name="provider_keys_field_google_paste_label">或粘贴服务账号 JSON</string>
     <string name="provider_keys_field_google_paste_only_hint">请在下方粘贴服务账号 JSON。</string>
-    <string name="provider_keys_field_google_service_key_or_gemini">Google 服务密钥或 Gemini API 密钥</string>
 
     <string name="provider_keys_field_bedrock_access_key_id">访问密钥 ID</string>
     <string name="provider_keys_field_bedrock_secret_access_key">秘密访问密钥</string>
     <string name="provider_keys_field_bedrock_session_token">会话令牌</string>
     <string name="provider_keys_field_bedrock_session_token_optional_suffix">（可选）</string>
+    <string name="provider_keys_field_bedrock_bearer_token">Bearer 令牌</string>
+    <string name="provider_keys_field_bedrock_bearer_token_placeholder">Bedrock API 密钥</string>
+    <string name="provider_keys_field_required">必填</string>
+    <string name="provider_keys_bedrock_or_access_keys">或改用访问密钥</string>
+    <string name="provider_keys_field_google_either_required">请添加服务密钥或 Gemini API 密钥</string>
 
-    <string name="provider_keys_required_fields">以下字段为必填项：%1$s</string>
     <string name="provider_keys_revoke">吊销</string>
     <string name="provider_keys_revoke_failed">吊销 API 密钥失败。请重试。</string>
     <string name="provider_keys_revoke_success">API 密钥已成功吊销</string>
-    <string name="provider_keys_revoke_all">吊销密钥</string>
     <string name="provider_keys_revoke_all_confirm">确定要吊销所有密钥吗？</string>
     <string name="provider_keys_revoke_all_failed">吊销所有密钥失败</string>
     <string name="provider_keys_save_failed">保存 API 密钥失败。请重试。</string>
     <string name="provider_keys_save_success">API 密钥已成功保存</string>
 
-    <string name="provider_keys_expiry_label">过期时间</string>
-    <string name="provider_keys_expiry_30m">30 分钟后</string>
-    <string name="provider_keys_expiry_2h">2 小时后</string>
-    <string name="provider_keys_expiry_12h">12 小时后</string>
-    <string name="provider_keys_expiry_1d">1 天后</string>
-    <string name="provider_keys_expiry_7d">7 天后</string>
-    <string name="provider_keys_expiry_30d">30 天后</string>
-    <string name="provider_keys_expiry_never">永不</string>
+    <string name="provider_keys_expiry_label">新密钥有效期</string>
+    <string name="provider_keys_expiry_30m">30 分钟</string>
+    <string name="provider_keys_expiry_2h">2 小时</string>
+    <string name="provider_keys_expiry_12h">12 小时</string>
+    <string name="provider_keys_expiry_1d">1 天</string>
+    <string name="provider_keys_expiry_7d">7 天</string>
+    <string name="provider_keys_expiry_30d">30 天</string>
+    <string name="provider_keys_expiry_never">永不过期</string>
 
     <string name="provider_keys_empty_title">没有端点需要用户提供密钥</string>
     <string name="provider_keys_empty_desc">需要你自己 API 密钥的端点将显示在此处。</string>
-    <string name="provider_keys_revoke_all_action">全部吊销</string>
+    <string name="provider_keys_load_failed_title">无法加载你的提供商</string>
+    <string name="provider_keys_load_failed_desc">请检查你的网络连接，然后重试。</string>
+    <string name="provider_keys_status_never_expires">永不过期</string>
+    <string name="provider_keys_status_expires_at">过期时间：%1$s</string>
+    <string name="provider_keys_status_expires_at_time">%1$s过期</string>
+    <string name="provider_keys_retry_check_cd">重新检查 %1$s</string>
+    <string name="provider_keys_status_unset_needs">未设置 · %1$s</string>
+    <string name="provider_keys_needs_azure">密钥、实例、部署、版本</string>
+    <string name="provider_keys_needs_key_and_url">密钥、基础 URL</string>
+    <string name="provider_keys_needs_base_url">基础 URL</string>
+    <string name="provider_keys_needs_google">服务密钥或 Gemini 密钥</string>
+    <string name="provider_keys_needs_access_keys">访问密钥</string>
+    <string name="provider_keys_needs_bearer_or_access_keys">Bearer 令牌或访问密钥</string>
+    <string name="provider_keys_summary_note">密钥存储在你的服务器上，过期后会被删除。</string>
+    <string name="provider_keys_revoke_all_button">吊销所有密钥</string>
+    <plurals name="provider_keys_status_expires_in_minutes">
+        <item quantity="other">%1$d 分钟后过期</item>
+    </plurals>
+    <plurals name="provider_keys_summary">
+        <item quantity="other">已设置 %1$d / %2$d 个密钥。</item>
+    </plurals>
+    <plurals name="provider_keys_row_summary">
+        <item quantity="other">已设置 %1$d / %2$d</item>
+    </plurals>
 
     <!-- Admin: role skill access -->
-    <string name="role_skills_settings_row">技能访问权限（管理员）</string>
-    <string name="role_skills_title">技能访问权限</string>
-    <string name="role_skills_back">返回</string>
+    <string name="role_skills_settings_row">技能权限</string>
+    <string name="role_skills_title">技能权限</string>
     <string name="role_skills_description">控制每个角色拥有哪些技能能力。更改将应用于所有具有所选角色的用户。</string>
-    <string name="role_skills_role_label">角色</string>
+    <string name="role_permissions_role_label">角色</string>
     <string name="role_skills_use">使用技能</string>
     <string name="role_skills_create">创建和编辑技能</string>
     <string name="role_skills_share">分享技能</string>
     <string name="role_skills_share_public">公开分享技能</string>
-    <string name="role_skills_save">保存</string>
+    <string name="role_memories_settings_row">记忆权限</string>
+    <string name="role_memories_title">记忆权限</string>
+    <string name="role_memories_description">控制每个角色拥有哪些记忆能力。更改将应用于所有具有所选角色的用户。</string>
+    <string name="role_memories_use">允许使用记忆</string>
+    <string name="role_memories_create">允许创建记忆</string>
+    <string name="role_memories_update">允许更新记忆</string>
+    <string name="role_memories_read">允许读取记忆</string>
+    <string name="role_memories_opt_out">允许用户关闭记忆</string>
+    <string name="role_permissions_saved">已保存</string>
+    <string name="role_permissions_load_failed">无法加载此角色的权限。</string>
+    <string name="role_permissions_save_failed">无法保存权限，请重试。</string>
+    <string name="role_permissions_admin_access_warning">禁用管理员对此功能的访问可能会导致异常，直到应用重新加载你的权限。保存后，唯一的恢复方式是修改 librechat.yaml 中的 interface 设置，这将影响所有角色。</string>
+    <string name="role_permissions_more_info">更多信息</string>
     <string name="artifact_shortcuts_title">主屏幕快捷方式</string>
     <string name="artifact_shortcuts_empty">尚未将任何 artifact 固定到主屏幕。</string>
     <string name="artifact_shortcuts_disabled_message">此 artifact 快捷方式已被移除。</string>
@@ -700,8 +795,9 @@
     <string name="date_time_preview">预览</string>
     <string name="data_summary_off">关闭</string>
     <string name="data_summary_none">无</string>
+    <string name="data_memories_none">无</string>
     <plurals name="data_memories_count">
-        <item quantity="other">已保存 %1$d 条</item>
+        <item quantity="other">已保存 %1$s 条</item>
     </plurals>
     <plurals name="data_mcp_servers_count">
         <item quantity="other">%1$d 个服务器</item>
@@ -712,4 +808,69 @@
     <string name="ui_style_note_simulated">此 iOS 版本上的 Liquid Glass 为模拟效果。iOS 26 或更高版本会原生绘制。</string>
     <string name="ui_style_note_blur_only">此设备将 Liquid Glass 显示为模糊效果，没有折射。Android 13 或更高版本可显示完整效果。</string>
     <string name="ui_style_note_flat">此设备将 Liquid Glass 显示为平面半透明表面。</string>
+    <!-- Message search -->
+    <string name="section_search">搜索</string>
+    <string name="advanced_search">高级搜索</string>
+    <string name="advanced_search_desc">面向高级用户。在搜索界面中添加区分大小写、全字匹配、正则表达式，以及角色、模型和日期筛选。</string>
+    <string name="server_user_ca_notice">通过此设备上安装的证书颁发机构获得信任</string>
+    <string name="export_coming_soon">导出功能即将推出</string>
+    <string name="mcp_tools_all">所有 MCP 工具</string>
+    <string name="mcp_server_unknown">未知</string>
+    <string name="avatar_upload_unavailable_ios">iOS 暂不支持上传头像。</string>
+    <string name="dialog_ok">确定</string>
+    <plurals name="mcp_tool_count">
+        <item quantity="other">%1$d 个工具</item>
+    </plurals>
+    <string name="mcp_status_connected">已连接</string>
+    <string name="mcp_status_connecting">正在连接…</string>
+    <string name="mcp_status_needs_sign_in">需要登录</string>
+    <string name="mcp_status_needs_setup">请在网页版中设置</string>
+    <string name="mcp_status_on_demand">聊天时连接</string>
+    <string name="mcp_status_disconnected">未连接</string>
+    <string name="mcp_status_failed">无法连接</string>
+    <string name="mcp_action_sign_in">登录</string>
+    <string name="mcp_action_connect">连接</string>
+    <string name="mcp_action_reconnect">重新连接</string>
+    <string name="mcp_action_edit">编辑</string>
+    <string name="mcp_view_only">仅查看</string>
+    <string name="mcp_filter_all">全部</string>
+    <string name="mcp_filter_needs_attention">需要处理 (%1$d)</string>
+    <string name="mcp_search_hint">搜索服务器</string>
+    <string name="mcp_search_no_results">没有匹配的服务器</string>
+    <string name="mcp_empty_title">为你的聊天添加工具</string>
+    <string name="mcp_empty_body">MCP 服务器让模型可以在其他应用（如 GitHub 或你的日历）中搜索、读取和执行操作。使用其 URL 添加。</string>
+    <string name="mcp_empty_body_no_create">MCP 服务器让模型可以在其他应用（如 GitHub 或你的日历）中搜索、读取和执行操作。请让管理员添加。</string>
+    <string name="mcp_tools_title">工具</string>
+    <string name="mcp_tools_filter_hint">筛选工具</string>
+    <string name="mcp_tools_no_match">没有匹配的工具</string>
+    <string name="mcp_needs_setup_detail">此服务器需要只有你能提供的信息，例如你自己的 API 密钥。请在 LibreChat 网站上添加，然后重新连接。</string>
+    <string name="mcp_editor_section_about">简介</string>
+    <string name="mcp_editor_section_connection">连接</string>
+    <string name="mcp_editor_section_sign_in">登录</string>
+    <string name="mcp_editor_load_failed">无法加载此服务器。</string>
+    <string name="mcp_trust_label">我信任此服务器</string>
+    <string name="mcp_trust_sublabel">它可以读取你发送的内容，并代表你在其连接的应用中执行操作。请只添加你信任的服务器。</string>
+    <string name="memory_error_key_route_shadowed">此服务器无法编辑使用此键的记忆。请删除后以其他键重新添加。</string>
+    <string name="shared_chats_title">已分享的对话</string>
+    <string name="shared_chats_summary">你分享过的对话链接</string>
+    <string name="shared_chats_untitled">未命名对话</string>
+    <string name="shared_chats_shared_on">已分享 · %1$s</string>
+    <string name="shared_chats_options">%1$s 的选项</string>
+    <string name="shared_chats_open_chat">打开对话</string>
+    <string name="shared_chats_view_shared">查看分享版本</string>
+    <string name="shared_chats_link_copied">链接已复制</string>
+    <string name="shared_chats_search">搜索已分享的对话</string>
+    <string name="shared_chats_clear_search">清除搜索</string>
+    <string name="shared_chats_sort_label">排序</string>
+    <string name="shared_chats_sort_newest">最新</string>
+    <string name="shared_chats_sort_oldest">最早</string>
+    <string name="shared_chats_sort_title">标题 A–Z</string>
+    <string name="shared_chats_empty">还没有分享过对话</string>
+    <string name="shared_chats_empty_description">打开一个对话，从其菜单中选择“分享”即可创建链接。你的链接会显示在这里。</string>
+    <string name="shared_chats_load_failed">无法加载已分享的对话</string>
+    <string name="shared_chats_load_failed_description">请检查网络连接后重试。</string>
+    <string name="shared_chats_load_more_failed">无法加载更多</string>
+    <string name="shared_chats_no_match">没有与“%1$s”匹配的链接</string>
+    <string name="shared_chats_refresh_failed">无法刷新已分享的对话</string>
+    <string name="shared_chats_delete_failed">无法删除链接</string>
 </resources>
