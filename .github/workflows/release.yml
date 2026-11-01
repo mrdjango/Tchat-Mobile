@@ -1,4 +1,4 @@
-name: Release
+name: Create New Release
 
 # Manual, one-button release. Versions are calver (YYYY.MM.PATCH); year/month come
 # from the current UTC date automatically, so the only choice is stable vs candidate.
@@ -67,7 +67,7 @@ jobs:
         # Pinned to a commit SHA (not a moving tag) so a compromise of the action's
         # repo can't inject code into this secret-bearing job. Dependabot keeps it
         # current — see .github/dependabot.yml.
-        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
       # Fail in seconds if the signing secrets are missing/blank, before doing any
       # work — rather than deep inside the Gradle signing task after a full build.
@@ -403,7 +403,7 @@ jobs:
 
       - name: Setup Gradle
         # SHA-pinned to match the release job's supply-chain policy (Dependabot bumps it).
-        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
       - name: Cache Kotlin/Native toolchain
         uses: actions/cache@v6
