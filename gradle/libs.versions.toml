@@ -22,7 +22,7 @@ koin = "4.2.2"
 
 # Network
 ktor = "3.6.0"
-kotlinx-serialization = "1.11.0"
+kotlinx-serialization = "1.12.0"
 kotlinx-datetime = "0.8.0"
 
 # Local Data
@@ -60,7 +60,7 @@ material-kolor = "5.0.1"
 qrose = "1.1.2"
 
 # Logging
-kermit = "2.1.0"
+kermit = "2.2.0"
 
 # Hashing / IO
 okio = "3.18.2"

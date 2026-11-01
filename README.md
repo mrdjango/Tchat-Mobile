@@ -16,14 +16,19 @@ features. See [TCHAT.md](TCHAT.md) for exactly what this fork changes and why.
 
 <p align="center">
   <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/garfiec/Librechat-Mobile"><img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="80"></a>
-  <!-- Uncomment each badge once its listing is live.
   <a href="https://f-droid.org/packages/com.garfiec.librechat/"><img src="https://f-droid.org/badge/get-it-on.png" alt="Get it on F-Droid" height="80"></a>
+  <!-- Uncomment once the listing is live.
   <a href="https://play.google.com/store/apps/details?id=com.garfiec.librechat.play"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="80"></a>
   -->
   <a href="https://testflight.apple.com/join/pVhFr3a5"><img src="docs/badges/testflight.png" alt="Join the beta on TestFlight" height="80"></a>
 </p>
 
-<p align="center"><sub>F-Droid and Google Play are coming soon. iOS is in public beta on TestFlight. See <a href="#install-android">Install (Android)</a> and <a href="#install-ios">Install (iOS)</a> for details.</sub></p>
+<p align="center">
+  <a href="https://github.com/garfiec/Librechat-Mobile/releases/latest"><img src="https://img.shields.io/github/v/release/garfiec/Librechat-Mobile?label=GitHub&logo=github" alt="Latest GitHub release"></a>
+  <a href="https://f-droid.org/packages/com.garfiec.librechat/"><img src="https://img.shields.io/f-droid/v/com.garfiec.librechat?logo=fdroid" alt="F-Droid version"></a>
+</p>
+
+<p align="center"><sub>Google Play is coming soon. iOS is in public beta on TestFlight. See <a href="#install-android">Install (Android)</a> and <a href="#install-ios">Install (iOS)</a> for details.</sub></p>
 
 ## Why use this instead of the web app?
 
@@ -159,4 +164,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution, including the LibreChat code this app adapts under the MIT License.
