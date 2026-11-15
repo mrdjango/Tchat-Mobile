@@ -34,6 +34,11 @@ internal class RecordingTokenManager : TokenManager {
     /** Accounts whose keyed slot a hard expiry has emptied. Every other account holds a session. */
     val expiredAccounts = mutableSetOf<String>()
 
+    /** Accounts carrying the required-2FA-setup marker. */
+    val twoFactorSetupAccounts = mutableSetOf<String>()
+
+    override suspend fun isTwoFactorSetupRequired(accountId: String): Boolean = accountId in twoFactorSetupAccounts
+
     override val isAuthenticated: Boolean = true
     override suspend fun getAccessToken(): String? = null
     override suspend fun setTokens(accessToken: String, refreshToken: String) {
@@ -43,6 +48,12 @@ internal class RecordingTokenManager : TokenManager {
     override suspend fun clearTokens() = Unit
     override suspend fun getAccessTokenFor(accountId: String): String? =
         if (accountId in expiredAccounts) null else "access-$accountId"
+
+    /** Accounts whose stored session has passed its end date: still in storage, no longer live. */
+    val lapsedAccounts = mutableSetOf<String>()
+
+    override suspend fun hasLiveSession(accountId: String): Boolean =
+        getAccessTokenFor(accountId) != null && accountId !in lapsedAccounts
     override suspend fun getStagedAccessToken(): String? = stagedAccess
     override suspend fun clearStagedTokens() {
         stagedAccess = null

@@ -152,7 +152,7 @@ fun AdaptiveSuggestionChip(
     )
 }
 
-/** Fill when resting, accent with white content when selected; custom colours keep their content colours. */
+/** Fill when resting, accent with its readable content when selected; custom colours keep their content colours. */
 @Composable
 private fun glassSelectableChipColors(isDefault: Boolean, colors: SelectableChipColors): SelectableChipColors {
     val fill = GlassControlColors.fill
@@ -167,9 +167,9 @@ private fun glassSelectableChipColors(isDefault: Boolean, colors: SelectableChip
         disabledContainerColor = fill,
         selectedContainerColor = tint,
         disabledSelectedContainerColor = tint,
-        selectedLabelColor = Color.White,
-        selectedLeadingIconColor = Color.White,
-        selectedTrailingIconColor = Color.White,
+        selectedLabelColor = GlassControlColors.onTint,
+        selectedLeadingIconColor = GlassControlColors.onTint,
+        selectedTrailingIconColor = GlassControlColors.onTint,
     )
 }
 
@@ -177,3 +177,64 @@ private fun glassSelectableChipColors(isDefault: Boolean, colors: SelectableChip
 @Composable
 private fun glassChipColors(isDefault: Boolean, colors: ChipColors): ChipColors =
     if (isDefault) colors.copy(containerColor = GlassControlColors.fill, disabledContainerColor = GlassControlColors.fill) else colors
+
+object AdaptiveChipDefaults {
+    /**
+     * Colours for an [AdaptiveAssistChip] drawn over scrolling content (the chat composer's chip rows),
+     * with [tint] (null = none) on its label and icons in both styles. Material fills it with
+     * `surfaceContainerHigh`, since M3's outline-only chip would show the content through its label;
+     * glass keeps its secondary fill.
+     */
+    @Composable
+    fun overlayAssistChipColors(tint: Color? = null): ChipColors {
+        val container = overlayContainerColor()
+        val colors = AssistChipDefaults.assistChipColors(containerColor = container, disabledContainerColor = container)
+        return if (tint == null) {
+            colors
+        } else {
+            colors.copy(labelColor = tint, leadingIconContentColor = tint, trailingIconContentColor = tint)
+        }
+    }
+
+    /**
+     * Colours for an [AdaptiveAssistChip] on the composer's settings line, which reads as "on" like a
+     * selected filter chip beside it: Material's `secondaryContainer` fill (draw it without a border),
+     * glass's secondary fill. [tint] (null = none) colours its label and icons in both styles.
+     */
+    @Composable
+    fun overlayTonalChipColors(tint: Color? = null): ChipColors {
+        if (isLiquidGlass) return overlayAssistChipColors(tint)
+        val scheme = MaterialTheme.colorScheme
+        val content = tint ?: scheme.onSecondaryContainer
+        return AssistChipDefaults.assistChipColors(
+            containerColor = scheme.secondaryContainer,
+            labelColor = content,
+            leadingIconContentColor = content,
+            trailingIconContentColor = content,
+            disabledContainerColor = scheme.secondaryContainer,
+            disabledLabelColor = content,
+            disabledLeadingIconContentColor = content,
+            disabledTrailingIconContentColor = content,
+        )
+    }
+
+    /**
+     * Colours for an [AdaptiveFilterChip] drawn over scrolling content (the composer's settings line).
+     * Material fills the unselected chip with `surfaceContainerHigh` and keeps M3's outline, so an off
+     * chip reads as off without showing the content through it; glass keeps its own resting and
+     * selected fills.
+     */
+    @Composable
+    fun overlayFilterChipColors(): SelectableChipColors =
+        if (isLiquidGlass) {
+            FilterChipDefaults.filterChipColors()
+        } else {
+            val container = MaterialTheme.colorScheme.surfaceContainerHigh
+            FilterChipDefaults.filterChipColors(containerColor = container, disabledContainerColor = container)
+        }
+
+    /** The opaque fill a control over scrolling content sits on: glass's secondary fill, else `surfaceContainerHigh`. */
+    @Composable
+    fun overlayContainerColor(): Color =
+        if (isLiquidGlass) GlassControlColors.fill else MaterialTheme.colorScheme.surfaceContainerHigh
+}

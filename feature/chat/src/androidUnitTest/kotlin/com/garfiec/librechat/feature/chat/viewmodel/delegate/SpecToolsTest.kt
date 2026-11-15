@@ -6,7 +6,6 @@ import com.garfiec.librechat.core.data.datastore.LastUsedSelection
 import com.garfiec.librechat.core.data.datastore.SettingsDataStore
 import com.garfiec.librechat.core.data.repository.AgentRepository
 import com.garfiec.librechat.core.data.repository.ConfigRepository
-import com.garfiec.librechat.core.data.repository.McpRepository
 import com.garfiec.librechat.core.data.util.PermissionGate
 import com.garfiec.librechat.core.model.EndpointConfig
 import com.garfiec.librechat.core.model.Preset
@@ -96,7 +95,6 @@ class SpecToolsTest {
         handle = ModelSelectionHandle(handle),
         configRepository = configRepository,
         agentRepository = agentRepository,
-        mcpRepository = mockk<McpRepository>(relaxed = true),
         settingsDataStore = settingsDataStore,
         permissionGate = mockk<PermissionGate>(relaxed = true),
         connectivityObserver = connectivityObserver,
@@ -227,7 +225,8 @@ class SpecToolsTest {
         val (handle, delegate) = onSpec(search)
         delegate.toggleTool(ToolConstants.FILE_SEARCH)
 
-        startupConfig.value = config(plain)
+        // Moved to another endpoint: the server would refuse the name on this one.
+        startupConfig.value = config(search.copy(preset = Preset(endpoint = "azureOpenAI", model = "gpt-4.1")), plain)
         advanceUntilIdle()
 
         assertThat(handle.state.selectedSpec).isNull()

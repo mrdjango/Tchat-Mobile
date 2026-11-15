@@ -10,8 +10,10 @@ import com.garfiec.librechat.core.model.usage.ContextUsage
 import com.garfiec.librechat.core.model.usage.ContextUsageTotals
 import com.garfiec.librechat.core.model.usage.UsageAmount
 import com.garfiec.librechat.feature.chat.util.AskAnswerDraft
+import com.garfiec.librechat.feature.chat.util.AttachedRun
 import com.garfiec.librechat.feature.chat.util.MessageNode
 import com.garfiec.librechat.feature.chat.util.PendingUsage
+import com.garfiec.librechat.feature.chat.util.PtcTrace
 import com.garfiec.librechat.feature.chat.util.ToolDecisionDraft
 
 enum class ChatScreenState { LANDING, LOADING, ACTIVE }
@@ -32,13 +34,20 @@ data class MessagesState(
     val messages: List<Message> = emptyList(),
     val displayMessages: List<MessageNode> = emptyList(),
     /**
-     * A just-sent optimistic user message handed off from the NewChat landing VM, kept on screen
-     * until the server persists its own copy. `loadConversation` drops it once the server's copy
-     * arrives, matched by id or by content ([isServerCopyOf] — rc3+ re-mints the id). Null in every
-     * other case. See [NewChatSelectionHandoff].
+     * A user message the server has not saved yet, kept on screen until it persists its own copy:
+     * the optimistic one handed off from the NewChat landing VM ([NewChatSelectionHandoff]), or the
+     * request of an attached run this screen never sent (`attachedTo`). `loadConversation` drops it
+     * once the server's copy arrives, matched by id or by content ([isServerCopyOf] — rc3+ re-mints
+     * the id). Null in every other case.
      */
     val pendingResumeUserMessage: Message? = null,
     val activeBranches: Map<String, Int> = emptyMap(),
+    /**
+     * Pins a finalized turn made stale (its new sibling's parent keys), dropped from [activeBranches]
+     * by the Room reconcile once its read holds [PendingUnpin.messageId]. Dropping them at Final
+     * instead would rebuild the path from the pre-turn Room rows and hide the finished reply.
+     */
+    val unpinWhenCached: PendingUnpin? = null,
     /**
      * The response message that just took over from the streaming bubble, or null.
      *
@@ -59,7 +68,22 @@ data class MessagesState(
      * The one consumer is [ActivityGroup]'s auto-collapse suppression.
      */
     val justSettledMessageId: String? = null,
+    /**
+     * The reply a resumed stream is writing (the sync frame's `responseMessageId`), or null. The
+     * server's saved `unfinished` copy of it (see `StreamEvent.Sync.responseMessageId`) is left out
+     * of [displayMessages] while the stream is live (`withoutLivePartial`): the streaming bubble
+     * already shows that text. Set by the sync frame, cleared when the next stream session starts.
+     */
+    val resumedReplyId: String? = null,
     val isStreaming: Boolean = false,
+    /**
+     * The run this screen attached to rather than started, while it streams. The server saves that
+     * run's reply as an `unfinished` partial whenever its last subscriber leaves, so a reopened chat
+     * reads the partial into the tree beside the live bubble. While [isStreaming], every rebuild cuts
+     * the path at the message the run answers (`AttachedRun.anchorIn`), so the reply shows once.
+     * Cleared when this screen starts a turn of its own.
+     */
+    val attachedRun: AttachedRun? = null,
     /**
      * A manual compaction this client submitted is still running (v0.8.8-rc3). Distinct from
      * [isStreaming], which a compaction also sets: the compact action needs to label ITSELF as
@@ -83,6 +107,14 @@ data class MessagesState(
      * list, and ids are unique across both. Cleared with it everywhere.
      */
     val sandboxStartingToolCallIds: Set<String> = emptySet(),
+    /**
+     * Live traces of the tool calls programmatic tool-calling programs make from inside the
+     * sandbox (`on_ptc_tool_call`), keyed by the code card's tool_call id. Never saved on the
+     * message, so unlike [activeToolCalls] they outlive the stream: the saved card reads them too,
+     * until the next turn starts (which is also what keeps a provider's reused `call_0` from
+     * showing an earlier program's rows under a later card).
+     */
+    val ptcTraces: Map<String, PtcTrace> = emptyMap(),
     /** Attachments received during SSE streaming (e.g., tool-generated images). Cleared when
      *  streaming ends. */
     val streamingAttachments: List<Attachment> = emptyList(),
@@ -124,6 +156,12 @@ data class MessagesState(
     /** The breakdown's branch-wide figures, derived by `ContextProjectionDelegate`. */
     val contextUsageTotals: ContextUsageTotals = ContextUsageTotals(),
     /**
+     * The author's original text of redacted user turns, by message id (v0.8.9-rc1), read by
+     * `OwnerTextDelegate`. Memory only, for display only: never written to Room, the search
+     * index, drafts, exports or share links, and never used by copy, edit, retry or read aloud.
+     */
+    val ownerTexts: Map<String, OwnerTextState> = emptyMap(),
+    /**
      * The live human-review pause blocking this run, or null when nothing is awaiting the user
      * (v0.8.8 HITL). Set from `on_pending_action`, from `resumeState.pendingAction` on a
      * reconnect, and from `/chat/status` on a cold open; cleared when the user's decision is
@@ -134,6 +172,13 @@ data class MessagesState(
      * field, not off `isStreaming`, to tell "waiting on the model" from "waiting on you".
      */
     val pendingAction: PendingAction? = null,
+    /**
+     * Whether this chat knows if the server has a run going for it. False from opening a
+     * conversation until `/chat/status` answers, since [pendingAction] and [isStreaming] only arrive
+     * with that answer: a reply paused for approval is saved `unfinished`, and would otherwise read
+     * as cut short meanwhile. Stays false when the check fails (offline). New chats start settled.
+     */
+    val runStatusSettled: Boolean = true,
     /** A decision for [pendingAction] is in flight; the resolve controls are disabled meanwhile. */
     val isResolvingPendingAction: Boolean = false,
     /**
@@ -174,6 +219,12 @@ data class MessagesState(
 )
 
 @Immutable
+data class PendingUnpin(
+    val messageId: String,
+    val keys: Set<String>,
+)
+
+@Immutable
 data class RetryInfo(
     val attempt: Int,
     val maxAttempts: Int,
@@ -202,4 +253,38 @@ data class ActiveToolCall(
     val durationMs: Long? = null,
     /** The server rejected the call's arguments against the tool's schema, so it never ran. */
     val inputValidationError: Boolean = false,
-)
+    /** `attached_workspace` when the completion says the call ran on the user's machine. */
+    val executor: String? = null,
+    /**
+     * The run is waiting on an MCP sign-in (`on_run_step_delta` with `delta.auth`): the provider's
+     * authorization URL. The card offers Sign in while the call is not complete.
+     */
+    val authUrl: String? = null,
+    /** The MCP server [authUrl] signs in to; null when neither the URL nor the call names one. */
+    val authServerName: String? = null,
+    /** The agent action [authUrl] signs in to, when the prompt is an action's rather than an MCP server's. */
+    val authActionId: String? = null,
+    /** Server epoch ms the prompt expires at. Display only; never compared to the device clock. */
+    val authExpiresAt: Long? = null,
+    /**
+     * Set when this is a `subagent` call surfacing a sign-in one of its child's calls is held on
+     * (that call lives in the trace, not in the active list): the child call's id. Its completion
+     * clears the prompt, since this parent call stays running for the rest of the subagent's run.
+     */
+    val authToolCallId: String? = null,
+    /** The model has started writing this call's arguments (`on_tool_preparation`, v0.8.9-rc1). */
+    val preparationStarted: Boolean = false,
+    /** The SDK handed the call to execution (`on_tool_calls_dispatched`). */
+    val dispatched: Boolean = false,
+) {
+    /**
+     * Upstream `isToolCallPreparing`: arguments are still being written. Dispatch, a result or a
+     * terminal status outranks a preparation marker, whichever order they arrived in.
+     *
+     * Upstream also counts incomplete arguments as preparing, for servers that emit no marker.
+     * This client does not track argument deltas (the start carries the empty announcement and only
+     * the completion has the whole call), so that rule would read every running call as preparing.
+     */
+    val isPreparing: Boolean
+        get() = preparationStarted && !dispatched && !isComplete && closedStatus == null && output.isNullOrEmpty()
+}

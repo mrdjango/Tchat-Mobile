@@ -1,19 +1,16 @@
 package com.garfiec.librechat.feature.chat.components
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import com.garfiec.librechat.core.data.datastore.ContextBarPlacement
+import androidx.compose.ui.platform.LocalContext
 import com.garfiec.librechat.core.data.datastore.DuringRunAction
 import com.garfiec.librechat.feature.chat.model.ComposerPickerItem
-import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
 import com.garfiec.librechat.feature.chat.model.PickerSkill
 import com.garfiec.librechat.feature.chat.model.PromptMentionDisplayData
 import com.garfiec.librechat.feature.chat.tchat.ComposerTrayExtras
 import com.garfiec.librechat.feature.chat.viewmodel.ChatInputGates
-import com.garfiec.librechat.feature.chat.viewmodel.ContextGaugeDetails
 import com.garfiec.librechat.feature.chat.viewmodel.DuringRunSendTarget
-import com.garfiec.librechat.feature.chat.viewmodel.PendingSteerChip
-import com.garfiec.librechat.feature.chat.viewmodel.QueuedMessage
 import kotlinx.coroutines.CoroutineScope
 
 @Suppress("LongParameterList", "LambdaParameterEventTrailing", "UnusedParameter")
@@ -29,18 +26,13 @@ internal actual fun ChatComposer(
     onQueue: () -> Unit,
     canQueue: Boolean,
     onSteer: () -> Unit,
+    onInterrupt: () -> Unit,
     canSteer: Boolean,
+    builtInSearchOn: Boolean,
     duringRunAction: DuringRunAction,
     duringRunSendTarget: DuringRunSendTarget,
-    pendingSteers: List<PendingSteerChip>,
-    pendingQuotes: List<String>,
-    onRemoveQuote: (index: Int) -> Unit,
-    pendingManualSkills: List<String>,
-    onRemoveManualSkill: (name: String) -> Unit,
-    onCancelSteer: (steerId: String) -> Unit,
+    chrome: ComposerChrome,
     onSetDuringRunAction: (DuringRunAction) -> Unit,
-    attachedFiles: List<AttachedFile>,
-    onRemoveFile: (AttachedFile) -> Unit,
     onPasteFiles: (List<Any>) -> Unit,
     pasteScope: CoroutineScope,
     promptSuggestions: List<PromptMentionDisplayData>,
@@ -54,20 +46,9 @@ internal actual fun ChatComposer(
     isTranscribing: Boolean,
     onStartRecording: () -> Unit,
     onStopRecording: () -> Unit,
-    enabledTools: Set<String>,
-    pinnedToolKeys: List<String>,
-    onToggleTool: (String) -> Unit,
-    mcpServers: List<McpServerDisplayData>,
-    selectedMcpServerNames: Set<String>,
     selectedModelDisplay: String?,
     isCodeInterpreterAvailable: Boolean,
     gates: ChatInputGates,
-    contextGauge: ContextGaugeDetails?,
-    contextUsageEnabled: Boolean,
-    onCompact: (() -> Unit)?,
-    onSnoozeCompact: () -> Unit,
-    compactSuggested: Boolean,
-    contextBarPlacement: ContextBarPlacement,
     queuedPausedCount: Int,
     queueHeldForRefusal: Boolean,
     isTemporaryChat: Boolean,
@@ -80,80 +61,64 @@ internal actual fun ChatComposer(
     comparison: ComposerComparison?,
     comparisonHint: ComposerComparisonHint,
     onCancelPendingSend: () -> Unit,
-    queuedMessages: List<QueuedMessage>,
-    onEditQueuedMessage: (localId: String) -> Unit,
-    onCancelQueuedMessage: (localId: String) -> Unit,
-    onReorderQueuedMessages: (fromIndex: Int, toIndex: Int) -> Unit,
     fontSizeMultiplier: Float,
     toolTray: ComposerTrayExtras?,
     modifier: Modifier,
 ) {
-    ChatInput(
-        inputText = inputText,
-        isStreaming = isStreaming,
-        onInputChange = onInputChange,
-        onSend = onSend,
-        onStop = onStop,
-        onOpenTools = onOpenTools,
-        onDuringRunSend = onDuringRunSend,
-        onQueue = onQueue,
-        canQueue = canQueue,
-        onSteer = onSteer,
-        canSteer = canSteer,
-        duringRunAction = duringRunAction,
-        duringRunSendTarget = duringRunSendTarget,
-        pendingSteers = pendingSteers,
-        pendingQuotes = pendingQuotes,
-        onRemoveQuote = onRemoveQuote,
-        pendingManualSkills = pendingManualSkills,
-        onRemoveManualSkill = onRemoveManualSkill,
-        onCancelSteer = onCancelSteer,
-        onSetDuringRunAction = onSetDuringRunAction,
-        attachedFiles = attachedFiles,
-        onRemoveFile = onRemoveFile,
-        promptSuggestions = promptSuggestions,
-        skillSuggestions = skillSuggestions,
-        isLoadingSkills = isLoadingSkills,
-        skillsLoadFailed = skillsLoadFailed,
-        canPickSkills = canPickSkills,
-        onRetrySkills = onRetrySkills,
-        onPickerSelect = onPickerSelect,
-        isRecording = isRecording,
-        isTranscribing = isTranscribing,
-        onStartRecording = onStartRecording,
-        onStopRecording = onStopRecording,
-        enabledTools = enabledTools,
-        pinnedToolKeys = pinnedToolKeys,
-        onToggleTool = onToggleTool,
-        toolTray = toolTray, // TCHAT
-        mcpServers = mcpServers,
-        selectedMcpServerNames = selectedMcpServerNames,
-        selectedModelDisplay = selectedModelDisplay,
-        isCodeInterpreterAvailable = isCodeInterpreterAvailable,
-        gates = gates,
-        contextGauge = contextGauge,
-        contextUsageEnabled = contextUsageEnabled,
-        onCompact = onCompact,
-        onSnoozeCompact = onSnoozeCompact,
-        compactSuggested = compactSuggested,
-        contextBarPlacement = contextBarPlacement,
-        queuedPausedCount = queuedPausedCount,
-        queueHeldForRefusal = queueHeldForRefusal,
-        isTemporaryChat = isTemporaryChat,
-        onSendQueuedMessages = onSendQueuedMessages,
-        isEditingQueued = isEditingQueued,
-        onCommitEdit = onCommitEdit,
-        onCancelEdit = onCancelEdit,
-        isAwaitingUploadSend = isAwaitingUploadSend,
-        arePicksUnsettled = arePicksUnsettled,
-        comparison = comparison,
-        comparisonHint = comparisonHint,
-        onCancelPendingSend = onCancelPendingSend,
-        queuedMessages = queuedMessages,
-        onEditQueuedMessage = onEditQueuedMessage,
-        onCancelQueuedMessage = onCancelQueuedMessage,
-        onReorderQueuedMessages = onReorderQueuedMessages,
-        fontSizeMultiplier = fontSizeMultiplier,
-        modifier = modifier,
-    )
+    val context = LocalContext.current
+    // On the whole composer, so an image dropped anywhere on it attaches; the field pastes into it.
+    val receiver = remember(gates.fileUploadEnabled, context, pasteScope, onPasteFiles) {
+        if (gates.fileUploadEnabled) Modifier.imageContentReceiver(context, pasteScope, onPasteFiles) else Modifier
+    }
+    OfferImageTypesToKeyboard {
+        ChatInput(
+            inputText = inputText,
+            isStreaming = isStreaming,
+            onInputChange = onInputChange,
+            onSend = onSend,
+            onStop = onStop,
+            onOpenTools = onOpenTools,
+            onDuringRunSend = onDuringRunSend,
+            onQueue = onQueue,
+            canQueue = canQueue,
+            onSteer = onSteer,
+            onInterrupt = onInterrupt,
+            canSteer = canSteer,
+            builtInSearchOn = builtInSearchOn,
+            duringRunAction = duringRunAction,
+            duringRunSendTarget = duringRunSendTarget,
+            chrome = chrome,
+            onSetDuringRunAction = onSetDuringRunAction,
+            promptSuggestions = promptSuggestions,
+            skillSuggestions = skillSuggestions,
+            isLoadingSkills = isLoadingSkills,
+            skillsLoadFailed = skillsLoadFailed,
+            canPickSkills = canPickSkills,
+            onRetrySkills = onRetrySkills,
+            onPickerSelect = onPickerSelect,
+            isRecording = isRecording,
+            isTranscribing = isTranscribing,
+            onStartRecording = onStartRecording,
+            onStopRecording = onStopRecording,
+            selectedModelDisplay = selectedModelDisplay,
+            isCodeInterpreterAvailable = isCodeInterpreterAvailable,
+            gates = gates,
+            queuedPausedCount = queuedPausedCount,
+            queueHeldForRefusal = queueHeldForRefusal,
+            isTemporaryChat = isTemporaryChat,
+            onSendQueuedMessages = onSendQueuedMessages,
+            isEditingQueued = isEditingQueued,
+            onCommitEdit = onCommitEdit,
+            onCancelEdit = onCancelEdit,
+            isAwaitingUploadSend = isAwaitingUploadSend,
+            arePicksUnsettled = arePicksUnsettled,
+            comparison = comparison,
+            comparisonHint = comparisonHint,
+            onCancelPendingSend = onCancelPendingSend,
+            fontSizeMultiplier = fontSizeMultiplier,
+            toolTray = toolTray, // TCHAT
+            canFold = true,
+            modifier = modifier.then(receiver),
+        )
+    }
 }

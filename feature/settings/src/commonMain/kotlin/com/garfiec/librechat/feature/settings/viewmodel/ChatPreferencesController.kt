@@ -2,11 +2,6 @@ package com.garfiec.librechat.feature.settings.viewmodel
 
 import com.garfiec.librechat.core.data.datastore.AppPreferences
 import com.garfiec.librechat.core.data.datastore.ArtifactDisplayMode
-import com.garfiec.librechat.core.data.datastore.ArtifactDisplayPrefs
-import com.garfiec.librechat.core.data.datastore.ChatFontSize
-import com.garfiec.librechat.core.data.datastore.ChatHeaderAlignment
-import com.garfiec.librechat.core.data.datastore.ChatHeaderContent
-import com.garfiec.librechat.core.data.datastore.ContextBarPlacement
 import com.garfiec.librechat.core.data.datastore.DuringRunAction
 import com.garfiec.librechat.core.data.datastore.InlineArtifactPrefs
 import com.garfiec.librechat.core.data.datastore.LatexRenderer
@@ -15,19 +10,14 @@ import com.garfiec.librechat.core.data.datastore.SettingsDataStore
 import com.garfiec.librechat.core.data.datastore.StarredModelsDisplay
 import com.garfiec.librechat.core.data.datastore.UploadRoutingMode
 import com.garfiec.librechat.core.data.datastore.WebSearchPreference
+import com.garfiec.librechat.core.model.ArtifactsMode
+import com.garfiec.librechat.core.model.speech.voiceFor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-
-/** Intermediate holder for the combined DataStore preferences. */
-private data class DataStorePreferences(
-    val chatFontSize: ChatFontSize,
-    val autoScrollEnabled: Boolean,
-    val thinkingOpenByDefault: Boolean,
-)
 
 /** Extra DataStore preferences (separate combine since Kotlin combine maxes at 5). */
 private data class ExtraPreferences(
@@ -38,13 +28,11 @@ private data class ExtraPreferences(
     val ttsSource: String,
 )
 
-/** Device TTS preferences (speech rate, pitch, voice name, engine, voice selection). */
+/** Device TTS preferences (speech rate, pitch, voice name). */
 private data class DeviceTtsPreferences(
     val speechRate: Float,
     val pitch: Float,
     val voiceName: String,
-    val ttsEngine: String,
-    val ttsVoice: String,
 )
 
 /** Additional preferences combined separately to stay within the 5-arg combine limit. */
@@ -52,21 +40,20 @@ private data class AdditionalPreferences(
     val autoSendAfterStt: Boolean,
     val sttEngine: String,
     val sttLanguage: String,
-    val ttsCaching: Boolean,
     val sttOnDevice: Boolean = true,
     val sttEndOfSpeech: Boolean = false,
     val latexRenderer: LatexRenderer = LatexRenderer.KATEX,
     val inlineArtifactPrefs: InlineArtifactPrefs = InlineArtifactPrefs(),
-    val artifactDisplayPrefs: ArtifactDisplayPrefs = ArtifactDisplayPrefs(),
+    val artifactDisplayMode: ArtifactDisplayMode = ArtifactDisplayMode.AUTOMATIC,
+    val artifactsMode: ArtifactsMode = ArtifactsMode.DEFAULT,
     val starredModelsDisplay: StarredModelsDisplay = StarredModelsDisplay.GROUPED,
-    val chatHeaderContent: ChatHeaderContent = ChatHeaderContent.DEFAULT, // TCHAT: was TITLE
-    val chatHeaderAlignment: ChatHeaderAlignment = ChatHeaderAlignment.LEFT,
-    val contextBarPlacement: ContextBarPlacement = ContextBarPlacement.OPTIONS_SHEET,
     val duringRunAction: DuringRunAction = DuringRunAction.STEER,
     val uploadRoutingMode: UploadRoutingMode = UploadRoutingMode.AUTO,
     val showSiteIcons: Boolean = false,
     val preferLastUsedModel: Boolean = false,
     val webSearchFirst: WebSearchPreference = WebSearchPreference.LIBRECHAT_FIRST,
+    val collapseLongUserMessages: Boolean = true,
+    val clientImageResize: Boolean = true,
 )
 
 /**
@@ -76,29 +63,15 @@ private data class AdditionalPreferences(
  * the matching write setters. The ViewModel keeps only imperative state and
  * forwards preference reads/writes here.
  */
-@Suppress("TooManyFunctions") // debt: 19 functions
+@Suppress("TooManyFunctions") // debt: 30 functions, one setter per setting
 class ChatPreferencesController(
     private val settingsDataStore: SettingsDataStore,
     private val preferenceStore: PreferenceStore,
     baseState: StateFlow<ChatSettingsUiState>,
     private val scope: CoroutineScope,
 ) {
-    /** Combined DataStore preferences flow. */
-    private val dataStorePreferences: StateFlow<DataStorePreferences> = combine(
-        settingsDataStore.chatFontSize,
-        settingsDataStore.autoScrollEnabled,
-        settingsDataStore.thinkingOpenByDefault,
-    ) { fontSize, autoScroll, thinkingOpen ->
-        DataStorePreferences(
-            chatFontSize = fontSize,
-            autoScrollEnabled = autoScroll,
-            thinkingOpenByDefault = thinkingOpen,
-        )
-    }.stateIn(scope, SharingStarted.Eagerly, DataStorePreferences(
-        chatFontSize = ChatFontSize.MEDIUM,
-        autoScrollEnabled = true,
-        thinkingOpenByDefault = false,
-    ))
+    private val thinkingOpenPref: StateFlow<Boolean> = settingsDataStore.thinkingOpenByDefault
+        .stateIn(scope, SharingStarted.Eagerly, false)
 
     private val extraPreferences: StateFlow<ExtraPreferences> = combine(
         settingsDataStore.autoReadEnabled,
@@ -108,21 +81,19 @@ class ChatPreferencesController(
         settingsDataStore.ttsSource,
     ) { autoRead, voiceId, showImgDesc, dismissKeyboard, ttsSource ->
         ExtraPreferences(autoRead, voiceId, showImgDesc, dismissKeyboard, ttsSource)
-    }.stateIn(scope, SharingStarted.Eagerly, ExtraPreferences(false, null, false, false, "device"))
+    }.stateIn(
+        scope,
+        SharingStarted.Eagerly,
+        ExtraPreferences(false, null, false, true, SettingsDataStore.TTS_SOURCE_DEVICE),
+    )
 
     private val deviceTtsPreferences: StateFlow<DeviceTtsPreferences> = combine(
         settingsDataStore.ttsSpeechRate,
         settingsDataStore.ttsPitch,
         settingsDataStore.ttsVoiceName,
-        settingsDataStore.ttsEngine,
-        settingsDataStore.ttsVoice,
-    ) { rate, pitch, voiceName, ttsEngine, ttsVoice ->
-        DeviceTtsPreferences(rate, pitch, voiceName, ttsEngine, ttsVoice)
-    }.stateIn(scope, SharingStarted.Eagerly, DeviceTtsPreferences(1.0f, 1.0f, "", "", ""))
-
-    /** TTS caching preference. Kept as a separate flow to stay within the 5-arg combine limit. */
-    private val ttsCachingPreference: StateFlow<Boolean> = settingsDataStore.ttsCaching
-        .stateIn(scope, SharingStarted.Eagerly, true)
+    ) { rate, pitch, voiceName ->
+        DeviceTtsPreferences(rate, pitch, voiceName)
+    }.stateIn(scope, SharingStarted.Eagerly, DeviceTtsPreferences(1.0f, 1.0f, ""))
 
     private val latexRendererPref: StateFlow<LatexRenderer> = settingsDataStore.latexRenderer
         .stateIn(scope, SharingStarted.Eagerly, LatexRenderer.KATEX)
@@ -130,20 +101,14 @@ class ChatPreferencesController(
     private val inlineArtifactPrefsFlow: StateFlow<InlineArtifactPrefs> = settingsDataStore.inlineArtifactPrefs
         .stateIn(scope, SharingStarted.Eagerly, InlineArtifactPrefs())
 
-    private val artifactDisplayPrefsFlow: StateFlow<ArtifactDisplayPrefs> = settingsDataStore.artifactDisplayPrefs
-        .stateIn(scope, SharingStarted.Eagerly, ArtifactDisplayPrefs())
+    private val artifactDisplayModePref: StateFlow<ArtifactDisplayMode> = preferenceStore.observe(AppPreferences.ArtifactDisplay)
+        .stateIn(scope, SharingStarted.Eagerly, preferenceStore.initial(AppPreferences.ArtifactDisplay))
+
+    private val artifactsModePref: StateFlow<ArtifactsMode> = settingsDataStore.artifactsMode
+        .stateIn(scope, SharingStarted.Eagerly, ArtifactsMode.DEFAULT)
 
     private val starredModelsDisplayPref: StateFlow<StarredModelsDisplay> = settingsDataStore.starredModelsDisplay
         .stateIn(scope, SharingStarted.Eagerly, StarredModelsDisplay.GROUPED)
-
-    private val chatHeaderContentPref: StateFlow<ChatHeaderContent> = settingsDataStore.chatHeaderContent
-        .stateIn(scope, SharingStarted.Eagerly, ChatHeaderContent.TITLE)
-
-    private val chatHeaderAlignmentPref: StateFlow<ChatHeaderAlignment> = settingsDataStore.chatHeaderAlignment
-        .stateIn(scope, SharingStarted.Eagerly, ChatHeaderAlignment.LEFT)
-
-    private val contextBarPlacementPref: StateFlow<ContextBarPlacement> = settingsDataStore.contextBarPlacement
-        .stateIn(scope, SharingStarted.Eagerly, ContextBarPlacement.OPTIONS_SHEET)
 
     private val duringRunActionPref: StateFlow<DuringRunAction> = settingsDataStore.duringRunAction
         .stateIn(scope, SharingStarted.Eagerly, DuringRunAction.STEER)
@@ -155,9 +120,8 @@ class ChatPreferencesController(
         settingsDataStore.autoSendAfterStt,
         settingsDataStore.sttEngine,
         settingsDataStore.sttLanguage,
-        ttsCachingPreference,
-    ) { autoSendStt, sttEngine, sttLanguage, ttsCaching ->
-        AdditionalPreferences(autoSendStt, sttEngine, sttLanguage, ttsCaching)
+    ) { autoSendStt, sttEngine, sttLanguage ->
+        AdditionalPreferences(autoSendStt, sttEngine, sttLanguage)
     }
 
     private val additionalPreferences: StateFlow<AdditionalPreferences> = baseAdditionalPreferences.combine(
@@ -166,16 +130,12 @@ class ChatPreferencesController(
         base.copy(latexRenderer = latexRenderer)
     }.combine(inlineArtifactPrefsFlow) { additional, inlineArtifact ->
         additional.copy(inlineArtifactPrefs = inlineArtifact)
-    }.combine(artifactDisplayPrefsFlow) { additional, artifactDisplay ->
-        additional.copy(artifactDisplayPrefs = artifactDisplay)
+    }.combine(artifactDisplayModePref) { additional, artifactDisplay ->
+        additional.copy(artifactDisplayMode = artifactDisplay)
+    }.combine(artifactsModePref) { additional, artifactsMode ->
+        additional.copy(artifactsMode = artifactsMode)
     }.combine(starredModelsDisplayPref) { additional, starredDisplay ->
         additional.copy(starredModelsDisplay = starredDisplay)
-    }.combine(chatHeaderContentPref) { additional, headerContent ->
-        additional.copy(chatHeaderContent = headerContent)
-    }.combine(chatHeaderAlignmentPref) { additional, headerAlignment ->
-        additional.copy(chatHeaderAlignment = headerAlignment)
-    }.combine(contextBarPlacementPref) { additional, contextBarPlacement ->
-        additional.copy(contextBarPlacement = contextBarPlacement)
     }.combine(duringRunActionPref) { additional, duringRunAction ->
         additional.copy(duringRunAction = duringRunAction)
     }.combine(uploadRoutingModePref) { additional, uploadRoutingMode ->
@@ -191,37 +151,35 @@ class ChatPreferencesController(
         additional.copy(preferLastUsedModel = preferLastUsed)
     }.combine(preferenceStore.observe(AppPreferences.WebSearchFirst)) { additional, webSearchFirst ->
         additional.copy(webSearchFirst = webSearchFirst)
+    }.combine(preferenceStore.observe(AppPreferences.CollapseLongUserMessages)) { additional, collapse ->
+        additional.copy(collapseLongUserMessages = collapse)
+    }.combine(preferenceStore.observe(AppPreferences.ClientImageResize)) { additional, resize ->
+        additional.copy(clientImageResize = resize)
     }.stateIn(
         scope,
         SharingStarted.Eagerly,
         // Seeded with the channel default so a store build's toggle doesn't flash off on open.
-        AdditionalPreferences(false, "", "", true, showSiteIcons = preferenceStore.initial(AppPreferences.SiteIcons) ?: false),
+        AdditionalPreferences(false, "", "", showSiteIcons = preferenceStore.initial(AppPreferences.SiteIcons) ?: false),
     )
 
     /** The single public UI state that merges DataStore preferences with imperative state. */
     val uiState: StateFlow<ChatSettingsUiState> = combine(
         baseState,
-        dataStorePreferences,
+        thinkingOpenPref,
         extraPreferences,
         deviceTtsPreferences,
         additionalPreferences,
-    ) { state, prefs, extra, deviceTts, additional ->
-        val selectedVoice = extra.selectedVoiceId?.let { id -> state.availableVoices.find { it.id == id } }
+    ) { state, thinkingOpen, extra, deviceTts, additional ->
         state.copy(
-            chatFontSize = prefs.chatFontSize,
-            autoScrollEnabled = prefs.autoScrollEnabled,
-            thinkingOpenByDefault = prefs.thinkingOpenByDefault,
+            thinkingOpenByDefault = thinkingOpen,
             autoReadEnabled = extra.autoRead,
-            selectedVoice = selectedVoice,
+            selectedVoice = state.availableVoices.voiceFor(extra.selectedVoiceId),
             showImageDescriptions = extra.showImageDescriptions,
             dismissKeyboardOnSend = extra.dismissKeyboardOnSend,
             ttsSource = extra.ttsSource,
             ttsSpeechRate = deviceTts.speechRate,
             ttsPitch = deviceTts.pitch,
             ttsDeviceVoiceName = deviceTts.voiceName,
-            ttsEngine = deviceTts.ttsEngine,
-            ttsVoice = deviceTts.ttsVoice,
-            ttsCaching = additional.ttsCaching,
             sttAutoSend = additional.autoSendAfterStt,
             sttEngine = additional.sttEngine,
             sttLanguage = additional.sttLanguage,
@@ -229,47 +187,27 @@ class ChatPreferencesController(
             sttEndOfSpeech = additional.sttEndOfSpeech,
             latexRenderer = additional.latexRenderer,
             inlineArtifactPrefs = additional.inlineArtifactPrefs,
-            artifactDisplayPrefs = additional.artifactDisplayPrefs,
+            artifactDisplayMode = additional.artifactDisplayMode,
+            artifactsMode = additional.artifactsMode,
             starredModelsDisplay = additional.starredModelsDisplay,
-            chatHeaderContent = additional.chatHeaderContent,
-            chatHeaderAlignment = additional.chatHeaderAlignment,
-            contextBarPlacement = additional.contextBarPlacement,
             duringRunAction = additional.duringRunAction,
             uploadRoutingMode = additional.uploadRoutingMode,
             showSiteIcons = additional.showSiteIcons,
             preferLastUsedModel = additional.preferLastUsedModel,
             webSearchFirst = additional.webSearchFirst,
+            collapseLongUserMessages = additional.collapseLongUserMessages,
+            clientImageResizePreference = additional.clientImageResize,
         )
     }.stateIn(scope, SharingStarted.Eagerly, ChatSettingsUiState())
 
     // ── Write setters (fire-and-forget; return Unit, not the launched Job) ──
 
-    fun setChatFontSize(size: ChatFontSize) {
-        scope.launch { settingsDataStore.setChatFontSize(size) }
-    }
-
     fun setStarredModelsDisplay(display: StarredModelsDisplay) {
         scope.launch { settingsDataStore.setStarredModelsDisplay(display) }
     }
 
-    fun setChatHeaderContent(content: ChatHeaderContent) {
-        scope.launch { settingsDataStore.setChatHeaderContent(content) }
-    }
-
-    fun setChatHeaderAlignment(alignment: ChatHeaderAlignment) {
-        scope.launch { settingsDataStore.setChatHeaderAlignment(alignment) }
-    }
-
-    fun setAutoScrollEnabled(enabled: Boolean) {
-        scope.launch { settingsDataStore.setAutoScrollEnabled(enabled) }
-    }
-
     fun setThinkingOpenByDefault(open: Boolean) {
         scope.launch { settingsDataStore.setThinkingOpenByDefault(open) }
-    }
-
-    fun setContextBarPlacement(placement: ContextBarPlacement) {
-        scope.launch { settingsDataStore.setContextBarPlacement(placement) }
     }
 
     fun setDuringRunAction(action: DuringRunAction) {
@@ -286,6 +224,14 @@ class ChatPreferencesController(
 
     fun setShowSiteIcons(show: Boolean) {
         scope.launch { preferenceStore.set(AppPreferences.SiteIcons, show) }
+    }
+
+    fun setClientImageResize(resize: Boolean) {
+        scope.launch { preferenceStore.set(AppPreferences.ClientImageResize, resize) }
+    }
+
+    fun setCollapseLongUserMessages(collapse: Boolean) {
+        scope.launch { preferenceStore.set(AppPreferences.CollapseLongUserMessages, collapse) }
     }
 
     fun setPreferLastUsedModel(prefer: Boolean) {
@@ -325,6 +271,54 @@ class ChatPreferencesController(
     }
 
     fun setArtifactDisplayMode(mode: ArtifactDisplayMode) {
-        scope.launch { settingsDataStore.setArtifactDisplayMode(mode) }
+        scope.launch { preferenceStore.set(AppPreferences.ArtifactDisplay, mode) }
+    }
+
+    fun setArtifactsMode(mode: ArtifactsMode) {
+        scope.launch { settingsDataStore.setArtifactsMode(mode) }
+    }
+
+    fun setAutoSendAfterStt(enabled: Boolean) {
+        scope.launch { settingsDataStore.setAutoSendAfterStt(enabled) }
+    }
+
+    fun setSttEndOfSpeech(enabled: Boolean) {
+        scope.launch { settingsDataStore.setSttEndOfSpeech(enabled) }
+    }
+
+    fun setSttLanguage(language: String) {
+        scope.launch { settingsDataStore.setSttLanguage(language) }
+    }
+
+    fun setSttEngine(engine: String) {
+        scope.launch { settingsDataStore.setSttEngine(engine) }
+    }
+
+    fun setSttOnDevice(enabled: Boolean) {
+        scope.launch { settingsDataStore.setSttOnDevice(enabled) }
+    }
+
+    fun setAutoReadEnabled(enabled: Boolean) {
+        scope.launch { settingsDataStore.setAutoReadEnabled(enabled) }
+    }
+
+    fun setTtsSource(source: String) {
+        scope.launch { settingsDataStore.setTtsSource(source) }
+    }
+
+    fun setServerVoice(voiceId: String) {
+        scope.launch { settingsDataStore.setSelectedVoiceId(voiceId) }
+    }
+
+    fun setDeviceVoice(voiceName: String) {
+        scope.launch { settingsDataStore.setTtsVoiceName(voiceName) }
+    }
+
+    fun setTtsSpeechRate(rate: Float) {
+        scope.launch { settingsDataStore.setTtsSpeechRate(rate) }
+    }
+
+    fun setTtsPitch(pitch: Float) {
+        scope.launch { settingsDataStore.setTtsPitch(pitch) }
     }
 }

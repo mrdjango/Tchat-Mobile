@@ -19,7 +19,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -35,8 +34,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.garfiec.librechat.core.model.config.resolveLocalizedConfigText
 import com.garfiec.librechat.core.model.mcp.McpApiKeySource
@@ -44,6 +44,8 @@ import com.garfiec.librechat.core.model.mcp.McpAuthMode
 import com.garfiec.librechat.core.model.mcp.McpAuthorizationType
 import com.garfiec.librechat.core.model.mcp.McpServerType
 import com.garfiec.librechat.core.ui.components.AdaptiveCheckbox
+import com.garfiec.librechat.core.ui.components.AdaptiveExposedDropdownMenu
+import com.garfiec.librechat.core.ui.components.AdaptiveExposedDropdownMenuBox
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedTextField
 import com.garfiec.librechat.core.ui.components.AdaptiveScaffold
 import com.garfiec.librechat.core.ui.components.AdaptiveSectionHeader
@@ -51,8 +53,10 @@ import com.garfiec.librechat.core.ui.components.AdaptiveSegmentedChoice
 import com.garfiec.librechat.core.ui.components.DiscardChangesDialog
 import com.garfiec.librechat.core.ui.components.LoadingIndicator
 import com.garfiec.librechat.core.ui.components.PlatformBackHandler
+import com.garfiec.librechat.core.ui.components.SecretTextField
+import com.garfiec.librechat.core.ui.components.UrlKeyboardOptions
+import com.garfiec.librechat.core.ui.components.VerbatimKeyboardOptions
 import com.garfiec.librechat.core.ui.components.clearFocusOnTap
-import com.garfiec.librechat.core.ui.components.excludeFromAutofill
 import com.garfiec.librechat.core.ui.components.topbar.AdaptiveTopBar
 import com.garfiec.librechat.core.ui.components.topbar.AdaptiveTopBarSpec
 import com.garfiec.librechat.core.ui.components.topbar.BarAction
@@ -203,6 +207,7 @@ internal fun McpServerEditorForm(
             onValueChange = { value -> onChange { it.copy(url = value) } },
             label = { Text(stringResource(Res.string.mcp_url_label)) },
             singleLine = true,
+            keyboardOptions = UrlKeyboardOptions,
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -281,17 +286,20 @@ private fun ApiKeyFields(
                 label = { Text(stringResource(Res.string.mcp_header_name_label)) },
                 placeholder = { Text(stringResource(Res.string.mcp_header_name_placeholder)) },
                 singleLine = true,
+                keyboardOptions = VerbatimKeyboardOptions,
                 enabled = enabled,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
         if (draft.apiKeySource == McpApiKeySource.ADMIN) {
-            AdaptiveOutlinedTextField(
+            var revealed by remember { mutableStateOf(false) }
+            LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { revealed = false }
+            SecretTextField(
                 value = draft.apiKey,
                 onValueChange = { value -> onChange { it.copy(apiKey = value) } },
+                revealed = revealed,
+                onRevealedChange = { revealed = it },
                 label = { Text(stringResource(Res.string.mcp_api_key_label)) },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
                 isError = uiState.apiKeyReentryRequired,
                 supportingText = if (uiState.apiKeyReentryRequired) {
                     { Text(stringResource(Res.string.mcp_api_key_reentry_required)) }
@@ -299,7 +307,7 @@ private fun ApiKeyFields(
                     null
                 },
                 enabled = enabled,
-                modifier = Modifier.fillMaxWidth().bringIntoViewRequester(requester).excludeFromAutofill(),
+                modifier = Modifier.fillMaxWidth().bringIntoViewRequester(requester),
             )
         }
     }
@@ -319,15 +327,18 @@ private fun OAuthFields(
             onValueChange = { value -> onChange { it.copy(oauthClientId = value) } },
             label = { Text(stringResource(Res.string.mcp_oauth_client_id)) },
             singleLine = true,
+            keyboardOptions = VerbatimKeyboardOptions,
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         )
-        AdaptiveOutlinedTextField(
+        var secretRevealed by remember { mutableStateOf(false) }
+        LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { secretRevealed = false }
+        SecretTextField(
             value = draft.oauthClientSecret,
             onValueChange = { value -> onChange { it.copy(oauthClientSecret = value) } },
+            revealed = secretRevealed,
+            onRevealedChange = { secretRevealed = it },
             label = { Text(stringResource(Res.string.mcp_oauth_client_secret)) },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
             // Flag this field, not the form: the secret is masked, so nothing about it looks wrong.
             isError = uiState.oauthSecretReentryRequired,
             supportingText = if (uiState.oauthSecretReentryRequired) {
@@ -336,13 +347,14 @@ private fun OAuthFields(
                 null
             },
             enabled = enabled,
-            modifier = Modifier.fillMaxWidth().bringIntoViewRequester(requester).excludeFromAutofill(),
+            modifier = Modifier.fillMaxWidth().bringIntoViewRequester(requester),
         )
         AdaptiveOutlinedTextField(
             value = draft.oauthAuthUrl,
             onValueChange = { value -> onChange { it.copy(oauthAuthUrl = value) } },
             label = { Text(stringResource(Res.string.mcp_oauth_auth_url)) },
             singleLine = true,
+            keyboardOptions = UrlKeyboardOptions,
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -351,6 +363,7 @@ private fun OAuthFields(
             onValueChange = { value -> onChange { it.copy(oauthTokenUrl = value) } },
             label = { Text(stringResource(Res.string.mcp_oauth_token_url)) },
             singleLine = true,
+            keyboardOptions = UrlKeyboardOptions,
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -360,6 +373,7 @@ private fun OAuthFields(
             label = { Text(stringResource(Res.string.mcp_oauth_scope)) },
             placeholder = { Text(stringResource(Res.string.mcp_oauth_scope_placeholder)) },
             singleLine = true,
+            keyboardOptions = VerbatimKeyboardOptions,
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -433,7 +447,7 @@ private fun ApiKeyAuthTypeSelector(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(
+    AdaptiveExposedDropdownMenuBox(
         expanded = expanded,
         onExpandedChange = { expanded = it && enabled },
         modifier = modifier,
@@ -447,7 +461,7 @@ private fun ApiKeyAuthTypeSelector(
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
         )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        AdaptiveExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             McpAuthorizationType.entries.forEach { type ->
                 DropdownMenuItem(
                     text = { Text(authTypeLabel(type)) },

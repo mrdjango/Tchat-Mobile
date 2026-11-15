@@ -22,8 +22,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,22 +34,28 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.garfiec.librechat.core.brand.TchatBrand
 import com.garfiec.librechat.core.ui.components.AdaptiveAlertDialog
 import com.garfiec.librechat.core.ui.components.AdaptiveButton
-import com.garfiec.librechat.core.ui.components.AdaptiveCircularProgressIndicator
 import com.garfiec.librechat.core.ui.components.AdaptiveDivider
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedButton
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedTextField
 import com.garfiec.librechat.core.ui.components.IosTextContentType
+import com.garfiec.librechat.core.ui.components.SecretRevealButton
 import com.garfiec.librechat.core.ui.components.withIosTextContentType
 import com.garfiec.librechat.feature.auth.diagnostics.DiagnosticLogLink
 import com.garfiec.librechat.feature.auth.resources.*
 import com.garfiec.librechat.feature.auth.resources.Res
+import com.garfiec.librechat.feature.auth.viewmodel.AuthRefusal
+import com.garfiec.librechat.feature.auth.viewmodel.LoginInputError
 import com.garfiec.librechat.feature.auth.viewmodel.LoginViewModel
+import com.garfiec.librechat.feature.auth.viewmodel.MAX_PASSWORD_LENGTH
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -60,13 +66,27 @@ fun LoginScreen(
     modifier: Modifier = Modifier,
     onNavigateToForgotPassword: () -> Unit = {},
     onNavigateToTwoFactor: (String) -> Unit = {},
+    onNavigateToTwoFactorSetup: (String) -> Unit = {},
     onNavigateToSso: (String) -> Unit = {},
+    /** Opens the check-your-email screen, sending a fresh link to the given address. */
+    onNavigateToVerifyEmail: (String) -> Unit = {},
     onBack: (() -> Unit)? = null,
+    /** Opens the switcher on the other signed-in accounts; null hides it. */
+    onUseAnotherAccount: (() -> Unit)? = null,
     viewModel: LoginViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val currentOnLoginSuccess by rememberUpdatedState(onLoginSuccess)
     val currentOnNavigateToTwoFactor by rememberUpdatedState(onNavigateToTwoFactor)
+    val currentOnNavigateToTwoFactorSetup by rememberUpdatedState(onNavigateToTwoFactorSetup)
+
+    LaunchedEffect(uiState.twoFactorSetupTempToken) {
+        val tempToken = uiState.twoFactorSetupTempToken
+        if (tempToken != null) {
+            currentOnNavigateToTwoFactorSetup(tempToken)
+            viewModel.consumeTwoFactorSetupNavigation()
+        }
+    }
 
     val currentOnNavigateToSso by rememberUpdatedState(onNavigateToSso)
     LaunchedEffect(uiState.ssoProvider) {
@@ -92,24 +112,6 @@ fun LoginScreen(
         }
     }
 
-    // TCHAT: honour the server's OPENID_AUTO_REDIRECT — fires once per screen instance (the
-    // rememberSaveable latch, not just a LaunchedEffect key, because config fields don't change
-    // mid-visit but the user backing out of the SSO screen must land on a *usable* screen rather
-    // than being thrown straight back into it). Only when there is genuinely nothing else to do:
-    // email login is off, OIDC is on, and no error is already showing.
-    var autoRedirectFired by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(uiState.openidAutoRedirect, uiState.emailLoginEnabled, uiState.socialLogins, uiState.error) {
-        if (!autoRedirectFired &&
-            uiState.openidAutoRedirect &&
-            !uiState.emailLoginEnabled &&
-            TchatBrand.OIDC_PROVIDER in uiState.socialLogins &&
-            uiState.error == null
-        ) {
-            autoRedirectFired = true
-            viewModel.onSsoProviderSelected(TchatBrand.OIDC_PROVIDER)
-        }
-    }
-
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -120,141 +122,196 @@ fun LoginScreen(
                 .fillMaxSize()
                 // No scaffold here: the screen keeps itself clear of the system bars and the keyboard.
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .then(if (onBack != null) Modifier.padding(top = BackAffordanceClearance) else Modifier)
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+                .then(if (onBack != null) Modifier.padding(top = BackAffordanceClearance) else Modifier),
         ) {
-            Text(
-                text = stringResource(Res.string.login_title),
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.semantics { heading() },
-            )
-
-            if (uiState.trustedViaUserCa) {
-                Spacer(modifier = Modifier.height(16.dp))
+            AuthBanner(uiState.banner)
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
                 Text(
-                    text = stringResource(Res.string.user_ca_notice),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = uiState.appTitle?.let { stringResource(Res.string.login_title_server, it) }
+                        ?: stringResource(Res.string.login_title),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.testTag("login_user_ca_notice"),
-                )
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // The email/password form is hidden when the server disables email login
-            // (ALLOW_EMAIL_LOGIN=false, #14180) — it 403s the login POST, so offer only the
-            // social providers below. Fail-open: the flag defaults true until config resolves.
-            if (uiState.emailLoginEnabled) {
-                AdaptiveOutlinedTextField(
-                    value = uiState.email,
-                    onValueChange = viewModel::onEmailChanged,
-                    label = { Text(stringResource(Res.string.email_label)) },
-                    modifier = Modifier.fillMaxWidth().testTag("login_email")
-                        .semantics { contentType = ContentType.Username + ContentType.EmailAddress },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Email,
-                        autoCorrectEnabled = false,
-                    ).withIosTextContentType(IosTextContentType.Username),
-                    enabled = !uiState.isLoading,
+                    modifier = Modifier.semantics { heading() },
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                AdaptiveOutlinedTextField(
-                    value = uiState.password,
-                    onValueChange = viewModel::onPasswordChanged,
-                    label = { Text(stringResource(Res.string.password_label)) },
-                    modifier = Modifier.fillMaxWidth().testTag("login_password"),
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        autoCorrectEnabled = false,
-                    ),
-                    enabled = !uiState.isLoading,
-                )
-            }
-
-            if (uiState.error != null) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = uiState.error!!,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.testTag("login_error"),
-                )
-                if (uiState.offerDiagnosticLog) DiagnosticLogLink()
-            }
-
-            if (uiState.emailLoginEnabled) {
-                Spacer(modifier = Modifier.height(24.dp))
-
-                AdaptiveButton(
-                    onClick = viewModel::login,
-                    modifier = Modifier.fillMaxWidth().testTag("login_submit"),
-                    enabled = !uiState.isLoading,
-                ) {
-                    if (uiState.isLoading) {
-                        AdaptiveCircularProgressIndicator(
-                            modifier = Modifier.height(20.dp),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        Text(stringResource(Res.string.continue_button))
-                    }
+                uiState.serverLabel?.let { label ->
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.testTag("login_server_label"),
+                    )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                TextButton(onClick = onNavigateToForgotPassword) {
-                    Text(stringResource(Res.string.forgot_password))
+                if (uiState.trustedViaUserCa) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = stringResource(Res.string.user_ca_notice),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.testTag("login_user_ca_notice"),
+                    )
                 }
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (uiState.registrationEnabled) {
-                TextButton(onClick = onNavigateToRegister) {
-                    Text(stringResource(Res.string.no_account_sign_up))
+                uiState.twoFactorSetupAccounts?.let { accounts ->
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = stringResource(Res.string.login_two_factor_setup_required, accounts),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.testTag("login_two_factor_setup_notice"),
+                    )
                 }
-            }
 
-            val socialLogins = uiState.socialLogins
-            if (uiState.socialLoginEnabled && socialLogins.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(32.dp))
 
-                AdaptiveDivider(modifier = Modifier.fillMaxWidth())
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = stringResource(Res.string.or_continue_with),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                socialLogins.forEach { provider ->
-                    AdaptiveOutlinedButton(
-                        onClick = { viewModel.onSsoProviderSelected(provider) },
-                        modifier = Modifier.fillMaxWidth(),
+                // The email/password form is hidden when the server disables email login
+                // (ALLOW_EMAIL_LOGIN=false, #14180) — it 403s the login POST, so offer only the
+                // social providers below. Fail-open: the flag defaults true until config resolves.
+                if (uiState.emailLoginEnabled) {
+                    val usernameLogin = uiState.usernameLogin
+                    AdaptiveOutlinedTextField(
+                        value = uiState.email,
+                        onValueChange = viewModel::onEmailChanged,
+                        label = { Text(stringResource(if (usernameLogin) Res.string.username_label else Res.string.email_label)) },
+                        modifier = Modifier.fillMaxWidth().testTag("login_email")
+                            .semantics {
+                                contentType = if (usernameLogin) ContentType.Username else ContentType.Username + ContentType.EmailAddress
+                            },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = if (usernameLogin) KeyboardType.Text else KeyboardType.Email,
+                            autoCorrectEnabled = false,
+                        ).withIosTextContentType(IosTextContentType.Username),
                         enabled = !uiState.isLoading,
-                    ) {
-                        Text(oAuthProviderLabel(provider, uiState.openidLabel))
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Plain remember scoped to the field, so it always first composes masked: Compose keeps a text
+                    // field's first Password semantics, so one first composed revealed is never a password again.
+                    var passwordRevealed by remember { mutableStateOf(false) }
+                    // ON_PAUSE, not ON_STOP, so the app-switcher snapshot never shows it (see SecretTextField).
+                    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { passwordRevealed = false }
+                    AdaptiveOutlinedTextField(
+                        value = uiState.password,
+                        onValueChange = viewModel::onPasswordChanged,
+                        label = { Text(stringResource(Res.string.password_label)) },
+                        modifier = Modifier.fillMaxWidth().testTag("login_password"),
+                        singleLine = true,
+                        visualTransformation = if (passwordRevealed) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            SecretRevealButton(
+                                revealed = passwordRevealed,
+                                onRevealedChange = { passwordRevealed = it },
+                                modifier = Modifier.testTag("login_password_reveal"),
+                                enabled = !uiState.isLoading,
+                                showDescription = Res.string.cd_show_password,
+                                hideDescription = Res.string.cd_hide_password,
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            autoCorrectEnabled = false,
+                        ),
+                        enabled = !uiState.isLoading,
+                    )
                 }
+
+                val errorText = uiState.inputError?.let { loginInputErrorText(it, uiState.usernameLogin, uiState.minPasswordLength) }
+                    ?: authErrorText(uiState.refusal, uiState.error, uiState.usernameLogin)
+                if (errorText != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = errorText,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("login_error"),
+                    )
+                    if (uiState.offerDiagnosticLog) DiagnosticLogLink()
+                    if (uiState.refusal == AuthRefusal.EmailNotVerified) {
+                        TextButton(onClick = { onNavigateToVerifyEmail(uiState.email.trim()) }) {
+                            Text(stringResource(Res.string.resend_verification_email))
+                        }
+                    }
+                }
+
+                if (uiState.emailLoginEnabled) {
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    AdaptiveButton(
+                        onClick = viewModel::login,
+                        modifier = Modifier.fillMaxWidth().testTag("login_submit"),
+                        loading = uiState.isLoading,
+                    ) {
+                        Text(stringResource(if (uiState.isLoading) Res.string.progress_signing_in else Res.string.continue_button))
+                    }
+
+                    if (uiState.passwordResetEnabled) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        TextButton(onClick = onNavigateToForgotPassword) {
+                            Text(stringResource(Res.string.forgot_password))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (uiState.registrationEnabled) {
+                    TextButton(onClick = onNavigateToRegister) {
+                        Text(stringResource(Res.string.no_account_sign_up))
+                    }
+                }
+
+                val socialProviders = uiState.socialProviders
+                if (socialProviders.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (uiState.emailLoginEnabled) {
+                        AdaptiveDivider(modifier = Modifier.fillMaxWidth())
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = stringResource(Res.string.or_continue_with),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+
+                    socialProviders.forEach { provider ->
+                        AdaptiveOutlinedButton(
+                            onClick = { viewModel.onSsoProviderSelected(provider.id) },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !uiState.isLoading,
+                        ) {
+                            Text(provider.label ?: oAuthProviderLabel(provider.id))
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+
+                UseAnotherAccountButton(onUseAnotherAccount, modifier = Modifier.padding(top = 8.dp))
+
+                PolicyLinksFooter(uiState.policyLinks, modifier = Modifier.padding(top = 16.dp))
             }
         }
 
@@ -281,23 +338,32 @@ fun LoginScreen(
 }
 
 /**
- * TCHAT: `openidLabel` is the server's own `OPENID_BUTTON_LABEL` (StartupConfig.openidLabel,
- * surfaced via LoginUiState) — deploy/tchat/env.example already sets it to "Continue with
- * TensorGrid", so that's what renders. [TchatBrand.OIDC_FALLBACK_LABEL] only covers a server that
- * enables OIDC without setting a label.
+ * TCHAT: the server's own `OPENID_BUTTON_LABEL` arrives as the provider's label; this is the fallback
+ * for a provider with none, and [TchatBrand.OIDC_FALLBACK_LABEL] covers a server that enables OIDC
+ * without setting a label.
  */
 @Composable
-internal fun oAuthProviderLabel(provider: String, openidLabel: String? = null): String {
-    if (provider.equals("openid", ignoreCase = true)) {
-        return openidLabel?.takeIf { it.isNotBlank() } ?: TchatBrand.OIDC_FALLBACK_LABEL
-    }
+internal fun oAuthProviderLabel(provider: String): String {
+    if (provider.equals("openid", ignoreCase = true)) return TchatBrand.OIDC_FALLBACK_LABEL
     val name = when (provider.lowercase()) {
         "google" -> "Google"
         "github" -> "GitHub"
         "discord" -> "Discord"
         "facebook" -> "Facebook"
         "apple" -> "Apple"
+        "openid" -> "OpenID"
+        "saml" -> "SAML"
         else -> provider.replaceFirstChar { it.uppercase() }
     }
     return stringResource(Res.string.continue_with_provider, name)
+}
+
+@Composable
+private fun loginInputErrorText(error: LoginInputError, usernameLogin: Boolean, minPasswordLength: Int): String = when (error) {
+    LoginInputError.MissingFields -> stringResource(
+        if (usernameLogin) Res.string.login_error_missing_fields_username else Res.string.login_error_missing_fields,
+    )
+    LoginInputError.InvalidEmail -> stringResource(Res.string.login_error_invalid_email)
+    LoginInputError.PasswordTooShort -> stringResource(Res.string.login_error_password_too_short, minPasswordLength)
+    LoginInputError.PasswordTooLong -> stringResource(Res.string.login_error_password_too_long, MAX_PASSWORD_LENGTH)
 }

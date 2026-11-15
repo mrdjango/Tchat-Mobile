@@ -12,6 +12,8 @@ import com.garfiec.librechat.core.model.StreamErrorCodes
 import com.garfiec.librechat.core.model.StreamEvent
 import com.garfiec.librechat.core.model.SubagentPhase
 import com.garfiec.librechat.core.model.content.MessageContentPart
+import com.garfiec.librechat.core.model.mcp.actionOAuthId
+import com.garfiec.librechat.core.model.mcp.mcpOAuthServerName
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -20,6 +22,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -72,12 +75,15 @@ class SseEventMapper(private val json: Json) {
     // together.
     private val stepToolCallIds = mutableMapOf<String, String>()
 
+    private val toolPreparation = ToolPreparationTracker()
+
     /** Resets tracked state. Call when starting a new SSE stream. */
     fun resetState() {
         activeAgentId = null
         activeGroupId = null
         stepAgentContext.clear()
         stepToolCallIds.clear()
+        toolPreparation.clear()
     }
 
     /**
@@ -272,6 +278,9 @@ class SseEventMapper(private val json: Json) {
             conversationId = conversationId,
             messageId = messageId,
             parentMessageId = parentMessageId,
+            // Safe-cast: a non-primitive here must not fail the frame.
+            privacyRevision = (messageObj?.get("privacyRevision") as? JsonPrimitive)
+                ?.takeIf { it.isString }?.content?.takeIf(String::isNotEmpty),
         )
     }
 
@@ -295,22 +304,24 @@ class SseEventMapper(private val json: Json) {
         // map; our client renders tool calls from a flat list keyed by id, and
         // `aggregatedContent` already carries every tool_call part (in-progress
         // with a null output, completed with its output merged in) in order — so
-        // it is the authoritative snapshot. runSteps would only duplicate it.
+        // it is the authoritative snapshot. runSteps would only duplicate it. The one thing it
+        // lacks is a pending MCP sign-in, which the server projects for us as
+        // `pendingOAuthPrompts` (read below).
         val snapshot = resumeState["aggregatedContent"]?.jsonArray?.let { aggregatedContent ->
             // The array is sparse, indexed by step: a step that reserved its index but has no
             // content yet serializes as null. Nothing here reads parts by position.
             val contentParts = aggregatedContent.filterNot { it is JsonNull }.mapNotNull { element ->
                 try {
-                    json.decodeFromJsonElement(
-                        MessageContentPart.serializer(),
-                        element,
-                    )
+                    json.decodeFromJsonElement(MessageContentPart.serializer(), element)
                 } catch (e: Exception) {
                     Logger.w("SSE", e) { "Failed to parse sync aggregatedContent part" }
                     null
                 }
             }
-            StreamEvent.Sync(aggregatedContent = contentParts)
+            StreamEvent.Sync(
+                aggregatedContent = contentParts,
+                responseMessageId = (resumeState["responseMessageId"] as? JsonPrimitive)?.contentOrNull,
+            )
         }
 
         // The run's latest context snapshot. A client that attaches after the live
@@ -341,7 +352,8 @@ class SseEventMapper(private val json: Json) {
             parsePendingSteers(resumeState["pendingSteers"]),
         )
 
-        return listOfNotNull(snapshot, contextUsage, usageBackfill, pendingAction, pendingSteers)
+        val oauthPrompts = mapPendingOAuthPrompts(resumeState["pendingOAuthPrompts"], snapshot, stepToolCallIds::set)
+        return listOfNotNull(snapshot) + oauthPrompts + listOfNotNull(contextUsage, usageBackfill, pendingAction, pendingSteers)
     }
 
     /** Decodes a `TPendingSteer[]` payload, dropping entries that carry no id to cancel by. */
@@ -420,15 +432,19 @@ class SseEventMapper(private val json: Json) {
             "on_message_delta" -> mapMessageDelta(data, agentId, groupId)
             "on_reasoning_delta" -> mapReasoningDelta(data, agentId, groupId)
             "on_run_step" -> mapRunStep(data, agentId, groupId)
-            "on_run_step_delta" -> null // Tool call argument streaming - not currently tracked
-            // v0.8.8 timing marks. The durations they produce are stamped onto the persisted
-            // tool call (`toolPreparationDurationMs` / `toolExecutionDurationMs`) by the server.
-            "on_tool_preparation", "on_tool_calls_dispatched" -> null
+            // Argument streaming is not tracked; a delta carrying `auth` is an MCP or action sign-in prompt.
+            "on_run_step_delta" -> mapRunStepAuthDelta(data, agentId, groupId)
+            // A call's arguments started streaming / it was handed to execution. They drive the live
+            // card's "Preparing" state; the durations they yield are stamped on the persisted call
+            // (`toolPreparationDurationMs` / `toolExecutionDurationMs`) by the server.
+            "on_tool_preparation" -> toolPreparation.onPreparation(data, stepToolCallIds)
+            "on_tool_calls_dispatched" -> toolPreparation.onDispatched(data)
             "on_run_step_completed" -> mapRunStepCompleted(data, agentId, groupId)
             // v0.8.8-rc2: a run step reached a terminal state. The rc1 server registered no
             // handler, so this never reached the wire before.
             "on_run_step_closed" -> mapRunStepClosed(data, agentId, groupId)
             "on_sandbox_starting" -> mapSandboxStarting(data)
+            "on_ptc_tool_call" -> mapPtcToolCall(data)
             "on_chat_model_end" -> null
             "on_agent_update" -> null
             "on_summarize_start" -> null // Lifecycle only; no useful payload to surface
@@ -534,7 +550,10 @@ class SseEventMapper(private val json: Json) {
                 SubagentPhase.RUN_STEP -> mapRunStep(payload, agentId, groupId)
                 SubagentPhase.RUN_STEP_COMPLETED -> mapRunStepCompleted(payload, agentId, groupId)
                 SubagentPhase.RUN_STEP_CLOSED -> mapRunStepClosed(payload, agentId, groupId)
-                else -> null // start / stop / error / run_step_delta carry no foldable content
+                SubagentPhase.STEER_APPLIED -> mapSubagentSteer(payload)
+                // Only a delta carrying `auth` maps; every other run_step_delta stays dropped.
+                SubagentPhase.RUN_STEP_DELTA -> mapRunStepAuthDelta(payload, agentId, groupId)
+                else -> null // start / stop / error carry no foldable content
             }
         }
         return StreamEvent.SubagentUpdate(
@@ -545,6 +564,7 @@ class SseEventMapper(private val json: Json) {
             subagentAgentId = data["subagentAgentId"]?.jsonPrimitive?.contentOrNull,
             label = data["label"]?.jsonPrimitive?.contentOrNull,
             inner = inner,
+            activityDroppedCount = (data["activityDroppedCount"] as? JsonPrimitive)?.intOrNull?.takeIf { it > 0 },
         )
     }
 
@@ -621,7 +641,9 @@ class SseEventMapper(private val json: Json) {
         val toolName = firstToolCall["name"]?.jsonPrimitive?.contentOrNull ?: ""
         val args = firstToolCall["args"]?.toStringValue() ?: ""
 
-        data["id"]?.jsonPrimitive?.contentOrNull?.let { stepToolCallIds[it] = toolCallId }
+        val stepId = data["id"]?.jsonPrimitive?.contentOrNull
+        stepId?.let { stepToolCallIds[it] = toolCallId }
+        val preparing = toolPreparation.consumeForStart(toolCallId, stepId)
 
         return StreamEvent.ToolCallStart(
             toolCallId = toolCallId,
@@ -629,6 +651,35 @@ class SseEventMapper(private val json: Json) {
             input = args,
             agentId = agentId,
             groupId = groupId,
+            preparing = preparing,
+        )
+    }
+
+    /**
+     * Maps an `on_run_step_delta` that carries `delta.auth` (upstream `buildMCPAuthRunStepDeltaEvent`)
+     * to [StreamEvent.ToolCallAuthRequired]; every other delta stays dropped. The call is found
+     * through the step that announced it, then the delta's own tool call id.
+     */
+    private fun mapRunStepAuthDelta(
+        data: JsonObject,
+        agentId: String?,
+        groupId: Int?,
+    ): StreamEvent? {
+        val delta = data["delta"] as? JsonObject ?: return null
+        val authUrl = (delta["auth"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            ?.takeIf { it.isNotBlank() } ?: return null
+        val deltaCall = (delta["tool_calls"] as? JsonArray)?.firstOrNull() as? JsonObject
+        val toolCallId = (data["id"] as? JsonPrimitive)?.contentOrNull?.let { stepToolCallIds[it] }
+            ?: (deltaCall?.get("id") as? JsonPrimitive)?.contentOrNull
+            ?: return null
+        return StreamEvent.ToolCallAuthRequired(
+            toolCallId = toolCallId,
+            authUrl = authUrl,
+            serverName = mcpOAuthServerName((deltaCall?.get("name") as? JsonPrimitive)?.contentOrNull, authUrl),
+            expiresAt = (delta["expires_at"] as? JsonPrimitive)?.longOrNull,
+            agentId = agentId,
+            groupId = groupId,
+            actionId = actionOAuthId(authUrl),
         )
     }
 
@@ -651,17 +702,9 @@ class SseEventMapper(private val json: Json) {
             // whole copy. A JSON null or a missing key keeps the start's input.
             input = toolCall["args"]?.toStringValue(),
             inputValidationError = (toolCall["inputValidationError"] as? JsonPrimitive)?.booleanOrNull == true,
+            executor = (toolCall["executor"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
             agentId = agentId,
             groupId = groupId,
-        )
-    }
-
-    /** Maps `on_sandbox_starting`: `{tool_call_id, runId}`, emitted per code-session tool call. */
-    private fun mapSandboxStarting(data: JsonObject): StreamEvent? {
-        val toolCallId = (data["tool_call_id"] as? JsonPrimitive)?.contentOrNull ?: return null
-        return StreamEvent.SandboxStarting(
-            toolCallId = toolCallId,
-            runId = (data["runId"] as? JsonPrimitive)?.contentOrNull,
         )
     }
 
@@ -799,6 +842,7 @@ class SseEventMapper(private val json: Json) {
             messageId = (data["messageId"] as? JsonPrimitive)?.contentOrNull,
             conversationId = (data["conversationId"] as? JsonPrimitive)?.contentOrNull,
             agentId = (data["agentId"] as? JsonPrimitive)?.contentOrNull,
+            stepId = (data["stepId"] as? JsonPrimitive)?.contentOrNull,
             expiresAt = (data["expiresAt"] as? JsonPrimitive)?.longOrNull,
             bytes = (data["bytes"] as? JsonPrimitive)?.longOrNull,
             workspaceChange = workspaceChange,
@@ -899,4 +943,34 @@ class SseEventMapper(private val json: Json) {
         const val GENERATION_RECONCILE_MESSAGE =
             "Generation state changed; reconnect to load the saved response."
     }
+}
+
+/**
+ * Maps `on_ptc_tool_call` (upstream `PtcToolCallEvent`): one inner call of a programmatic
+ * tool-calling program. Dropped without the card's id or the call's own id, which the settle
+ * event needs to find its row.
+ */
+private fun mapPtcToolCall(data: JsonObject): StreamEvent? {
+    fun text(key: String) = (data[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+    val toolCallId = text("tool_call_id")?.takeIf { it.isNotEmpty() } ?: return null
+    val callId = text("call_id")?.takeIf { it.isNotEmpty() } ?: return null
+    val duration = (data["durationMs"] as? JsonPrimitive)?.takeIf { !it.isString }
+    return StreamEvent.PtcToolCall(
+        toolCallId = toolCallId,
+        callId = callId,
+        name = text("name").orEmpty(),
+        status = text("status") ?: return null,
+        args = text("args")?.takeIf { it.isNotEmpty() },
+        error = text("error")?.takeIf { it.isNotEmpty() },
+        durationMs = duration?.longOrNull ?: duration?.doubleOrNull?.toLong(),
+    )
+}
+
+/** Maps `on_sandbox_starting`: `{tool_call_id, runId}`, emitted per code-session tool call. */
+private fun mapSandboxStarting(data: JsonObject): StreamEvent? {
+    val toolCallId = (data["tool_call_id"] as? JsonPrimitive)?.contentOrNull ?: return null
+    return StreamEvent.SandboxStarting(
+        toolCallId = toolCallId,
+        runId = (data["runId"] as? JsonPrimitive)?.contentOrNull,
+    )
 }

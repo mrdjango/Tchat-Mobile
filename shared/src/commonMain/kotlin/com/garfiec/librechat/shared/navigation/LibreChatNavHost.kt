@@ -20,8 +20,8 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -38,17 +38,16 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -67,11 +66,20 @@ import com.garfiec.librechat.core.common.lifecycle.DeferredWorkWindow
 import com.garfiec.librechat.core.common.lifecycle.ForegroundSignal
 import com.garfiec.librechat.core.data.datastore.DateTimePrefsStore
 import com.garfiec.librechat.core.logging.Diag
+import com.garfiec.librechat.core.notifications.ReplySnackbars
 import com.garfiec.librechat.core.ui.components.AdaptiveAlertDialog
+import com.garfiec.librechat.core.ui.components.AdaptiveSnackbarHost
+import com.garfiec.librechat.core.ui.components.AdaptiveTextButton
+import com.garfiec.librechat.core.ui.components.BackClaims
 import com.garfiec.librechat.core.ui.components.BannerDisplay
+import com.garfiec.librechat.core.ui.components.DrawerGestureLock
+import com.garfiec.librechat.core.ui.components.LocalBackClaims
+import com.garfiec.librechat.core.ui.components.LocalDrawerGestureLock
+import com.garfiec.librechat.core.ui.components.LocalServerUrl
 import com.garfiec.librechat.core.ui.components.share.LocalExternalUriHandler
 import com.garfiec.librechat.core.ui.components.share.LocalOpenSharedChat
 import com.garfiec.librechat.core.ui.components.topbar.CoversNativeBars
+import com.garfiec.librechat.core.ui.components.windowUsesSidebarLayout
 import com.garfiec.librechat.core.ui.datetime.ProvideDateTimeFormat
 import com.garfiec.librechat.core.ui.glass.GlassBackdrop
 import com.garfiec.librechat.core.ui.glass.GlassSheetHost
@@ -83,14 +91,15 @@ import com.garfiec.librechat.core.ui.theme.AppLocale
 import com.garfiec.librechat.feature.agents.navigation.agentsEntries
 import com.garfiec.librechat.feature.auth.navigation.AddAccountServerUrl
 import com.garfiec.librechat.feature.auth.navigation.ServerUrl
+import com.garfiec.librechat.feature.auth.navigation.SignInEscape
+import com.garfiec.librechat.feature.auth.navigation.Terms
 import com.garfiec.librechat.feature.auth.navigation.authEntries
 import com.garfiec.librechat.feature.auth.navigation.isAddAccountFlowRoute
+import com.garfiec.librechat.feature.auth.navigation.signUpEntries
 import com.garfiec.librechat.feature.chat.navigation.Chat
-import com.garfiec.librechat.feature.chat.navigation.ModelShortcutBus
 import com.garfiec.librechat.feature.chat.navigation.NewChat
 import com.garfiec.librechat.feature.chat.navigation.chatEntries
 import com.garfiec.librechat.feature.chat.navigation.handoffKey
-import com.garfiec.librechat.feature.chat.navigation.isPlainLanding
 import com.garfiec.librechat.feature.chat.viewmodel.ChatNoticeHandoff
 import com.garfiec.librechat.feature.chat.viewmodel.PromptInsertionHandoff
 import com.garfiec.librechat.feature.chat.viewmodel.ServerFileSelectionHandoff
@@ -98,11 +107,13 @@ import com.garfiec.librechat.feature.conversations.drawer.DrawerViewModel
 import com.garfiec.librechat.feature.conversations.navigation.ArchivedConversations
 import com.garfiec.librechat.feature.conversations.navigation.BookmarkChats
 import com.garfiec.librechat.feature.conversations.navigation.ProjectChats
+import com.garfiec.librechat.feature.conversations.navigation.ProjectInstructions
 import com.garfiec.librechat.feature.conversations.navigation.Projects
 import com.garfiec.librechat.feature.conversations.navigation.conversationsEntries
 import com.garfiec.librechat.feature.files.navigation.FilesPicker
 import com.garfiec.librechat.feature.files.navigation.filePickerEntries
 import com.garfiec.librechat.feature.files.navigation.filesEntries
+import com.garfiec.librechat.feature.schedules.navigation.SchedulesList
 import com.garfiec.librechat.feature.schedules.navigation.schedulesEntries
 import com.garfiec.librechat.feature.settings.navigation.Memories
 import com.garfiec.librechat.feature.settings.navigation.SettingsTabbed
@@ -126,6 +137,8 @@ import com.garfiec.librechat.shared.resources.version_mismatch_message
 import com.garfiec.librechat.shared.resources.version_mismatch_title
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.stringResource
@@ -139,14 +152,13 @@ private const val HYGIENE_UNRECORDED = "__unrecorded__"
 /**
  * Shared root composable for LibreChat navigation.
  *
- * With no [content], picks [TabletLayout] or [PhoneLayout] from the window (iOS). Android passes
- * [content] to add deep links and share intents, and makes the same [usesSidebarLayout] choice there.
+ * Places links from [DeepLinkInbox] on both platforms. With no [content], shows [WindowLayout] (iOS).
+ * Android passes [content] to add share intents, and shows [WindowLayout] there.
  */
 @Composable
 fun LibreChatNavHost(
     modifier: Modifier = Modifier,
     appLocaleTag: String? = null,
-    hasPendingDeepLink: Boolean = false,
     navHostViewModel: NavHostViewModel = koinViewModel(),
     drawerViewModel: DrawerViewModel = koinViewModel(),
     content: (@Composable (Navigator, NavHostViewModel, Modifier) -> Unit)? = null,
@@ -200,30 +212,30 @@ fun LibreChatNavHost(
 
     // Redirect to auth if not logged in — once per saved-state lifecycle, NOT on every recreation.
     // LaunchedEffect(Unit) restarts on each Activity recreation (config change / process-death restore,
-    // see the hygiene note below), but by then the back stack is already restored — possibly to a
-    // logged-out-viewable deep-link target (an artifact viewer atop the auth base). Re-firing would
-    // clear() that away, so a rememberSaveable latch makes this run only on a genuinely fresh start.
-    // Also skipped while a deep link is pending: the deep-link handler owns the initial stack then.
+    // see the hygiene note below), but by then the back stack is already restored mid auth flow;
+    // re-firing would clear() it back to the first screen.
     var initialAuthRedirectDone by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         if (!initialAuthRedirectDone) {
             initialAuthRedirectDone = true
-            if (!navHostViewModel.isLoggedIn.value && !hasPendingDeepLink) {
+            if (!navHostViewModel.isLoggedIn.value) {
                 navigator.navigateToAuth()
             }
         }
     }
 
-    // iOS home-screen quick action: the Swift handler pushes the tapped (endpoint, model) onto the
-    // bus; open a NewChat pre-selected on it. Deferred until logged in so a cold launch from a quick
-    // action lands the model once auth resolves. Android sets this bus never — it deep-links instead.
-    val modelShortcutBus = koinInject<ModelShortcutBus>()
-    val pendingModelShortcut by modelShortcutBus.pending.collectAsStateWithLifecycle()
-    LaunchedEffect(pendingModelShortcut, isLoggedIn) {
-        val ref = pendingModelShortcut ?: return@LaunchedEffect
-        if (!isLoggedIn) return@LaunchedEffect
-        navigator.navigateToTopLevel(NewChat(endpoint = ref.endpoint, model = ref.model, spec = ref.spec))
-        modelShortcutBus.consume()
+    val deepLinkInbox = koinInject<DeepLinkInbox>()
+    val pendingDeepLink by deepLinkInbox.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingDeepLink) {
+        val link = pendingDeepLink ?: return@LaunchedEffect
+        // A tap that starts the app arrives while the account is still loading.
+        val account = navHostViewModel.accountState.first { it !is AccountState.Warming }
+        navigator.placeDeepLink(
+            resolution = DeepLinks.resolve(link),
+            isLoggedIn = navHostViewModel.isLoggedIn.value,
+            activeAccountId = (account as? AccountState.Resolved)?.id?.value,
+        )
+        deepLinkInbox.consume(link)
     }
 
     // Track active conversation from nav back stack
@@ -245,6 +257,8 @@ fun LibreChatNavHost(
         navHostViewModel.sessionRoute.collect { route ->
             when (route) {
                 SessionRoute.SignIn -> navigator.navigateToAuth()
+                SessionRoute.SignInActiveAccount -> navigator.navigateToSignIn()
+                is SessionRoute.TwoFactorSetup -> navigator.navigateToTwoFactorSetup(route.tempToken)
                 // Only off the sign-in screens: on chat, the account flip has already reset the stack.
                 SessionRoute.Chat -> if (navigator.isInAuthFlow) {
                     navigator.navigateToChat(
@@ -253,6 +267,22 @@ fun LibreChatNavHost(
                 }
             }
         }
+    }
+
+    // Terms the server requires (modalAcceptance). Opened from state, re-evaluated whenever the
+    // navigator enters or leaves the sign-in flow, so a requirement learned during sign-in (the
+    // post-login check can land before the stack reaches chat) opens the screen once it does, and
+    // whenever the screen leaves the stack while still required (a drawer jump to a top-level
+    // destination pops it), so it cannot be navigated around.
+    LaunchedEffect(Unit) {
+        combine(
+            navHostViewModel.termsRequirement.required,
+            navHostViewModel.isLoggedIn,
+            snapshotFlow { navigator.isInAuthFlow },
+            snapshotFlow { navigator.backStack.any { it is Terms } },
+        ) { required, loggedIn, inAuthFlow, termsOpen ->
+            TermsRequirementStateHolder.shouldShow(required, loggedIn, inAuthFlow, termsOpen)
+        }.collect { show -> if (show) navigator.showTerms() }
     }
 
     // A restored back stack can still hold add-account routes after process death, but the pending
@@ -348,8 +378,10 @@ fun LibreChatNavHost(
     // The locale wrapper must sit BELOW the back stack: changing language recreates the rendered
     // UI so every stringResource re-resolves, while the back stack created above survives the swap
     // and the user stays on their current screen.
+    val serverUrl by navHostViewModel.serverUrl.collectAsStateWithLifecycle()
     AppLocale(tag = appLocaleTag) {
         CompositionLocalProvider(
+            LocalServerUrl provides serverUrl,
             LocalUriHandler provides sharedLinkUriHandler,
             LocalExternalUriHandler provides platformUriHandler,
             LocalOpenSharedChat provides openSharedChat,
@@ -379,21 +411,20 @@ fun LibreChatNavHost(
                         if (content != null) {
                             content(navigator, navHostViewModel, Modifier)
                         } else {
-                            // Read from the window rather than a size class so iPad Split View / Slide
-                            // Over, which resize the window without a rotation, flip the layout too. iOS
-                            // resizes in place, so both layouts share one movable NavDisplay; see
-                            // rememberMovableNavDisplay.
-                            val navDisplay = rememberMovableNavDisplay(navigator)
-                            val window = LocalWindowInfo.current.containerSize
-                            val usesSidebar = with(LocalDensity.current) {
-                                usesSidebarLayout(window.width.toDp(), window.height.toDp())
-                            }
-                            if (usesSidebar) {
-                                TabletLayout(navigator = navigator, navDisplay = navDisplay)
-                            } else {
-                                PhoneLayout(navigator = navigator, navDisplay = navDisplay)
-                            }
+                            WindowLayout(navigator = navigator)
                         }
+                        val replySnackbarState = remember { SnackbarHostState() }
+                        ReplySnackbars(
+                            snackbarHostState = replySnackbarState,
+                            onOpenChat = { id -> navigator.navigateToChat(conversationId = id) },
+                            onOpenSchedules = { navigator.navigate(SchedulesList) },
+                        )
+                        AdaptiveSnackbarHost(
+                            hostState = replySnackbarState,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .windowInsetsPadding(WindowInsets.safeDrawing),
+                        )
                     }
                 }
             }
@@ -466,7 +497,7 @@ internal fun SessionExpiredDialog(notice: SessionExpiredNotice, onDismiss: () ->
             )
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            AdaptiveTextButton(onClick = onDismiss) {
                 Text(stringResource(Res.string.dismiss))
             }
         },
@@ -495,27 +526,43 @@ internal fun VersionMismatchDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            AdaptiveTextButton(onClick = onDismiss) {
                 Text(stringResource(Res.string.dismiss))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismissPermanently) {
+            AdaptiveTextButton(onClick = onDismissPermanently) {
                 Text(stringResource(Res.string.dont_warn_again))
             }
         },
     )
 }
 
-/** Phone layout with a modal drawer sidebar: the path on both platforms when [usesSidebarLayout] is false. */
+/**
+ * [TabletLayout] or [PhoneLayout] as the window allows, both placing one movable [MainNavDisplay]: the
+ * window resizes in place on both platforms, and a switch must move the display, not dispose it (see
+ * [rememberMovableNavDisplay]). The choice is made here, in the caller's own composition.
+ */
+@Composable
+fun WindowLayout(navigator: Navigator, modifier: Modifier = Modifier) {
+    val navDisplay = rememberMovableNavDisplay(navigator)
+    if (windowUsesSidebarLayout()) {
+        TabletLayout(navigator = navigator, navDisplay = navDisplay, modifier = modifier)
+    } else {
+        PhoneLayout(navigator = navigator, navDisplay = navDisplay, modifier = modifier)
+    }
+}
+
+/** Phone layout with a modal drawer sidebar: the path on both platforms when [windowUsesSidebarLayout] is false. */
 @Composable
 fun PhoneLayout(
     navigator: Navigator,
+    navDisplay: NavDisplaySlot,
     modifier: Modifier = Modifier,
-    navDisplay: NavDisplaySlot = rememberMovableNavDisplay(navigator),
     navHostViewModel: NavHostViewModel = koinViewModel(),
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val drawerGestureLock = remember { DrawerGestureLock() }
     val scope = rememberCoroutineScope()
     val isLoggedIn by navHostViewModel.isLoggedIn.collectAsStateWithLifecycle()
     val banner by navHostViewModel.banner.collectAsStateWithLifecycle()
@@ -536,6 +583,7 @@ fun PhoneLayout(
     // The drawer is an authenticated surface, and once the session ends its gestures are off (below),
     // which also takes away the scrim tap that would close it. Shut it here, or it stays open over
     // the sign-in screen with nothing to dismiss it on iOS.
+    val backClaims = remember { BackClaims() }
     val signedOut = !isLoggedIn || navigator.isInAuthFlow
     LaunchedEffect(signedOut) {
         if (signedOut && !drawerState.isClosed) drawerState.snapTo(DrawerValue.Closed)
@@ -547,7 +595,12 @@ fun PhoneLayout(
         // not just "not in the auth flow" — a logged-out deep link (e.g. an artifact viewer atop the
         // auth base) leaves a non-auth route on top, and without this its edge-swipe would open the
         // drawer over a session-less state.
-        gesturesEnabled = isLoggedIn && !navigator.isInAuthFlow,
+        // A full-screen viewer with gestures of its own (the PDF viewer) turns it off while shown.
+        // Off, too, while the screen takes back itself (a dirty editor's discard prompt, an open
+        // sheet): on iOS the drawer's drag would otherwise win the edge swipe that means back there.
+        // Kept on while the drawer shows, so it can still be dragged or tapped shut.
+        gesturesEnabled = isLoggedIn && !navigator.isInAuthFlow && !drawerGestureLock.isLocked &&
+            (!backClaims.isClaimed || drawerShowing),
         // Liquid Glass shows the screen through the panel, so it dims it only lightly.
         scrimColor = if (glass != null) GlassDrawerScrim else DrawerDefaults.scrimColor,
         drawerContent = {
@@ -567,10 +620,7 @@ fun PhoneLayout(
                         isOpen = drawerOpen,
                         onNewChat = {
                             scope.launch { drawerState.close() }
-                            // A project's landing is not the plain one, so New chat still leaves it.
-                            if ((navigator.currentRoute as? NewChat)?.isPlainLanding != true) {
-                                navigator.navigateToTopLevel(NewChat())
-                            }
+                            navigator.navigateToNewChat()
                         },
                         onConversationClick = { conversationId ->
                             scope.launch { drawerState.close() }
@@ -631,6 +681,9 @@ fun PhoneLayout(
         Column(
             modifier = modifier
                 .fillMaxSize()
+                // iOS: the start-edge swipe is back wherever there is something to go back to. The
+                // open drawer's sheet and scrim sit above this, so it never takes the drawer's touches.
+                .edgeSwipeBack(enabled = backClaims.isClaimed || navigator.backStack.size > 1)
                 .background(MaterialTheme.colorScheme.background)
                 // Recorded only while the drawer is opening or open: recording redraws the screen
                 // every frame, and nothing samples it while the drawer is shut.
@@ -646,7 +699,12 @@ fun PhoneLayout(
                     onDismiss = navHostViewModel::dismissBanner,
                 )
             }
-            navDisplay({ scope.launch { drawerState.open() } }, Modifier.fillMaxSize())
+            CompositionLocalProvider(
+                LocalDrawerGestureLock provides drawerGestureLock,
+                LocalBackClaims provides backClaims,
+            ) {
+                navDisplay({ scope.launch { drawerState.open() } }, Modifier.fillMaxSize())
+            }
         }
     }
     // The drawer is drawn in the Compose canvas, under any native glass bar; hide those bars from
@@ -741,6 +799,18 @@ fun MainNavDisplay(
     promptInsertionHandoff: PromptInsertionHandoff = koinInject(),
     chatNoticeHandoff: ChatNoticeHandoff = koinInject(),
 ) {
+    var signInSwitcherOpen by rememberSaveable { mutableStateOf(false) }
+    if (signInSwitcherOpen) {
+        val escapeAccounts by navHostViewModel.signInEscapeAccounts.collectAsStateWithLifecycle()
+        SignInAccountSwitcher(
+            accounts = escapeAccounts,
+            onSwitchAccount = navHostViewModel::switchAccount,
+            onDismiss = { signInSwitcherOpen = false },
+        )
+    }
+    val signInEscape = remember(navHostViewModel) {
+        SignInEscape(navHostViewModel.signInEscapeAvailable, open = { signInSwitcherOpen = true })
+    }
     NavDisplay(
         backStack = navigator.backStack,
         onBack = { navigator.goBack() },
@@ -757,22 +827,36 @@ fun MainNavDisplay(
             rememberPredictiveBackCardDecorator(navigator.backStack),
         ),
         entryProvider = entryProvider {
+            val onAuthComplete: () -> Unit = {
+                navHostViewModel.onAuthComplete()
+                // accountTransitions() doesn't fire on login-from-logged-out, so the drawer's
+                // conversation list is refreshed explicitly here (the other half — banners,
+                // version — rides onAuthComplete above). Conversations-only: the login session
+                // tasks already refreshed tags, so this must not re-fetch them (double-fetch).
+                drawerViewModel.refreshConversationsAfterLogin()
+                // An add-account completion lands here over a stack whose landing belongs to the
+                // previous account; scoping it to the now-active one discards that ViewModel.
+                navigator.navigateToChat(
+                    accountScope = (navHostViewModel.accountState.value as? AccountState.Resolved)?.id?.value,
+                )
+            }
             authEntries(
                 onNavigate = { navigator.navigate(it) },
                 onBack = { navigator.goBack() },
-                onAuthComplete = {
-                    navHostViewModel.onAuthComplete()
-                    // accountTransitions() doesn't fire on login-from-logged-out, so the drawer's
-                    // conversation list is refreshed explicitly here (the other half — banners,
-                    // version — rides onAuthComplete above). Conversations-only: the login session
-                    // tasks already refreshed tags, so this must not re-fetch them (double-fetch).
-                    drawerViewModel.refreshConversationsAfterLogin()
-                    // An add-account completion lands here over a stack whose landing belongs to the
-                    // previous account; scoping it to the now-active one discards that ViewModel.
-                    navigator.navigateToChat(
-                        accountScope = (navHostViewModel.accountState.value as? AccountState.Resolved)?.id?.value,
-                    )
+                onAuthComplete = onAuthComplete,
+                onTermsAccepted = {
+                    navHostViewModel.termsRequirement.clear()
+                    navigator.remove(Terms)
                 },
+                // Signs out of this account; the sign-in route that follows clears the stack.
+                onTermsDeclined = navHostViewModel::declineTerms,
+                termsDeclining = navHostViewModel.termsRequirement.declining,
+                signInEscape = signInEscape,
+            )
+            signUpEntries(
+                onReplace = { route, replacement -> navigator.replace(route, replacement) },
+                onBack = { navigator.goBack() },
+                onAuthComplete = onAuthComplete,
             )
             chatEntries(
                 onNavigate = { navigator.navigate(it) },
@@ -782,6 +866,7 @@ fun MainNavDisplay(
                     navigator.navigateToChat(conversationId, isTemporary)
                 },
                 onOpenDrawer = onMenuClick,
+                onNewChat = navigator::navigateToNewChat,
                 onNavigateToProviderKeys = { endpointName ->
                     // From chat: a save there returns to the chat.
                     navigator.navigateToProviderKeys(endpointName, returnAfterSave = true)
@@ -807,6 +892,7 @@ fun MainNavDisplay(
                 onNewChatInProject = { projectId, projectName ->
                     navigator.navigateToNewChatInProject(projectId, projectName)
                 },
+                onOpenProjectInstructions = { projectId -> navigator.navigate(ProjectInstructions(projectId)) },
                 onNavigateToBookmark = { tag -> navigator.navigate(BookmarkChats(tag)) },
                 onBack = { navigator.goBack() },
                 onRemove = { navigator.remove(it) },

@@ -2,10 +2,11 @@ package com.garfiec.librechat.feature.settings.navigation
 
 import androidx.navigation3.runtime.EntryProviderScope
 import androidx.navigation3.runtime.NavKey
+import com.garfiec.librechat.core.ui.navigation.FullWidthRoute
 import com.garfiec.librechat.feature.settings.screen.ApiKeysScreen
 import com.garfiec.librechat.feature.settings.screen.PresetManagerScreen
+import com.garfiec.librechat.feature.settings.screen.SettingsHomeScreen
 import com.garfiec.librechat.feature.settings.screen.SharedLinksScreen
-import com.garfiec.librechat.feature.settings.screen.TabbedSettingsScreen
 import com.garfiec.librechat.feature.settings.screen.providerkeys.ProviderKeysScreen
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.SerializersModule
@@ -15,7 +16,11 @@ import org.jetbrains.compose.resources.StringResource
 
 @Serializable sealed interface SettingsRoute : NavKey
 
-@Serializable data object SettingsTabbed : SettingsRoute
+/** A page the wide Settings home shows beside its list: Appearance, a category or Advanced. */
+@Serializable sealed interface SettingsPaneRoute : SettingsRoute
+
+/** The Settings home (profile card and categories). The name stays: saved back stacks restore by it. */
+@Serializable data object SettingsTabbed : SettingsRoute, FullWidthRoute
 
 @Serializable data object SharedLinks : SettingsRoute
 
@@ -50,28 +55,27 @@ fun EntryProviderScope<NavKey>.settingsEntries(
     onProviderKeyReturn: (message: StringResource) -> Unit = { onBack() },
 ) {
     entry<SettingsTabbed> {
-        TabbedSettingsScreen(
+        SettingsHomeScreen(
             onNavigateBack = onBack,
-            onLogout = onLogout,
-            onNavigateToAppearance = { onNavigate(AppearanceSettings) },
-            onNavigateToArchive = onNavigateToArchive,
-            onNavigateToSharedLinks = { onNavigate(SharedLinks) },
-            onNavigateToArtifactShortcuts = { onNavigate(ArtifactShortcuts) },
-            onNavigateToPrefetchSettings = { onNavigate(PrefetchSettings) },
-            onNavigateToMemories = { onNavigate(Memories) },
-            onNavigateToMcpServers = { onNavigate(McpServers) },
-            onNavigateToPresets = { onNavigate(PresetManager) },
-            onNavigateToContextUsage = { onNavigate(ContextUsageSettings) },
-            onNavigateToChatLayout = { onNavigate(ChatLayoutSettings) },
-            onNavigateToApiKeys = { onNavigate(ApiKeys) },
-            onNavigateToFavorites = { onNavigate(Favorites) },
-            onNavigateToProviderKeys = { onNavigate(ProviderKeys()) },
-            onNavigateToRoleSkillsAdmin = { onNavigate(RoleSkillsAdmin) },
-            onNavigateToRoleMemoriesAdmin = { onNavigate(RoleMemoriesAdmin) },
-            onNavigateToWhatsNew = { onNavigate(WhatsNew) },
-            onNavigateToReleaseNotes = { onNavigate(ReleaseNotes) },
-        )
+            onOpenPage = onNavigate,
+        ) { page, onSelectPage, contentPadding, snackbarHostState ->
+            SettingsPaneContent(
+                page = page,
+                onNavigate = onNavigate,
+                onLogout = onLogout,
+                onNavigateToArchive = onNavigateToArchive,
+                onOpenAdvancedSettings = { onSelectPage(AdvancedSettings(it)) },
+                contentPadding = contentPadding,
+                snackbarHostState = snackbarHostState,
+            )
+        }
     }
+    settingsPaneEntries(
+        onNavigate = onNavigate,
+        onBack = onBack,
+        onLogout = onLogout,
+        onNavigateToArchive = onNavigateToArchive,
+    )
     entry<SharedLinks> {
         SharedLinksScreen(onNavigateBack = onBack, onOpenConversation = onOpenConversation)
     }
@@ -94,20 +98,25 @@ fun EntryProviderScope<NavKey>.settingsEntries(
         )
     }
     favoritesEntry(onBack = onBack)
+    passkeysEntry(onBack = onBack)
     roleSkillsAdminEntry(onBack = onBack)
     roleMemoriesAdminEntry(onBack = onBack)
     artifactShortcutsEntry(onBack = onBack)
     prefetchEntries(onNavigate = onNavigate, onBack = onBack)
+    codeExecutionEntries(onNavigate = onNavigate, onBack = onBack)
     contextUsageSettingsEntry(onBack = onBack)
     chatLayoutSettingsEntry(onBack = onBack)
-    appearanceSettingsEntry(onBack = onBack)
+    dateTimeSettingsEntry(onBack = onBack)
     whatsNewEntry(onBack = onBack)
     releaseNotesEntry(onBack = onBack)
+    reportProblemEntry(onBack = onBack)
 }
 
 val settingsSerializersModule = SerializersModule {
     polymorphic(NavKey::class) {
         subclass(SettingsTabbed::class, SettingsTabbed.serializer())
+        subclass(SettingsCategory::class, SettingsCategory.serializer())
+        subclass(AdvancedSettings::class, AdvancedSettings.serializer())
         subclass(SharedLinks::class, SharedLinks.serializer())
         subclass(PresetManager::class, PresetManager.serializer())
         subclass(ApiKeys::class, ApiKeys.serializer())
@@ -116,15 +125,20 @@ val settingsSerializersModule = SerializersModule {
         subclass(McpServers::class, McpServers.serializer())
         subclass(McpServerEditor::class, McpServerEditor.serializer())
         subclass(Favorites::class, Favorites.serializer())
+        subclass(Passkeys::class, Passkeys.serializer())
         subclass(RoleSkillsAdmin::class, RoleSkillsAdmin.serializer())
         subclass(RoleMemoriesAdmin::class, RoleMemoriesAdmin.serializer())
         subclass(ArtifactShortcuts::class, ArtifactShortcuts.serializer())
         subclass(PrefetchSettings::class, PrefetchSettings.serializer())
         subclass(PrefetchActivity::class, PrefetchActivity.serializer())
+        subclass(CodeExecution::class, CodeExecution.serializer())
+        subclass(CodeSetup::class, CodeSetup.serializer())
         subclass(ContextUsageSettings::class, ContextUsageSettings.serializer())
         subclass(ChatLayoutSettings::class, ChatLayoutSettings.serializer())
+        subclass(DateTimeSettings::class, DateTimeSettings.serializer())
         subclass(AppearanceSettings::class, AppearanceSettings.serializer())
         subclass(WhatsNew::class, WhatsNew.serializer())
         subclass(ReleaseNotes::class, ReleaseNotes.serializer())
+        subclass(ReportProblem::class, ReportProblem.serializer())
     }
 }

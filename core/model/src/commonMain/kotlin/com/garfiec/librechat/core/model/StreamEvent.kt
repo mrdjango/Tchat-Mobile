@@ -18,6 +18,8 @@ sealed interface StreamEvent {
         val input: String,
         val agentId: String? = null,
         val groupId: Int? = null,
+        /** The call's `on_tool_preparation` arrived before this run step announced it. */
+        val preparing: Boolean = false,
     ) : StreamEvent
 
     data class ToolCallComplete(
@@ -36,6 +38,12 @@ sealed interface StreamEvent {
          * validation error text, not a result.
          */
         val inputValidationError: Boolean = false,
+        /**
+         * Server-stamped provenance (`result.tool_call.executor`): `attached_workspace` for a
+         * `bash_tool` that ran on the user's attached machine, whose [output] ends in the exit
+         * trailer. Null for every other call.
+         */
+        val executor: String? = null,
         val attachments: List<Attachment>? = null,
         val agentId: String? = null,
         val groupId: Int? = null,
@@ -70,6 +78,66 @@ sealed interface StreamEvent {
         val runId: String? = null,
     ) : StreamEvent
 
+    /**
+     * One tool call a programmatic tool-calling program made from inside the sandbox
+     * (`on_ptc_tool_call`, v0.8.9-rc1): sent once as `running` and again as `success` or `error`
+     * with the same [callId]. Those inner calls open no run step and are never saved on the
+     * message, so this live trace is all a client ever learns of them. [toolCallId] is the code
+     * card's own call; like [SandboxStarting] it carries no agent.
+     */
+    data class PtcToolCall(
+        val toolCallId: String,
+        val callId: String,
+        /** Inner tool id, e.g. `search_code_mcp_github`. */
+        val name: String,
+        /** `running`, `success` or `error`; a String so an unknown value still decodes. */
+        val status: String,
+        /** `key=value` preview of the call's input; start event only. */
+        val args: String? = null,
+        /** Truncated failure message; `error` only. */
+        val error: String? = null,
+        val durationMs: Long? = null,
+    ) : StreamEvent {
+        companion object {
+            const val STATUS_RUNNING = "running"
+            const val STATUS_SUCCESS = "success"
+            const val STATUS_ERROR = "error"
+        }
+    }
+
+    /**
+     * The run is waiting on the user to sign in to an MCP server or an agent action's OAuth provider:
+     * an `on_run_step_delta` whose delta carries `auth` (the provider's authorization URL) and
+     * `expires_at`. Sent at turn start, or on the first tool call of a server configured with
+     * `oauthPrompt: on_use`. The run resumes by itself once the callback lands; the step then
+     * completes like any tool call.
+     *
+     * [expiresAt] is the server's epoch milliseconds, carried for display only: compared against
+     * the device clock, skew would expire a two-minute prompt early. The server is the judge.
+     */
+    data class ToolCallAuthRequired(
+        val toolCallId: String,
+        val authUrl: String,
+        val serverName: String?,
+        val expiresAt: Long? = null,
+        val agentId: String? = null,
+        val groupId: Int? = null,
+        /** The agent action the prompt signs in to, when it is an action's rather than an MCP server's. */
+        val actionId: String? = null,
+    ) : StreamEvent
+
+    /**
+     * Where a tool call is between its run step and its result (v0.8.9-rc1, upstream #16619):
+     * `on_tool_preparation` (the model has started writing the call's arguments) or
+     * `on_tool_calls_dispatched` ([dispatched]: the SDK handed the calls to execution). Lets a live
+     * card say "Preparing …" while the arguments stream instead of "Running". Like
+     * [SandboxStarting] it carries no agent, and the ids are unique across comparison panes.
+     */
+    data class ToolCallPreparation(
+        val toolCallIds: List<String>,
+        val dispatched: Boolean,
+    ) : StreamEvent
+
     data class ThinkingDelta(
         val chunk: String,
         val agentId: String? = null,
@@ -92,6 +160,9 @@ sealed interface StreamEvent {
         val conversationId: String? = null,
         /** The agent whose tool call produced the file. */
         val agentId: String? = null,
+        /** The run step whose tool call produced it (`ui_resources` and memory attachments carry it
+         *  from v0.8.9-rc1). With [agentId] it tells apart calls that share a provider tool-call id. */
+        val stepId: String? = null,
         /** Epoch millis; only a download fallback sets it (see [Attachment.expiresAt]). */
         val expiresAt: Long? = null,
         val bytes: Long? = null,
@@ -150,6 +221,12 @@ sealed interface StreamEvent {
 
     data class Sync(
         val aggregatedContent: List<MessageContentPart>,
+        /**
+         * The id the run's reply will be saved under (`resumeState.responseMessageId`). A client that
+         * drops its stream makes the server save the reply so far under it, `unfinished`, so the
+         * client that resumes may read that partial back from the messages route while the run goes on.
+         */
+        val responseMessageId: String? = null,
     ) : StreamEvent
 
     /**
@@ -235,6 +312,11 @@ sealed interface StreamEvent {
          * older servers — the resume is then sent unfenced, which stays legal.
          */
         val generationCreatedAt: Long? = null,
+        /**
+         * The user turn's redaction revision (v0.8.9-rc1): the server hid private details from
+         * the model. The live turn shows it as its own message already shows the original text.
+         */
+        val privacyRevision: String? = null,
     ) : StreamEvent
 
     /**
@@ -317,6 +399,12 @@ sealed interface StreamEvent {
         val label: String? = null,
         /** The phase's content pre-mapped to a flat event, or null for lifecycle phases. */
         val inner: StreamEvent? = null,
+        /**
+         * Updates the host folded away before this one while the live stream was unavailable
+         * (`activityDroppedCount`, v0.8.9-rc1). The trace is short by that many; the persisted
+         * transcript is not.
+         */
+        val activityDroppedCount: Int? = null,
     ) : StreamEvent
 }
 
@@ -339,7 +427,7 @@ object StreamErrorCodes {
     /**
      * Client-side, never on the wire: `SseClient` ran out of retries on connections that kept
      * dropping (I/O errors, or bodies that closed without the run's end). That says nothing about
-     * the run itself — with no heartbeat upstream, a live run behind an idle-timing proxy looks
+     * the run itself — with no keepalive (before v0.8.9-rc1, or switched off), a live run behind an idle-timing proxy looks
      * exactly like this while the device is online — so the consumer asks `/chat/status` rather
      * than reporting a network failure: resume if active, refetch if not. Mirrors upstream's
      * retry-ceiling adjudication (`useResumableSSE.ts`, "Max reconnect attempts reached").

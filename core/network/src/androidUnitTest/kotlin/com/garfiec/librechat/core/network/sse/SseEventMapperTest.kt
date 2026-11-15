@@ -115,6 +115,53 @@ class SseEventMapperTest {
         assertThat(tc.inputValidationError).isTrue()
     }
 
+    // --- on_ptc_tool_call (v0.8.9-rc1, upstream `PtcToolCallEvent` / `createPtcProgressEmitter`) ---
+
+    @Test
+    fun `an inner programmatic tool call maps start and settle`() {
+        val start = mapper.map(
+            SseEvent(
+                event = "",
+                data = """{"event":"on_ptc_tool_call","data":{"tool_call_id":"call_9","call_id":"c1","name":"search_code_mcp_github","status":"running","args":"q=foo","runId":"r1"}}""",
+            ),
+        ) as StreamEvent.PtcToolCall
+        assertThat(start.toolCallId).isEqualTo("call_9")
+        assertThat(start.callId).isEqualTo("c1")
+        assertThat(start.name).isEqualTo("search_code_mcp_github")
+        assertThat(start.status).isEqualTo(StreamEvent.PtcToolCall.STATUS_RUNNING)
+        assertThat(start.args).isEqualTo("q=foo")
+
+        val settle = mapper.map(
+            SseEvent(
+                event = "",
+                data = """{"event":"on_ptc_tool_call","data":{"tool_call_id":"call_9","call_id":"c1","name":"search_code_mcp_github","status":"error","error":"rate limited","durationMs":412.7}}""",
+            ),
+        ) as StreamEvent.PtcToolCall
+        assertThat(settle.status).isEqualTo(StreamEvent.PtcToolCall.STATUS_ERROR)
+        assertThat(settle.error).isEqualTo("rate limited")
+        assertThat(settle.durationMs).isEqualTo(412L)
+        assertThat(settle.args).isNull()
+    }
+
+    @Test
+    fun `an inner call without its ids is dropped`() {
+        val event = SseEvent(
+            event = "",
+            data = """{"event":"on_ptc_tool_call","data":{"tool_call_id":"call_9","name":"x","status":"running"}}""",
+        )
+        assertThat(mapper.map(event)).isNull()
+    }
+
+    @Test
+    fun `a completion stamped attached_workspace carries its executor`() {
+        val event = SseEvent(
+            event = "",
+            data = """{"event":"on_run_step_completed","data":{"result":{"id":"step_1","tool_call":{"id":"call_1","name":"bash_tool","output":"stdout:\\nok\\n[exit code: 0]","executor":"attached_workspace"}}}}""",
+        )
+        val tc = mapper.map(event) as StreamEvent.ToolCallComplete
+        assertThat(tc.executor).isEqualTo("attached_workspace")
+    }
+
     // --- on_steer_applied quotes (v0.8.8-rc2) ---
 
     @Test
@@ -389,6 +436,16 @@ class SseEventMapperTest {
         )
         val result = mapper.map(event) as StreamEvent.Created
         assertThat(result.conversationId).isEqualTo("c1")
+        assertThat(result.privacyRevision).isNull()
+    }
+
+    @Test
+    fun `maps a redacted turn's privacy revision from the created message`() {
+        val event = SseEvent(
+            event = "",
+            data = """{"created":true,"message":{"conversationId":"c1","messageId":"m1","parentMessageId":"m0","privacyRevision":"r1","text":"[EMAIL]"}}""",
+        )
+        assertThat((mapper.map(event) as StreamEvent.Created).privacyRevision).isEqualTo("r1")
     }
 
     @Test
@@ -410,6 +467,17 @@ class SseEventMapperTest {
         val result = mapper.map(event) as StreamEvent.Sync
         assertThat(result.aggregatedContent).hasSize(1)
         assertThat(result.aggregatedContent[0].text).isEqualTo("Previously streamed text")
+    }
+
+    @Test
+    fun `a sync frame names the reply the run is writing`() {
+        val event = SseEvent(
+            event = "",
+            data = """{"sync":true,"resumeState":{"aggregatedContent":[],"responseMessageId":"resp-1"}}""",
+        )
+        assertThat((mapper.map(event) as StreamEvent.Sync).responseMessageId).isEqualTo("resp-1")
+        val unnamed = SseEvent(event = "", data = """{"sync":true,"resumeState":{"aggregatedContent":[]}}""")
+        assertThat((mapper.map(unnamed) as StreamEvent.Sync).responseMessageId).isNull()
     }
 
     @Test
@@ -840,6 +908,28 @@ class SseEventMapperTest {
         val result = mapper.map(event) as StreamEvent.AttachmentCreated
         assertThat(result.type).isEqualTo("ui_resources")
         assertThat(result.uiResources).isNotNull()
+    }
+
+    @Test
+    fun `keeps the attachment's step id, which rc1 stamps beside the agent id`() {
+        val event = SseEvent(
+            event = "attachment",
+            data = """{"type":"ui_resources","toolCallId":"call_ui","agentId":"agent_1","stepId":"step_9","ui_resources":[]}""",
+        )
+        val result = mapper.map(event) as StreamEvent.AttachmentCreated
+        assertThat(result.agentId).isEqualTo("agent_1")
+        assertThat(result.stepId).isEqualTo("step_9")
+    }
+
+    @Test
+    fun `a step id of the wrong shape drops only that field`() {
+        val event = SseEvent(
+            event = "attachment",
+            data = """{"type":"ui_resources","toolCallId":"call_ui","stepId":{"x":1},"ui_resources":[]}""",
+        )
+        val result = mapper.map(event) as StreamEvent.AttachmentCreated
+        assertThat(result.stepId).isNull()
+        assertThat(result.toolCallId).isEqualTo("call_ui")
     }
 
     @Test

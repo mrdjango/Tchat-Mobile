@@ -18,7 +18,7 @@ import platform.WebKit.WKWebViewConfiguration
 
 /**
  * iOS preview surface — a `WKWebView` hosting the artifact's rendered HTML. The
- * shell, header, selector, and code body are shared in the common `ArtifactPanel`.
+ * shell, header, selector, and code body are shared in the common `ArtifactViewer`.
  */
 @OptIn(ExperimentalForeignApi::class)
 @Composable
@@ -27,9 +27,10 @@ actual fun ArtifactPreviewSurface(
     type: String,
     isDarkTheme: Boolean,
     modifier: Modifier,
+    allowedLibraries: Set<String>,
 ) {
-    val html = remember(content, type, isDarkTheme) {
-        ArtifactWebContent.buildHtml(content, type, isDarkTheme, inline = false)
+    val html = remember(content, type, isDarkTheme, allowedLibraries) {
+        ArtifactWebContent.buildHtml(content, type, isDarkTheme, inline = false, allowedLibraries = allowedLibraries)
     }
 
     // Track what HTML is currently loaded to avoid reloading on every recomposition —

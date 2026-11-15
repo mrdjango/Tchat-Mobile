@@ -6,11 +6,13 @@ import androidx.lifecycle.viewModelScope
 import com.garfiec.librechat.core.common.AppInfo
 import com.garfiec.librechat.core.common.datetime.DateTimeFormatPrefs
 import com.garfiec.librechat.core.data.datastore.AppPreferences
+import com.garfiec.librechat.core.data.datastore.ArtifactDisplayMode
 import com.garfiec.librechat.core.data.datastore.DateTimePrefsStore
 import com.garfiec.librechat.core.data.datastore.PreferenceStore
 import com.garfiec.librechat.core.data.datastore.ServerDataStore
 import com.garfiec.librechat.core.data.datastore.SettingsDataStore
 import com.garfiec.librechat.core.data.repository.ConfigRepository
+import com.garfiec.librechat.core.logging.PlatformInfo
 import com.garfiec.librechat.core.model.config.BuildInfo
 import com.garfiec.librechat.core.network.client.CertificateAuthority
 import com.garfiec.librechat.core.network.client.CertificateTrustRegistry
@@ -22,7 +24,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 @Immutable
@@ -30,7 +31,6 @@ data class GeneralSettingsUiState(
     val selectedLanguage: String = SettingsDataStore.DEFAULT_LANGUAGE,
     val showLanguageDialog: Boolean = false,
     val dateTimePrefs: DateTimeFormatPrefs = DateTimeFormatPrefs(),
-    val showDateTimeDialog: Boolean = false,
     val tabletSidebarGestureEnabled: Boolean = true,
     val advancedSearchEnabled: Boolean = false,
     val serverUrl: String = "",
@@ -52,10 +52,52 @@ data class GeneralSettingsUiState(
      * The About section shows an explicit "Unknown" in that case rather than hiding the row.
      */
     val serverVersion: String? = null,
+    /** `StartupConfig.adminPanelURL` when the server sets one: Administration's Admin panel row. */
+    val adminPanelUrl: String? = null,
+    /** The Settings home's Chats and Voice summaries. */
+    val homeChats: HomeChatPrefs = HomeChatPrefs(),
+    /** About's Copy diagnostics text, for a bug report. */
+    val diagnostics: String = "",
 )
 
-/** Dialog flags held apart from the observed preferences they are merged with. */
-private data class GeneralDialogs(val language: Boolean = false, val dateTime: Boolean = false)
+/**
+ * The plain-English text About's Copy diagnostics puts on the clipboard, after web's About tab. It
+ * leaves out the server address, which can name a private host in a public bug report.
+ */
+internal fun aboutDiagnostics(
+    appVersion: String,
+    gitSha: String,
+    serverVersion: String?,
+    buildInfo: BuildInfo?,
+    device: String,
+    installSource: String,
+): String = listOf(
+    "Switchboard version: $appVersion",
+    "Switchboard build: ${gitSha.ifBlank { DIAGNOSTICS_MISSING }}",
+    "Install source: $installSource",
+    "LibreChat version: ${serverVersion ?: DIAGNOSTICS_MISSING}",
+    "Commit: ${buildInfo?.commit?.takeIf { it.isNotBlank() } ?: DIAGNOSTICS_MISSING}",
+    "Branch: ${buildInfo?.branch?.takeIf { it.isNotBlank() } ?: DIAGNOSTICS_MISSING}",
+    "Build date: ${buildInfo?.buildDate?.takeIf { it.isNotBlank() } ?: DIAGNOSTICS_MISSING}",
+    "Device: $device",
+).joinToString("\n")
+
+private const val DIAGNOSTICS_MISSING = "—"
+
+/** The Device line of [aboutDiagnostics]. */
+internal fun diagnosticsDevice(platformInfo: PlatformInfo): String =
+    "${platformInfo.osName} ${platformInfo.osVersion} · ${platformInfo.deviceModel}"
+
+/** The Install source line of [aboutDiagnostics]: the build's channel, then what installed it. */
+internal fun diagnosticsInstallSource(appInfo: AppInfo, platformInfo: PlatformInfo): String =
+    listOfNotNull(appInfo.channel.wireName, platformInfo.installSource).joinToString(" · ")
+
+/** The chat and voice preferences the Settings home summarizes. */
+data class HomeChatPrefs(
+    val thinkingOpenByDefault: Boolean = false,
+    val artifactDisplayMode: ArtifactDisplayMode = ArtifactDisplayMode.AUTOMATIC,
+    val autoReadEnabled: Boolean = false,
+)
 
 /** The active server and how its certificate is trusted, combined first to stay within `combine`'s five-flow overload. */
 private data class GeneralServer(val url: String, val trustedViaUserCa: Boolean)
@@ -66,9 +108,10 @@ private data class GeneralPrefs(
     val dateTime: DateTimeFormatPrefs,
     val tabletGesture: Boolean,
     val advancedSearch: Boolean,
+    val homeChats: HomeChatPrefs,
 )
 
-/** Backs the General tab: language, date & time, tablet gesture, and About. No network loads. */
+/** Backs Language & region, About, Administration's admin panel link and the sidebar gesture. No network loads. */
 class GeneralSettingsViewModel(
     private val settingsDataStore: SettingsDataStore,
     private val dateTimePrefsStore: DateTimePrefsStore,
@@ -77,15 +120,24 @@ class GeneralSettingsViewModel(
     appInfo: AppInfo,
     private val preferenceStore: PreferenceStore,
     certificateTrust: CertificateTrustRegistry,
+    platformInfo: PlatformInfo,
 ) : ViewModel() {
 
-    private val dialogs = MutableStateFlow(GeneralDialogs())
+    private val device = diagnosticsDevice(platformInfo)
+    private val installSource = diagnosticsInstallSource(appInfo, platformInfo)
+
+    private val showLanguageDialog = MutableStateFlow(false)
 
     private val prefs = combine(
         settingsDataStore.selectedLanguage,
         dateTimePrefsStore.prefs,
         settingsDataStore.tabletSidebarGestureEnabled,
         preferenceStore.observe(AppPreferences.AdvancedSearch),
+        combine(
+            settingsDataStore.thinkingOpenByDefault,
+            preferenceStore.observe(AppPreferences.ArtifactDisplay),
+            settingsDataStore.autoReadEnabled,
+        ) { thinkingOpen, artifacts, autoRead -> HomeChatPrefs(thinkingOpen, artifacts, autoRead) },
         ::GeneralPrefs,
     )
 
@@ -97,50 +149,43 @@ class GeneralSettingsViewModel(
     private val initial = GeneralSettingsUiState(appVersion = appInfo.versionName, gitSha = appInfo.gitSha)
 
     val uiState: StateFlow<GeneralSettingsUiState> = combine(
-        dialogs,
+        showLanguageDialog,
         prefs,
         server,
         configRepository.startupConfig,
         configRepository.detectedBackendVersion,
-    ) { dialogs, prefs, server, config, version ->
+    ) { languageDialog, prefs, server, config, version ->
         initial.copy(
             selectedLanguage = prefs.language,
-            showLanguageDialog = dialogs.language,
+            showLanguageDialog = languageDialog,
             dateTimePrefs = prefs.dateTime,
-            showDateTimeDialog = dialogs.dateTime,
             tabletSidebarGestureEnabled = prefs.tabletGesture,
             advancedSearchEnabled = prefs.advancedSearch,
             serverUrl = server.url,
             serverTrustedViaUserCa = server.trustedViaUserCa,
             buildInfo = config?.buildInfo,
             serverVersion = version,
+            adminPanelUrl = config?.adminPanelURL?.takeIf { it.isNotBlank() },
+            homeChats = prefs.homeChats,
+            diagnostics = aboutDiagnostics(initial.appVersion, initial.gitSha, version, config?.buildInfo, device, installSource),
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, initial)
 
     fun showLanguageDialog() {
-        dialogs.update { it.copy(language = true) }
+        showLanguageDialog.value = true
     }
 
     fun dismissLanguageDialog() {
-        dialogs.update { it.copy(language = false) }
+        showLanguageDialog.value = false
     }
 
     fun setLanguage(languageCode: String) {
         viewModelScope.launch { settingsDataStore.setSelectedLanguage(languageCode) }
-        dialogs.update { it.copy(language = false) }
+        showLanguageDialog.value = false
     }
 
-    fun showDateTimeDialog() {
-        dialogs.update { it.copy(dateTime = true) }
-    }
-
-    fun dismissDateTimeDialog() {
-        dialogs.update { it.copy(dateTime = false) }
-    }
-
-    fun saveDateTimePrefs(prefs: DateTimeFormatPrefs) {
-        viewModelScope.launch { dateTimePrefsStore.set(prefs) }
-        dialogs.update { it.copy(dateTime = false) }
+    fun updateDateTimePrefs(transform: (DateTimeFormatPrefs) -> DateTimeFormatPrefs) {
+        viewModelScope.launch { dateTimePrefsStore.update(transform) }
     }
 
     fun setTabletSidebarGestureEnabled(enabled: Boolean) {

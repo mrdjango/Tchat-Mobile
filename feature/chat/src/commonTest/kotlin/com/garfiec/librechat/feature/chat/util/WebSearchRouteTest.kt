@@ -27,7 +27,11 @@ class WebSearchRouteTest {
         librechatUsable: Boolean = true,
         builtInAvailable: Boolean = true,
         librechatChecking: Boolean = false,
-    ) = webSearchRoute(on, sendsEphemeralTools, spec, comparing, preference, librechatUsable, builtInAvailable, librechatChecking)
+        specSearchAllowed: Boolean = true,
+    ) = webSearchRoute(
+        on, sendsEphemeralTools, spec, comparing, preference, librechatUsable, builtInAvailable, librechatChecking,
+        specSearchAllowed = specSearchAllowed,
+    )
 
     @Test
     fun `while LibreChat search is being checked a route that would pick it holds`() {
@@ -96,6 +100,15 @@ class WebSearchRouteTest {
     }
 
     @Test
+    fun `a spec's webSearch without the capability or role searches nothing`() {
+        assertEquals(WebSearchRoute.NONE, route(spec = searchSpec, specSearchAllowed = false))
+        // Not the built-in search either, unless the spec's preset asks for that too.
+        assertEquals(WebSearchRoute.NONE, route(spec = searchSpec, specSearchAllowed = false, librechatUsable = false))
+        assertEquals(WebSearchRoute.BUILT_IN, route(spec = bothSpec, specSearchAllowed = false))
+        assertEquals(WebSearchRoute.NONE, route(spec = bothSpec, specSearchAllowed = false, builtInAvailable = false))
+    }
+
+    @Test
     fun `a spec preset's web_search is the built-in search whatever is preferred`() {
         assertEquals(WebSearchRoute.BUILT_IN, route(spec = groundedSpec))
     }
@@ -143,6 +156,15 @@ class WebSearchRouteTest {
         assertEquals(BuiltInSearchProvider.GOOGLE, builtInSearchProvider("google", emptyList()))
         assertEquals(BuiltInSearchProvider.OPENROUTER, builtInSearchProvider("OpenRouter", emptyList()))
         assertEquals(BuiltInSearchProvider.OPENROUTER, builtInSearchProvider("my-openrouter", emptyList()))
+    }
+
+    @Test
+    fun `a custom endpoint takes the provider its parameter set names as the server does`() {
+        assertEquals(BuiltInSearchProvider.OPENROUTER, builtInSearchProvider("Router", emptyList(), settingsKey = "openrouter"))
+        assertEquals(BuiltInSearchProvider.ANTHROPIC, builtInSearchProvider("openrouter-x", emptyList(), settingsKey = "anthropic"))
+        assertEquals(BuiltInSearchProvider.GOOGLE, builtInSearchProvider("Vertex", emptyList(), settingsKey = "google"))
+        assertEquals(BuiltInSearchProvider.OPENROUTER, builtInSearchProvider("my-openrouter", emptyList(), settingsKey = "custom"))
+        assertNull(builtInSearchProvider("Ollama", emptyList(), settingsKey = "custom"))
     }
 
     @Test

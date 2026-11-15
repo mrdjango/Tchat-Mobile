@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
@@ -19,6 +20,7 @@ import com.garfiec.librechat.core.ui.glass.GlassDefaults
 import com.garfiec.librechat.core.ui.glass.GlassMenuPortal
 import com.garfiec.librechat.core.ui.glass.LocalGlassSheetHost
 import com.garfiec.librechat.core.ui.theme.isLiquidGlass
+import com.garfiec.librechat.core.ui.theme.themeShapes
 
 /**
  * In Material, a menu that springs out of its corner nearest the anchor, in the app canvas
@@ -57,7 +59,7 @@ fun AdaptiveDropdownMenu(
             modifier = modifier,
             offset = offset,
             scrollState = scrollState,
-            shape = shape ?: MenuDefaults.shape,
+            shape = shape ?: themeShapes().menu,
             containerColor = containerColor ?: MenuDefaults.containerColor,
             dragSelection = dragSelection,
             content = content,
@@ -72,7 +74,7 @@ fun AdaptiveDropdownMenu(
             offset = offset,
             scrollState = scrollState,
             properties = properties,
-            shape = shape ?: MenuDefaults.shape,
+            shape = shape ?: themeShapes().menu,
             containerColor = containerColor ?: MenuDefaults.containerColor,
             dragSelection = dragSelection,
             content = content,
@@ -86,7 +88,7 @@ fun AdaptiveDropdownMenu(
         offset = offset,
         scrollState = scrollState,
         properties = properties,
-        shape = shape ?: GlassDefaults.MenuShape,
+        shape = shape ?: AdaptiveMenuShape,
         containerColor = containerColor ?: MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 0.dp,
         shadowElevation = GlassMenuShadow,
@@ -96,3 +98,13 @@ fun AdaptiveDropdownMenu(
 }
 
 private val GlassMenuShadow = 12.dp
+
+/** A server theme's menu edge, as the web draws every menu (`border-menu`, 1px). */
+internal val MenuBorderWidth = 1.dp
+
+/**
+ * Liquid Glass menus' corners (`GlassDefaults.MenuShape`), and Material's when the theme names no
+ * menu corner (`ThemeShapes.menu`): rounder than M3's 4dp `MenuDefaults.shape`, so a menu matches
+ * the app's cards and sheets. Clipped, so a row's ripple stays inside.
+ */
+internal val AdaptiveMenuShape = RoundedCornerShape(16.dp)

@@ -8,7 +8,9 @@ import com.garfiec.librechat.core.common.result.failureKind
 import com.garfiec.librechat.core.logging.Diag
 import com.garfiec.librechat.core.logging.LogOrigin
 import com.garfiec.librechat.core.logging.redact.LogRedactor
+import com.garfiec.librechat.core.model.error.ServerErrorCode
 import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngineFactory
 import io.ktor.client.plugins.DefaultRequest.DefaultRequestBuilder
 import io.ktor.client.plugins.HttpRequestRetry
@@ -19,15 +21,18 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Url
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.util.AttributeKey
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -91,9 +96,7 @@ object LibreChatHttpClient {
             }
         }
 
-        install(HttpRequestRetry) {
-            configureRetryPolicy()
-        }
+        install(HttpRequestRetry) { configureRetryPolicy() }
 
         install(AuthInterceptorPlugin) {
             this.tokenManager = tokenManager
@@ -121,6 +124,9 @@ object LibreChatHttpClient {
             this.serverHeadersProvider = serverHeadersProvider
             this.serverUrlProvider = serverUrlProvider
         }
+
+        // Outside GatewayDetectionPlugin, so a gateway's challenge is reported before a redirect is.
+        install(ServerProbePlugin)
 
         // Must see the gateway's own 302, so it has to be inside the redirect loop — following that
         // redirect yields a 200 sign-in page, which no status-based check can catch.
@@ -177,6 +183,7 @@ object LibreChatHttpClient {
                         }
                     }
 
+                    if (statusCode == HttpStatusCode.Forbidden.value) reportAuthGate(tokenManager, response, bodyText)
                     throw ApiException(
                         statusCode = statusCode,
                         message = extracted.message,
@@ -195,6 +202,9 @@ object LibreChatHttpClient {
             applyBrowserDefaults()
             contentType(ContentType.Application.Json)
         }
+
+        // Keep last: the innermost send interceptor, between the engine and the other plugins.
+        installTransportRecovery()
     }
 
     /**
@@ -216,6 +226,28 @@ object LibreChatHttpClient {
      * wording below is shown as-is.
      */
     private data class ExtractedError(val message: String, val serverAuthored: Boolean)
+
+    /**
+     * Turns a 403 that is one of the server's required steps (v0.8.9-rc1) into an [AuthGate]:
+     * the 2FA enrollment gate every authenticated route answers, and the terms gate on writes.
+     *
+     * Keyed on the body's code, never on the status: the user-agent soft-ban, a ban, an access
+     * gateway and a WAF all answer 403 too, and none of them is a step the user can take in the app.
+     * Scoped to the request's account like the ban report; a pending add-flow request is the add
+     * flow's own business (its sign-in answers the enrollment 200 itself).
+     */
+    private fun reportAuthGate(tokenManager: TokenManager, response: HttpResponse, bodyText: String) {
+        val identity = response.call.request.attributes.getOrNull(RequestIdentityKey)
+        if (identity?.isPending == true) return
+        val accountId = identity?.accountId
+        val setupToken = ServerErrorCode.twoFactorEnrollmentToken(bodyText)
+        val gate = when {
+            setupToken != null -> AuthGate.TwoFactorSetupRequired(accountId, setupToken)
+            ServerErrorCode.isTermsNotAccepted(bodyText) -> AuthGate.TermsNotAccepted(accountId)
+            else -> return
+        }
+        tokenManager.reportAuthGate(gate)
+    }
 
     /**
      * True only for LibreChat's **own** ban response: `checkBan`'s `banResponse` answers
@@ -262,11 +294,50 @@ object LibreChatHttpClient {
         statusCode: Int,
     ): ExtractedError {
         val renewalFailed = response.call.request.attributes.getOrNull(SessionRenewalFailedKey) == true
+        val movedTo = redirectedServer(response)
         return if (statusCode == HttpStatusCode.Unauthorized.value && renewalFailed) {
             ExtractedError(SESSION_RENEWAL_FAILED_MESSAGE, serverAuthored = false)
+        } else if (movedTo != null) {
+            ExtractedError(
+                "This server has moved to $movedTo. Sign in again at that address.",
+                serverAuthored = false,
+            )
         } else {
             extractErrorMessage(json, body, statusCode)
         }
+    }
+
+    /**
+     * `scheme://host[:port]` of another server a non-GET was redirected to: Ktor follows only GET and
+     * HEAD, so a stored address the server now redirects fails every POST. Never the path or query (a
+     * gateway URL carries a `meta=` JWT). Only when the Location keeps the request's `/api/…` path: a
+     * forward-auth portal (`https://auth.example.com/login?rd=…`) is a sign-in wall, not the server's
+     * new address. A root-relative Location (upstream's `redirect('/login')`) is the token store's to
+     * classify, so it gets no message here.
+     */
+    private fun redirectedServer(response: HttpResponse): String? {
+        val request = response.call.request
+        if (response.status.value !in 300..399 || request.method == HttpMethod.Get || request.method == HttpMethod.Head) {
+            return null
+        }
+        val location = response.headers[HttpHeaders.Location]?.takeIf { "://" in it } ?: return null
+        val target = runCatching { Url(location) }.getOrNull()?.takeIf { it.host.isNotEmpty() } ?: return null
+        val from = request.url
+        val apiPath = from.encodedPath.let { path ->
+            path.indexOf("/api/").let { if (it < 0) path else path.substring(it) }
+        }
+        if (!target.encodedPath.trimEnd('/').endsWith(apiPath.trimEnd('/'))) return null
+        if (target.protocol == from.protocol && target.host.equals(from.host, ignoreCase = true) &&
+            target.port == from.port
+        ) {
+            return null
+        }
+        val port = if (target.specifiedPort == 0 || target.specifiedPort == target.protocol.defaultPort) {
+            ""
+        } else {
+            ":${target.specifiedPort}"
+        }
+        return "${target.protocol.name}://${target.host}$port"
     }
 
     private fun extractErrorMessage(json: Json, body: String, statusCode: Int): ExtractedError {
@@ -299,32 +370,53 @@ object LibreChatHttpClient {
     }
 }
 
+private fun HttpClientConfig<*>.installTransportRecovery() {
+    val platformVerdict = platformTransportVerdict ?: return
+    install(TransportRecoveryPlugin) { verdict = platformVerdict }
+}
+
 /**
  * Retry policy shared by production and the guard test so they can't drift. Replays only
  * side-effect-free methods: a retried POST/PATCH would mint a duplicate chat job + orphaned
  * generation or a duplicate upload, and a retried DELETE that already succeeded server-side would
  * surface a spurious 404. The allow-list means an unknown or newly added method defaults to *not*
- * retried.
+ * retried. Below this, a request whose connection fails before a response can still be resent: on
+ * Android by OkHttp, for any replayable body, POST included (multipart counts, `ReplayableUploadBodies`);
+ * on iOS only a multipart upload, by [TransportRecoveryPlugin].
  */
 internal fun HttpRequestRetryConfig.configureRetryPolicy() {
     // A 5xx can arrive as a response (retryIf) or, once HttpResponseValidator throws, as an
     // ApiException (retryOnExceptionIf) — so both predicates carry the same method and status gate,
     // whichever path a non-2xx takes.
     retryIf(maxRetries = 2) { request, response ->
-        request.method.isRetrySafe() && response.status.value.isTransientServerError()
+        request.method.isRetrySafe() && NoServerErrorRetry !in request.attributes &&
+            response.status.value.isTransientServerError()
     }
     retryOnExceptionIf(maxRetries = 2) { request, cause ->
         request.method.isRetrySafe() &&
+            (NoServerErrorRetry !in request.attributes || cause !is ApiException) &&
             cause !is kotlinx.coroutines.CancellationException &&
             (cause !is ApiException || cause.statusCode.isTransientServerError()) &&
             // Deterministic until the user edits the credential, so retrying only delays the report.
             // Excluded here rather than by install order: this plugin is installed first and so runs
             // outermost, which it must stay for the transient failures it exists to absorb.
             cause !is AccessGatewayException &&
-            // Same for a certificate the device doesn't trust.
-            cause.failureKind() != FailureKind.Tls
+            cause !is ServerRedirectException &&
+            // Same for a certificate the device doesn't trust, and for cleartext the platform won't send.
+            cause.failureKind().let { it != FailureKind.Tls && it != FailureKind.CleartextBlocked }
     }
     exponentialDelay()
+}
+
+/**
+ * Marks a request whose caller owns its 5xx backoff, so [configureRetryPolicy] sends it once on a
+ * server error (a transport failure still retries). Set it with [noServerErrorRetry].
+ */
+internal val NoServerErrorRetry = AttributeKey<Unit>("NoServerErrorRetry")
+
+/** See [NoServerErrorRetry]. */
+internal fun HttpRequestBuilder.noServerErrorRetry() {
+    attributes.put(NoServerErrorRetry, Unit)
 }
 
 private val RETRY_SAFE_METHODS = setOf(HttpMethod.Get, HttpMethod.Head, HttpMethod.Options)

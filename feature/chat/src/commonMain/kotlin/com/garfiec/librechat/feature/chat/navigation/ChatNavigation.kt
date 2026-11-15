@@ -4,27 +4,31 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.EntryProviderScope
 import androidx.navigation3.runtime.NavKey
+import com.garfiec.librechat.core.data.datastore.AppPreferences
 import com.garfiec.librechat.core.data.datastore.ArtifactDisplayMode
-import com.garfiec.librechat.core.data.datastore.ArtifactDisplayPrefs
-import com.garfiec.librechat.core.data.datastore.SettingsDataStore
+import com.garfiec.librechat.core.data.datastore.PreferenceStore
 import com.garfiec.librechat.feature.chat.components.LocalArtifactFileActions
 import com.garfiec.librechat.feature.chat.components.artifact.Artifact
-import com.garfiec.librechat.feature.chat.components.artifact.ArtifactPanel
+import com.garfiec.librechat.feature.chat.components.artifact.ArtifactOrigin
+import com.garfiec.librechat.feature.chat.components.artifact.ArtifactPresentationHost
+import com.garfiec.librechat.feature.chat.components.artifact.ArtifactPresentationState
+import com.garfiec.librechat.feature.chat.components.artifact.ArtifactSheetHalfOpenBelowWidth
 import com.garfiec.librechat.feature.chat.components.artifact.ArtifactViewerHandoff
+import com.garfiec.librechat.feature.chat.components.artifact.LocalArtifactOrigin
 import com.garfiec.librechat.feature.chat.components.artifact.LocalOpenArtifact
 import com.garfiec.librechat.feature.chat.components.artifact.ProvideAddArtifactToHomeScreen
 import com.garfiec.librechat.feature.chat.components.rememberAttachmentFileActions
 import com.garfiec.librechat.feature.chat.prompts.PromptEditorScreen
 import com.garfiec.librechat.feature.chat.prompts.PromptsLibraryScreen
 import com.garfiec.librechat.feature.chat.screen.ArtifactFullscreenScreen
-import com.garfiec.librechat.feature.chat.screen.ArtifactShortcutViewerScreen
 import com.garfiec.librechat.feature.chat.screen.ChatScreen
 import com.garfiec.librechat.feature.chat.screen.ConversationMediaScreen
 import com.garfiec.librechat.feature.chat.screen.NewChatScreen
@@ -32,6 +36,7 @@ import com.garfiec.librechat.feature.chat.screen.SharedChatScreen
 import com.garfiec.librechat.feature.chat.viewmodel.ProjectLandingViewModel
 import com.garfiec.librechat.feature.chat.viewmodel.PromptInsertionHandoff
 import com.garfiec.librechat.feature.chat.viewmodel.chatHandoffKey
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
@@ -108,13 +113,6 @@ val NewChat.handoffKey: String? get() = chatHandoffKey(conversationId = null, ch
 @Serializable data class ArtifactFullscreen(val identifier: String, val version: Int) : ChatRoute
 
 /**
- * Viewer for a home-screen-pinned artifact, opened by tapping its launcher icon
- * (`librechat://artifact/{snapshotId}`). Unlike [ArtifactFullscreen] it loads a self-contained Room
- * snapshot by [snapshotId], so it survives cold start / process death and works while logged out.
- */
-@Serializable data class ArtifactShortcutViewer(val snapshotId: String) : ChatRoute
-
-/**
  * The in-app viewer for one of the ACTIVE account's shared links, by [shareId]. A link on another
  * signed-in account's server is pushed only after the switch to that account has reset the stack.
  */
@@ -127,6 +125,8 @@ fun EntryProviderScope<NavKey>.chatEntries(
     onRemove: (NavKey) -> Unit,
     onNavigateToChat: (conversationId: String, isTemporary: Boolean) -> Unit,
     onOpenDrawer: (() -> Unit)? = null,
+    /** Starts a new chat as the drawer's New chat does; the chat's side rail offers it. */
+    onNewChat: (() -> Unit)? = null,
     /**
      * Deep-link target for the user-provided-key error CTA snackbar and
      * the model-selector "Add key" action on greyed endpoint groups. The host navigates
@@ -168,6 +168,7 @@ fun EntryProviderScope<NavKey>.chatEntries(
                 onNavigateToChat(conversationId, isTemporary)
             },
             onOpenDrawer = onOpenDrawer,
+            onNewChat = onNewChat,
             onNavigateToPromptsLibrary = { onNavigate(PromptsLibrary) },
             onNavigateToProviderKeys = onNavigateToProviderKeys,
             onAttachFromServer = onAttachFromServer,
@@ -186,6 +187,7 @@ fun EntryProviderScope<NavKey>.chatEntries(
                 highlightQuery = key.highlightQuery,
                 targetInReasoning = key.targetInReasoning,
                 onOpenDrawer = onOpenDrawer,
+                onNewChat = onNewChat,
                 onNavigateToPromptsLibrary = { onNavigate(PromptsLibrary) },
                 onNavigateBack = onBack,
                 // Fork/duplicate produce real (non-temp) conversations.
@@ -219,13 +221,6 @@ fun EntryProviderScope<NavKey>.chatEntries(
                 )
             }
         }
-    }
-    entry<ArtifactShortcutViewer> { key ->
-        // No pin provider here: a launcher-opened artifact can't be re-pinned from its own screen.
-        ArtifactShortcutViewerScreen(
-            snapshotId = key.snapshotId,
-            onBack = onBack,
-        )
     }
     entry<PromptsLibrary> {
         // The chat entry is off-composition while the library is up, so the text is staged here and
@@ -274,11 +269,11 @@ private fun EntryProviderScope<NavKey>.sharedChatEntry(
 }
 
 /**
- * Owns the screen-level artifact presentation and provides [LocalOpenArtifact] so artifacts
- * tapped deep in the message list just fire an event. Honoring the display-mode pref it either
- * pushes the [ArtifactFullscreen] route (payload staged in [ArtifactViewerHandoff]; real nav
- * destination → predictive back) or shows a bottom sheet rendered here at the screen root —
- * not inline in the list, so it survives the tapped item scrolling off-screen.
+ * Owns the screen-level artifact presentation and provides [LocalOpenArtifact] so artifacts tapped
+ * deep in the message list just fire an event. Under the Full screen choice it pushes the
+ * [ArtifactFullscreen] route (payload staged in [ArtifactViewerHandoff]); otherwise it opens the
+ * artifact in an [ArtifactPresentationHost] around [content], which survives the tapped item
+ * scrolling off-screen and keeps the page across rotation and folding.
  */
 @Composable
 internal fun ProvideOpenArtifact(
@@ -286,51 +281,56 @@ internal fun ProvideOpenArtifact(
     content: @Composable () -> Unit,
 ) {
     val handoff = koinInject<ArtifactViewerHandoff>()
-    val settingsDataStore = koinInject<SettingsDataStore>()
-    // Held as State, not read via `by` at composable scope: the mode only matters at tap time, so
-    // reading it inside the lambda keeps a pref change from recomposing the whole content() subtree.
-    val displayPrefs = settingsDataStore.artifactDisplayPrefs
-        .collectAsStateWithLifecycle(ArtifactDisplayPrefs())
+    val preferences = koinInject<PreferenceStore>()
+    val displayMode by preferences.observe(AppPreferences.ArtifactDisplay)
+        .collectAsStateWithLifecycle(preferences.initial(AppPreferences.ArtifactDisplay))
+    val splitFraction by preferences.observe(AppPreferences.ArtifactSplitFraction)
+        .collectAsStateWithLifecycle(preferences.initial(AppPreferences.ArtifactSplitFraction))
+    val presentation = remember { ArtifactPresentationState() }
+    val origin = remember { ArtifactOrigin() }
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val windowWidth = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
+    // Read at tap time: the mode and the window only matter as the artifact opens.
+    val currentMode by rememberUpdatedState(displayMode)
+    val currentWindowWidth by rememberUpdatedState(windowWidth)
 
-    var sheetRequest by remember { mutableStateOf<ArtifactViewerHandoff.Entry?>(null) }
-
-    val openFullscreen = remember(onNavigate, handoff) {
+    val openArtifact = remember(onNavigate, handoff, presentation) {
         { artifact: Artifact, versions: List<Artifact> ->
-            handoff.put(artifact, versions)
-            onNavigate(ArtifactFullscreen(artifact.identifier, artifact.version))
-        }
-    }
-    val openArtifact = remember(openFullscreen) {
-        { artifact: Artifact, versions: List<Artifact> ->
-            if (displayPrefs.value.mode == ArtifactDisplayMode.FULLSCREEN) {
-                openFullscreen(artifact, versions)
+            if (currentMode == ArtifactDisplayMode.FULLSCREEN) {
+                handoff.put(artifact, versions)
+                onNavigate(ArtifactFullscreen(artifact.identifier, artifact.version))
             } else {
-                sheetRequest = ArtifactViewerHandoff.Entry(artifact, versions)
+                presentation.show(
+                    ArtifactViewerHandoff.Entry(artifact, versions),
+                    opensFull = currentWindowWidth >= ArtifactSheetHalfOpenBelowWidth,
+                )
             }
         }
     }
 
-    // Wrap both the content and the screen-root sheet so the pin action reaches inline cards and the
-    // bottom-sheet viewer alike (no-op on platforms without a pin action).
+    // Wraps the content and the viewer alike, so the pin action reaches inline cards and the viewer
+    // (no-op on platforms without a pin action).
     ProvideAddArtifactToHomeScreen {
-        CompositionLocalProvider(LocalOpenArtifact provides openArtifact) {
-            content()
-        }
-
-        ProvideAttachmentDownloader {
-            // Screen-lifetime, not the sheet's: a save picker's result or a download can land after
-            // the sheet closed, and the sheet itself doesn't survive an Activity recreation.
-            val fileActions = rememberAttachmentFileActions()
-            sheetRequest?.let { req ->
-                CompositionLocalProvider(LocalArtifactFileActions provides fileActions) {
-                    ArtifactPanel(
-                        artifact = req.artifact,
-                        versions = req.versions,
-                        onDismiss = { sheetRequest = null },
-                        onExpandFullscreen = openFullscreen,
-                    )
-                }
-            }
+        CompositionLocalProvider(LocalOpenArtifact provides openArtifact, LocalArtifactOrigin provides origin) {
+            ArtifactPresentationHost(
+                state = presentation,
+                automatic = displayMode == ArtifactDisplayMode.AUTOMATIC,
+                splitFraction = splitFraction,
+                onSplitFractionChange = { fraction ->
+                    scope.launch { preferences.set(AppPreferences.ArtifactSplitFraction, fraction) }
+                },
+                origin = origin,
+                panelScope = { panel ->
+                    ProvideAttachmentDownloader {
+                        // The host's lifetime, not one opening's: a save picker's result or a
+                        // download can land after the viewer closed.
+                        val fileActions = rememberAttachmentFileActions()
+                        CompositionLocalProvider(LocalArtifactFileActions provides fileActions) { panel() }
+                    }
+                },
+                content = content,
+            )
         }
     }
 }
@@ -343,7 +343,6 @@ val chatSerializersModule = SerializersModule {
         subclass(PromptEditor::class, PromptEditor.serializer())
         subclass(ConversationMedia::class, ConversationMedia.serializer())
         subclass(ArtifactFullscreen::class, ArtifactFullscreen.serializer())
-        subclass(ArtifactShortcutViewer::class, ArtifactShortcutViewer.serializer())
         subclass(SharedChat::class, SharedChat.serializer())
     }
 }

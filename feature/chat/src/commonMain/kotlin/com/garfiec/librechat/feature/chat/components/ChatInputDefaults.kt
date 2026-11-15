@@ -2,7 +2,6 @@ package com.garfiec.librechat.feature.chat.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.IconButtonColors
 import androidx.compose.material3.IconButtonDefaults
@@ -11,34 +10,27 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.compositeOver
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.unit.dp
 import com.garfiec.librechat.core.ui.theme.LocalDarkTheme
-import com.garfiec.librechat.core.ui.theme.isLiquidGlass
+import com.garfiec.librechat.core.ui.theme.chatColors
 
 object ChatInputDefaults {
-    val shape: Shape = RoundedCornerShape(20.dp) // TCHAT: radius-lg, the composer (was 24)
-
-    /** Resting fill shared by the composer input box and the floating top-bar chips. */
+    /** Resting fill shared by the composer box and the floating top-bar chips. */
     val containerColor: Color
         @Composable get() = MaterialTheme.colorScheme.surfaceContainerHigh
 
-    /** Resting border shared by the composer input box and the floating top-bar chips. */
+    /** Resting border shared by the composer box and the floating top-bar chips. */
     val borderColor: Color
         @Composable get() = MaterialTheme.colorScheme.outlineVariant
 
     /**
-     * Temporary chat's violet, as web tints its composer. A fixed hue rather than a scheme role, so
-     * the mode reads the same under any accent or dynamic colour.
+     * Temporary chat's tint, as web tints its composer. A fixed hue in Switchboard rather than a
+     * scheme role, so the mode reads the same under any accent or dynamic colour.
      */
     val temporaryAccent: Color
-        @Composable get() = if (LocalDarkTheme.current) TemporaryVioletDark else TemporaryVioletLight
+        @Composable get() = chatColors().temporary
 
     /** The composer's resting border while temporary chat is on. */
     val temporaryBorderColor: Color
@@ -55,29 +47,16 @@ object ChatInputDefaults {
         capitalization = KeyboardCapitalization.Sentences,
     )
 
-    /**
-     * In Liquid Glass the composer's capsule is the frame, so the field draws no fill or border.
-     * In Material, the violet fades in and out over [TEMPORARY_TINT_MS] rather than snapping.
-     */
+    /** The field inside the composer box draws no fill or border: the box is its frame, in both styles. */
     @Composable
-    fun textFieldColors(isTemporaryChat: Boolean = false): TextFieldColors {
-        val amount by animateTemporaryAmount(isTemporaryChat)
-        if (isLiquidGlass) {
-            return OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-                focusedBorderColor = Color.Transparent,
-                unfocusedBorderColor = Color.Transparent,
-            )
-        }
-        val fill = lerp(containerColor, temporaryWash.compositeOver(containerColor), amount)
-        return OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = fill,
-            unfocusedContainerColor = fill,
-            focusedBorderColor = lerp(MaterialTheme.colorScheme.outline, temporaryAccent, amount),
-            unfocusedBorderColor = lerp(borderColor, temporaryBorderColor.compositeOver(containerColor), amount),
-        )
-    }
+    fun textFieldColors(): TextFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = Color.Transparent,
+        unfocusedContainerColor = Color.Transparent,
+        disabledContainerColor = Color.Transparent,
+        focusedBorderColor = Color.Transparent,
+        unfocusedBorderColor = Color.Transparent,
+        disabledBorderColor = Color.Transparent,
+    )
 
     /** 0 → 1 as temporary chat's violet comes in; read it at draw time where possible. */
     @Composable
@@ -87,40 +66,35 @@ object ChatInputDefaults {
         label = "temporaryTint",
     )
 
+    /** The box's plain icon buttons ("+", paste, the mic): no fill, in both styles. */
     @Composable
-    fun toolsButtonColors(): IconButtonColors = if (isLiquidGlass) {
+    fun toolsButtonColors(): IconButtonColors =
         IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
-    } else {
-        IconButtonDefaults.filledTonalIconButtonColors()
-    }
 
-    /** In Liquid Glass a bare icon in [glassContentColor]; Material fills it with [containerColor]. */
+    /**
+     * The send slot (Send and the during-run sends) in the theme's [chatColors]: Switchboard's is a bare
+     * icon, the box being its frame; a server's is the web's filled circle. A [color] keeps the bare icon.
+     */
     @Composable
-    fun sendButtonColors(
-        containerColor: Color,
-        contentColor: Color,
-        glassContentColor: Color = MaterialTheme.colorScheme.primary,
-    ): IconButtonColors = if (isLiquidGlass) {
-        IconButtonDefaults.iconButtonColors(
-            contentColor = glassContentColor,
-            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = DISABLED_ALPHA),
-        )
-    } else {
-        IconButtonDefaults.iconButtonColors(
-            containerColor = containerColor,
-            contentColor = contentColor,
-            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    fun sendButtonColors(color: Color? = null): IconButtonColors {
+        val chat = chatColors()
+        return IconButtonDefaults.iconButtonColors(
+            containerColor = if (color == null) chat.submit else Color.Transparent,
+            contentColor = color ?: chat.onSubmit,
+            disabledContainerColor = chat.submitDisabled,
+            disabledContentColor = chat.onSubmitDisabled,
         )
     }
 
-    private const val DISABLED_ALPHA = 0.38f
+    /** Stop shares the send slot: a bare icon in Switchboard's error colour, or a server's filled circle. */
+    @Composable
+    fun stopButtonColors(): IconButtonColors {
+        val chat = chatColors()
+        return IconButtonDefaults.iconButtonColors(containerColor = chat.stop, contentColor = chat.onStop)
+    }
+
     private const val TEMPORARY_TINT_MS = 200
     private const val TEMPORARY_BORDER_ALPHA = 0.6f
     private const val TEMPORARY_WASH_ALPHA_LIGHT = 0.08f
     private const val TEMPORARY_WASH_ALPHA_DARK = 0.14f
-
-    // Tailwind violet-600 / violet-400: web's violet, stepped for contrast against each surface.
-    private val TemporaryVioletLight = Color(0xFF7C3AED)
-    private val TemporaryVioletDark = Color(0xFFA78BFA)
 }

@@ -18,14 +18,11 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,16 +38,22 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.garfiec.librechat.core.common.extensions.formatLocalizedNumber
+import com.garfiec.librechat.core.model.config.ChatProjectLimits
 import com.garfiec.librechat.core.ui.components.AdaptiveAlertDialog
 import com.garfiec.librechat.core.ui.components.AdaptiveButton
 import com.garfiec.librechat.core.ui.components.AdaptiveDropdownMenu
 import com.garfiec.librechat.core.ui.components.AdaptiveModalBottomSheet
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedTextField
+import com.garfiec.librechat.core.ui.components.AdaptiveTextButton
 import com.garfiec.librechat.core.ui.components.LowProfileDragHandle
 import com.garfiec.librechat.core.ui.components.MenuDragSelection
 import com.garfiec.librechat.core.ui.components.avatarColorForSeed
@@ -59,6 +62,8 @@ import com.garfiec.librechat.core.ui.components.dragSelectRowIcon
 import com.garfiec.librechat.core.ui.components.menuDragAnchor
 import com.garfiec.librechat.core.ui.components.menuDragTarget
 import com.garfiec.librechat.core.ui.components.rememberMenuDragSelection
+import com.garfiec.librechat.core.ui.datetime.LocalDateTimeFormat
+import com.garfiec.librechat.core.ui.theme.chromeColors
 import com.garfiec.librechat.feature.conversations.resources.Res
 import com.garfiec.librechat.feature.conversations.resources.cancel
 import com.garfiec.librechat.feature.conversations.resources.delete
@@ -68,6 +73,7 @@ import com.garfiec.librechat.feature.conversations.resources.project_delete_conf
 import com.garfiec.librechat.feature.conversations.resources.project_description_help
 import com.garfiec.librechat.feature.conversations.resources.project_description_label
 import com.garfiec.librechat.feature.conversations.resources.project_edit
+import com.garfiec.librechat.feature.conversations.resources.project_length_counter
 import com.garfiec.librechat.feature.conversations.resources.project_name_label
 import com.garfiec.librechat.feature.conversations.resources.project_options
 import org.jetbrains.compose.resources.stringResource
@@ -91,8 +97,7 @@ fun ProjectActionsMenu(
     AdaptiveDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(12.dp), // TCHAT: radius-md (was 16)
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = chromeColors().popover,
         modifier = modifier,
         offset = offset,
         dragSelection = dragSelection,
@@ -226,25 +231,33 @@ internal fun projectInitial(name: String): String {
 /**
  * Create/edit sheet for a project: a name and an optional description. [initialName] empty is a
  * create. [onConfirm] gets the trimmed name and description; a blank description comes back empty,
- * which the caller turns into "none" on create and "clear it" on edit.
+ * which the caller turns into "none" on create and "clear it" on edit. The sheet stays up, every way
+ * out held and the confirm button spinning, until the caller answers through `onResult`: saved closes
+ * it, failed keeps the text and shows [failureMessage] above the buttons (a snackbar would sit behind
+ * the sheet) until a field changes.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProjectEditorSheet(
     title: String,
     confirmLabel: String,
-    onConfirm: (name: String, description: String) -> Unit,
+    failureMessage: String,
+    onConfirm: (name: String, description: String, onResult: (saved: Boolean) -> Unit) -> Unit,
     onDismiss: () -> Unit,
     initialName: String = "",
     initialDescription: String = "",
+    /** The server's `projects.maxDescriptionLength`: it refuses a longer description with a 400. */
+    maxDescriptionLength: Int = ChatProjectLimits.DEFAULT_MAX_DESCRIPTION_LENGTH,
 ) {
-    var name by rememberSaveable { mutableStateOf(initialName) }
+    var name by rememberSaveable { mutableStateOf(initialName.take(ChatProjectLimits.MAX_NAME_LENGTH)) }
     var description by rememberSaveable { mutableStateOf(initialDescription) }
+    var saving by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     AdaptiveModalBottomSheet(
         modifier = Modifier.clearFocusOnTap(),
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        onDismissRequest = { if (!saving) onDismiss() },
+        interceptDismiss = saving,
+        skipPartiallyExpanded = true,
         dragHandle = { LowProfileDragHandle() },
     ) {
         Column(
@@ -258,29 +271,65 @@ fun ProjectEditorSheet(
             Text(text = title, style = MaterialTheme.typography.titleLarge)
             AdaptiveOutlinedTextField(
                 value = name,
-                onValueChange = { name = it },
+                // The server cuts a longer name silently, so stop where it would.
+                onValueChange = {
+                    name = it.take(ChatProjectLimits.MAX_NAME_LENGTH)
+                    failed = false
+                },
                 modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                 singleLine = true,
                 label = { Text(stringResource(Res.string.project_name_label)) },
             )
             AdaptiveOutlinedTextField(
                 value = description,
-                onValueChange = { description = it },
+                onValueChange = {
+                    description = it.take(maxDescriptionLength)
+                    failed = false
+                },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2,
                 maxLines = 4,
                 label = { Text(stringResource(Res.string.project_description_label)) },
-                supportingText = { Text(stringResource(Res.string.project_description_help)) },
+                supportingText = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(Res.string.project_description_help), modifier = Modifier.weight(1f))
+                        val localeTag = LocalDateTimeFormat.current.localeTag
+                        Text(
+                            text = stringResource(
+                                Res.string.project_length_counter,
+                                formatLocalizedNumber(description.length.toDouble(), localeTag),
+                                formatLocalizedNumber(maxDescriptionLength.toDouble(), localeTag),
+                            ),
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        )
+                    }
+                },
             )
+            if (failed) {
+                Text(
+                    text = failureMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
+                AdaptiveTextButton(onClick = onDismiss, enabled = !saving) { Text(stringResource(Res.string.cancel)) }
                 AdaptiveButton(
-                    enabled = name.isNotBlank(),
-                    onClick = { onConfirm(name.trim(), description.trim()) },
+                    enabled = name.isNotBlank() && description.trim().length <= maxDescriptionLength,
+                    loading = saving,
+                    onClick = {
+                        saving = true
+                        failed = false
+                        onConfirm(name.trim(), description.trim()) { saved ->
+                            saving = false
+                            if (saved) onDismiss() else failed = true
+                        }
+                    },
                 ) { Text(confirmLabel) }
             }
         }
@@ -302,12 +351,12 @@ fun ProjectDeleteDialog(
         title = { Text(stringResource(Res.string.project_delete)) },
         text = { Text(stringResource(Res.string.project_delete_confirm, projectName)) },
         confirmButton = {
-            TextButton(onClick = onConfirm) {
+            AdaptiveTextButton(onClick = onConfirm) {
                 Text(stringResource(Res.string.delete), color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
+            AdaptiveTextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel)) }
         },
     )
 }

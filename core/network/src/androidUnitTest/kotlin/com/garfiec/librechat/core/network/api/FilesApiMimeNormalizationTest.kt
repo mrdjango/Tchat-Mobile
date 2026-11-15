@@ -1,5 +1,8 @@
 package com.garfiec.librechat.core.network.api
 
+import co.touchlab.kermit.LogWriter
+import co.touchlab.kermit.Logger
+import co.touchlab.kermit.Severity
 import com.garfiec.librechat.core.network.di.librechatJson
 import com.google.common.truth.Truth.assertThat
 import io.ktor.client.HttpClient
@@ -43,7 +46,11 @@ class FilesApiMimeNormalizationTest {
         channel.readRemaining().readByteArray().decodeToString()
     }
 
-    private suspend fun uploadWithType(type: String): String {
+    private suspend fun uploadWithType(
+        type: String,
+        conversationId: String? = null,
+        isTemporary: Boolean = false,
+    ): String {
         var body: String? = null
         val engine = MockEngine { request ->
             body = renderBody(request.body)
@@ -58,6 +65,8 @@ class FilesApiMimeNormalizationTest {
             bytes = "#!/bin/sh\n".encodeToByteArray(),
             filename = "deploy.sh",
             type = type,
+            conversationId = conversationId,
+            isTemporary = isTemporary,
         )
         return body!!
     }
@@ -88,5 +97,54 @@ class FilesApiMimeNormalizationTest {
         val body = uploadWithType("text/markdown")
 
         assertThat(body).contains("text/markdown")
+    }
+
+    @Test
+    fun `a temporary chat upload carries isTemporary and the conversation id`() = runTest {
+        val body = uploadWithType("text/plain", conversationId = "convo-1", isTemporary = true)
+
+        assertThat(body).containsMatch("name=\"?conversationId\"?\r\n(?:[^\r\n]+\r\n)*\r\nconvo-1\r\n")
+        assertThat(body).containsMatch("name=\"?isTemporary\"?\r\n(?:[^\r\n]+\r\n)*\r\ntrue\r\n")
+    }
+
+    @Test
+    fun `an upload outside a chat sends neither retention field`() = runTest {
+        val body = uploadWithType("text/plain")
+
+        assertThat(body).doesNotContain("conversationId")
+        assertThat(body).doesNotContain("isTemporary")
+    }
+
+    @Test
+    fun `the upload log never carries the file name or the server filepath`() = runTest {
+        val logged = mutableListOf<String>()
+        val previousWriters = Logger.config.logWriterList
+        Logger.setLogWriters(
+            object : LogWriter() {
+                override fun log(severity: Severity, message: String, tag: String, throwable: Throwable?) {
+                    logged += message
+                }
+            },
+        )
+        try {
+            val engine = MockEngine {
+                respond(
+                    content = """{"file_id":"f1","filename":"Tax return 2025.pdf","type":"application/pdf",""" +
+                        """"filepath":"/uploads/u1/f1__Tax return 2025.pdf","bytes":3}""",
+                    status = HttpStatusCode.OK,
+                    headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                )
+            }
+            FilesApi(client(engine), librechatJson).uploadFile(
+                bytes = "pdf".encodeToByteArray(),
+                filename = "Tax return 2025.pdf",
+                type = "application/pdf",
+            )
+
+            assertThat(logged.filter { it.startsWith("uploadFile") }).hasSize(2)
+            assertThat(logged.joinToString("\n")).doesNotContain("Tax return")
+        } finally {
+            Logger.setLogWriters(previousWriters)
+        }
     }
 }

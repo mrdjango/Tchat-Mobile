@@ -60,7 +60,9 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import com.garfiec.librechat.core.ui.components.AdaptiveSheetSurface
 import com.garfiec.librechat.core.ui.components.LowProfileDragHandle
-import com.garfiec.librechat.core.ui.components.PlatformBackHandler
+import com.garfiec.librechat.core.ui.components.predictiveBackSheet
+import com.garfiec.librechat.core.ui.components.predictiveBackSheetContent
+import com.garfiec.librechat.core.ui.components.rememberSheetPredictiveBack
 import com.garfiec.librechat.core.ui.components.topbar.CoversNativeBars
 import com.garfiec.librechat.core.ui.glass.GlassBackdrop
 import com.garfiec.librechat.core.ui.glass.rememberGlassBackdrop
@@ -407,6 +409,11 @@ internal fun BoxScope.ChatPullUpSheetOverlay(
     onTakePhoto: () -> Unit,
     onPickPhotos: () -> Unit,
     onAttachFromServer: () -> Unit,
+    onAttachToCode: (() -> Unit)?,
+    onSignInMcpServer: (String) -> Unit,
+    onCancelMcpSignIn: (String) -> Unit,
+    onSetUpMcpServer: (String) -> Unit,
+    onOpenWebSearchKeys: () -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
     val hide: () -> Unit = { coroutineScope.launch { state.hide() } }
@@ -452,7 +459,8 @@ internal fun BoxScope.ChatPullUpSheetOverlay(
                 },
         )
     }
-    PlatformBackHandler(enabled = state.visible, onBack = hide)
+    val back = rememberSheetPredictiveBack(enabled = state.visible) { hide() }
+    LaunchedEffect(state.visible) { if (!state.visible) back.reset() }
     AdaptiveSheetSurface(
         backdrop = state.backdrop,
         modifier = Modifier
@@ -471,6 +479,7 @@ internal fun BoxScope.ChatPullUpSheetOverlay(
                 val o = state.anchored.offset
                 IntOffset(0, if (o.isNaN()) state.heightPx else o.roundToInt())
             }
+            .predictiveBackSheet(back)
             .anchoredDraggable(
                 state = state.anchored,
                 orientation = Orientation.Vertical,
@@ -480,18 +489,19 @@ internal fun BoxScope.ChatPullUpSheetOverlay(
             // Lets a drag over the scrolling content move the surface. See sheetConnection.
             .nestedScroll(state.sheetConnection),
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth().predictiveBackSheetContent(back)) {
             LowProfileDragHandle()
             ChatToolsSheetContent(
                 enabledTools = uiState.effectiveEnabledTools,
                 onToggleTool = viewModel::toggleTool,
-                mcpServers = uiState.mcpServers,
+                mcpServers = uiState.offeredMcpServers,
                 selectedMcpServerNames = uiState.effectiveMcpServerNames,
                 onToggleMcpServer = viewModel::toggleMcpServer,
                 onAttachFiles = onAttachFiles,
                 onTakePhoto = onTakePhoto,
                 onPickPhotos = onPickPhotos,
                 onAttachFromServer = onAttachFromServer,
+                onAttachToCode = onAttachToCode,
                 onOpenModelParameters = {
                     optionsController.open(ChatOptionsPage.ModelParameters)
                     hide()
@@ -501,17 +511,12 @@ internal fun BoxScope.ChatPullUpSheetOverlay(
                     hide()
                 },
                 selectedModelDisplay = selectedModelDisplay,
+                selection = rememberOptionsSelection(uiState, selectedModelDisplay),
+                toolsHiddenReason = uiState.toolsHiddenReason,
                 comparisonModels = comparisonModelLabels(uiState),
                 onDismiss = hide,
-                isCodeInterpreterAvailable = uiState.isCodeInterpreterAvailable,
-                webSearchEnabled = uiState.webSearchAvailable,
+                openTools = uiState.sheetTools,
                 webSearchKind = uiState.webSearchKind,
-                urlContextEnabled = uiState.urlContextProviderGate,
-                runCodeEnabled = uiState.runCodeEnabled,
-                fileSearchEnabled = uiState.fileSearchEnabled,
-                memoryEnabled = uiState.isMemoryToolAvailable,
-                imageGenEnabled = uiState.tchat.imageGenAvailable, // TCHAT
-                skillsEnabled = uiState.isSkillsToolAvailable,
                 mcpServersEnabled = uiState.mcpServersEnabled,
                 gates = uiState.chatInputGates,
                 contextGauge = uiState.contextGaugeDetails,
@@ -523,6 +528,16 @@ internal fun BoxScope.ChatPullUpSheetOverlay(
                 onContextGaugeExpandedChange = viewModel::setContextGaugeExpanded,
                 mcpExpanded = mcpExpanded,
                 onMcpExpandedChange = { mcpExpanded = it },
+                onSignInMcpServer = onSignInMcpServer,
+                onCancelMcpSignIn = onCancelMcpSignIn,
+                onSetUpMcpServer = onSetUpMcpServer,
+                webSearchKeys = uiState.webSearchKeysRow,
+                onOpenWebSearchKeys = onOpenWebSearchKeys,
+                artifactsMode = uiState.selection.artifactsMode,
+                onOpenArtifactsMode = {
+                    optionsController.open(ChatOptionsPage.ArtifactsMode)
+                    hide()
+                },
             )
         }
     }

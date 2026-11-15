@@ -1,16 +1,17 @@
 package com.garfiec.librechat.feature.chat.components
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Compare
@@ -28,16 +29,25 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import com.garfiec.librechat.core.model.pullrequest.ConversationPullRequest
+import com.garfiec.librechat.core.model.pullrequest.presentPullRequest
 import com.garfiec.librechat.core.ui.components.AdaptiveDivider
 import com.garfiec.librechat.core.ui.components.AdaptiveDropdownMenu
 import com.garfiec.librechat.core.ui.components.MenuDragSelection
 import com.garfiec.librechat.core.ui.components.dragSelectRowIcon
 import com.garfiec.librechat.core.ui.components.menuDragTarget
+import com.garfiec.librechat.core.ui.components.pullrequest.PullRequestStateIcon
+import com.garfiec.librechat.core.ui.components.pullrequest.pullRequestLabel
+import com.garfiec.librechat.core.ui.components.pullrequest.pullRequestMenuSubtitle
+import com.garfiec.librechat.core.ui.components.pullrequest.pullRequestSummary
 import com.garfiec.librechat.core.ui.resources.bookmarks
 import com.garfiec.librechat.feature.chat.resources.Res
 import com.garfiec.librechat.feature.chat.resources.action_archive
@@ -52,6 +62,7 @@ import com.garfiec.librechat.feature.chat.resources.compact_nudge_menu
 import com.garfiec.librechat.feature.chat.resources.compare_models
 import com.garfiec.librechat.feature.chat.resources.delete
 import com.garfiec.librechat.feature.chat.resources.load_preset
+import com.garfiec.librechat.feature.chat.resources.mcp_app_open_apps
 import com.garfiec.librechat.feature.chat.resources.prompts_library
 import com.garfiec.librechat.feature.chat.resources.save_as_preset
 import com.garfiec.librechat.feature.chat.resources.trace_open
@@ -80,11 +91,14 @@ internal fun ChatOverflowMenu(
     dragSelection: MenuDragSelection? = null,
     /** False greys out Compare Models (a comparison can't be turned off mid-reply). */
     canToggleComparison: Boolean = true,
+    /** The chat's pull request, for its item's label, glyph and state line. */
+    pullRequest: ConversationPullRequest? = null,
+    /** How many MCP Apps run minimized, for "Open apps (n)". */
+    openApps: Int = 0,
 ) {
     AdaptiveDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(12.dp), // TCHAT: radius-md (was 16)
         offset = DpOffset(x = 0.dp, y = 8.dp),
         dragSelection = dragSelection,
     ) {
@@ -100,6 +114,8 @@ internal fun ChatOverflowMenu(
                 }
                 val dragTarget = Modifier.menuDragTarget(dragSelection, select)
                 when (item) {
+                    ChatOverflowItem.OPEN_APPS ->
+                        OverflowItem(stringResource(Res.string.mcp_app_open_apps, openApps), Icons.Outlined.Apps, select, dragTarget)
                     ChatOverflowItem.SEARCH ->
                         OverflowItem(stringResource(Res.string.action_search), Icons.Default.Search, select, dragTarget)
                     ChatOverflowItem.SHOW_ALL_MEDIA ->
@@ -131,6 +147,8 @@ internal fun ChatOverflowMenu(
                     // Opens the confirmation in the host, like the breakdown sheet.
                     ChatOverflowItem.COMPACT ->
                         OverflowItem(stringResource(Res.string.compact_nudge_menu), Icons.Outlined.Compress, select, dragTarget)
+                    ChatOverflowItem.PULL_REQUEST ->
+                        pullRequest?.let { PullRequestMenuItem(it, onClick = select, modifier = dragTarget) }
                     ChatOverflowItem.SHARE ->
                         OverflowItem(shareItemLabel(shareLinkActive), Icons.Outlined.Share, select, dragTarget)
                     ChatOverflowItem.BOOKMARKS ->
@@ -204,6 +222,31 @@ private fun CompareItem(isComparisonEnabled: Boolean, enabled: Boolean, onClick:
         },
         onClick = onClick,
         leadingIcon = { Icon(Icons.Outlined.Compare, contentDescription = null, modifier = Modifier.dragSelectRowIcon()) },
+    )
+}
+
+/**
+ * "PR #482" over "Open · Checks running", led by the state glyph with its CI dot. The item carries
+ * the whole summary for screen readers, so the colours are never the only signal.
+ */
+@Composable
+private fun PullRequestMenuItem(pr: ConversationPullRequest, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val presentation = remember(pr) { presentPullRequest(pr) }
+    val summary = pullRequestSummary(pr, presentation)
+    DropdownMenuItem(
+        modifier = modifier.semantics { contentDescription = summary },
+        text = {
+            Column {
+                Text(pullRequestLabel(pr, presentation))
+                Text(
+                    pullRequestMenuSubtitle(presentation),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        onClick = onClick,
+        leadingIcon = { PullRequestStateIcon(presentation, modifier = Modifier.dragSelectRowIcon()) },
     )
 }
 

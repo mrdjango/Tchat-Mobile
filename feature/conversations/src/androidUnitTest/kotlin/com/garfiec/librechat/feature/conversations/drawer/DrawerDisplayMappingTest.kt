@@ -4,6 +4,8 @@ import com.garfiec.librechat.core.model.Conversation
 import com.garfiec.librechat.core.model.EndpointConfig
 import com.garfiec.librechat.core.model.config.ModelSpec
 import com.garfiec.librechat.core.model.config.ModelSpecs
+import com.garfiec.librechat.core.model.media.ProviderId
+import com.garfiec.librechat.feature.conversations.components.ReadStateAction
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import kotlin.time.Instant
@@ -142,4 +144,74 @@ class DrawerDisplayMappingTest {
         assertThat(data.endpointIconUrl).isEqualTo("https://srv/images/spec.png")
         assertThat(data.iconEndpoint).isEqualTo("openAI")
     }
+
+    @Test
+    fun aCustomEndpointDrawsTheProviderTheServerResolved() {
+        val configs = mapOf("My Router" to EndpointConfig(type = "custom", providerId = "openrouter"))
+        val convo = Conversation(conversationId = "c1", endpoint = "My Router")
+
+        val data = convo.toDrawerDisplayData(activeConversationId = null, endpointConfigs = configs, serverUrl = "")
+
+        assertThat(data.iconProvider).isEqualTo(ProviderId.OPENROUTER)
+        assertThat(data.endpointIconUrl).isNull()
+    }
+
+    @Test
+    fun aProviderNameTheConfigDoesNotListLeavesTheEndpoint() {
+        val convo = Conversation(conversationId = "c1", endpoint = "anthropic", iconURL = "groq")
+
+        val data = convo.toDrawerDisplayData(activeConversationId = null, endpointConfigs = emptyMap(), serverUrl = "")
+
+        assertThat(data.iconEndpoint).isEqualTo("anthropic")
+        assertThat(data.iconProvider).isEqualTo(ProviderId.ANTHROPIC)
+    }
+
+    @Test
+    fun aRunningRowIsMarkedRunningAndShowsNoUnreadDot() {
+        val unseen = Conversation(
+            conversationId = "c1",
+            lastResponseAt = Instant.fromEpochMilliseconds(2_000),
+            lastSeenAt = Instant.fromEpochMilliseconds(1_000),
+        )
+
+        val running = unseen.toDrawerDisplayData(null, emptyMap(), "", runningIds = setOf("c1"))
+        val idle = unseen.toDrawerDisplayData(null, emptyMap(), "")
+
+        assertThat(running.isRunning).isTrue()
+        assertThat(running.isUnread).isFalse()
+        assertThat(idle.isRunning).isFalse()
+        assertThat(idle.isUnread).isTrue()
+    }
+
+    @Test
+    fun aRunningRowOffersNoReadStateAction() {
+        val running = row(isRunning = true)
+        assertThat(running.readStateAction(readStateEnabled = true)).isNull()
+        assertThat(running.copy(isActive = true).readStateAction(readStateEnabled = true)).isNull()
+    }
+
+    @Test
+    fun readStateActionFollowsTheRowsState() {
+        assertThat(row(isUnread = true).readStateAction(readStateEnabled = true)).isEqualTo(ReadStateAction.MarkRead)
+        assertThat(row(isUnread = true, isActive = true).readStateAction(readStateEnabled = true))
+            .isEqualTo(ReadStateAction.MarkRead)
+        assertThat(row().readStateAction(readStateEnabled = true)).isEqualTo(ReadStateAction.MarkUnread)
+        assertThat(row(isActive = true).readStateAction(readStateEnabled = true)).isNull()
+        assertThat(row(isUnread = true).readStateAction(readStateEnabled = false)).isNull()
+    }
+
+    private fun row(isUnread: Boolean = false, isActive: Boolean = false, isRunning: Boolean = false) =
+        DrawerConversationDisplayData(
+            conversationId = "c1",
+            title = "Chat",
+            model = null,
+            endpoint = null,
+            updatedAt = null,
+            isActive = isActive,
+            isFavorite = false,
+            isPinned = false,
+            tags = emptyList(),
+            isUnread = isUnread,
+            isRunning = isRunning,
+        )
 }

@@ -9,8 +9,10 @@ import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -36,21 +38,37 @@ import com.garfiec.librechat.feature.chat.resources.artifact_preview_failed
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 /**
  * Android preview surface — a `WebView` hosting the artifact's rendered HTML.
  * The shell, header, selector, and code body are shared in the common
- * `ArtifactPanel`.
+ * `ArtifactViewer`.
  */
-@SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
 @Composable
 actual fun ArtifactPreviewSurface(
     content: String,
     type: String,
     isDarkTheme: Boolean,
     modifier: Modifier,
+    allowedLibraries: Set<String>,
+) = ArtifactWebPage(content, type, isDarkTheme, allowedLibraries, backThroughHistory = false, modifier = modifier)
+
+/**
+ * The preview `WebView`. With [backThroughHistory], Back steps through the page's own history
+ * (`pushState`, hash links) before it reaches the screen: only where the page is the whole screen.
+ */
+@SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
+@Composable
+internal fun ArtifactWebPage(
+    content: String,
+    type: String,
+    isDarkTheme: Boolean,
+    allowedLibraries: Set<String>,
+    backThroughHistory: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val bgColor = MaterialTheme.colorScheme.surface.toArgb()
     val errorTitle = stringResource(Res.string.artifact_preview_failed)
@@ -61,10 +79,26 @@ actual fun ArtifactPreviewSurface(
         error = MaterialTheme.colorScheme.error.toArgb(),
     )
     var isLoading by remember { mutableStateOf(true) }
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    var canGoBack by remember { mutableStateOf(false) }
+    BackHandler(enabled = backThroughHistory && canGoBack) { webView?.goBack() }
     val assetBase = rememberWebAssetBaseUrl() ?: return
+    // Loaded from a string, the page loses its fragment and history state whenever Back returns to
+    // an entry, so a page that walks its history is served at a URL beside the vendored assets
+    // (same origin, same relative paths).
+    val pageUrl = if (backThroughHistory) assetBase + HISTORY_PAGE else null
+    val servedHtml = remember { AtomicReference("") }
+    fun WebView.show(html: String) {
+        if (pageUrl == null) {
+            loadDataWithBaseURL(assetBase, html, "text/html", "UTF-8", null)
+        } else {
+            servedHtml.set(html)
+            loadUrl(pageUrl)
+        }
+    }
 
-    val html = remember(content, type, isDarkTheme) {
-        ArtifactWebContent.buildHtml(content, type, isDarkTheme, inline = false)
+    val html = remember(content, type, isDarkTheme, allowedLibraries) {
+        ArtifactWebContent.buildHtml(content, type, isDarkTheme, inline = false, allowedLibraries = allowedLibraries)
     }
 
     // Track what HTML is currently loaded to avoid reloading on every recomposition.
@@ -112,6 +146,19 @@ actual fun ArtifactPreviewSurface(
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
                             isRemoteMainFrameNavigation(request)
 
+                        override fun shouldInterceptRequest(
+                            view: WebView,
+                            request: WebResourceRequest,
+                        ): WebResourceResponse? {
+                            val url = request.url.toString().substringBefore('#').substringBefore('?')
+                            if (pageUrl == null || !request.isForMainFrame || url != pageUrl) return null
+                            return WebResourceResponse("text/html", "UTF-8", servedHtml.get().byteInputStream())
+                        }
+
+                        override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+                            canGoBack = view.canGoBack()
+                        }
+
                         override fun onReceivedError(
                             view: WebView?,
                             request: WebResourceRequest?,
@@ -137,14 +184,15 @@ actual fun ArtifactPreviewSurface(
                             Logger.w { "SSL error in artifact WebView: ${error?.primaryError}" }
                         }
                     }
-                    loadDataWithBaseURL(assetBase, html, "text/html", "UTF-8", null)
+                    show(html)
                     loadedHtml = html
+                    webView = this
                 }
             },
             update = { webView ->
                 webView.setBackgroundColor(bgColor)
                 if (html != loadedHtml) {
-                    webView.loadDataWithBaseURL(assetBase, html, "text/html", "UTF-8", null)
+                    webView.show(html)
                     loadedHtml = html
                 }
             },
@@ -195,6 +243,9 @@ actual fun rememberAddArtifactToHomeScreen(): ((artifact: Artifact, label: Strin
         }
     }
 }
+
+/** Served from memory by [ArtifactWebPage]; no such asset exists. */
+private const val HISTORY_PAGE = "artifact-page.html"
 
 /** The app theme's colours as ARGB, so the error page matches light and dark mode. */
 private class ErrorPageColors(val background: Int, val text: Int, val secondaryText: Int, val error: Int)

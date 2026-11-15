@@ -14,16 +14,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -31,22 +29,20 @@ import com.garfiec.librechat.core.common.ChatLayoutConstants
 import com.garfiec.librechat.core.model.FeedbackRating
 import com.garfiec.librechat.core.model.Message
 import com.garfiec.librechat.core.model.MinimalFeedback
-import com.garfiec.librechat.core.model.media.resolveIconSource
+import com.garfiec.librechat.core.model.media.IconSource
 import com.garfiec.librechat.core.ui.components.AvatarImage
-import com.garfiec.librechat.core.ui.components.BubbleShape
+import com.garfiec.librechat.core.ui.components.EndpointAvatar
 import com.garfiec.librechat.core.ui.components.USER_BUBBLE_MAX_FRACTION
-import com.garfiec.librechat.core.ui.components.UserBubbleShape
-import com.garfiec.librechat.core.ui.components.endpointIconPainter
-import com.garfiec.librechat.core.ui.components.isMonochromeEndpointIcon
 import com.garfiec.librechat.core.ui.components.maxWidthFraction
 import com.garfiec.librechat.core.ui.theme.UserBubbleTheme
+import com.garfiec.librechat.core.ui.theme.chatColors
+import com.garfiec.librechat.core.ui.theme.themeShapes
 import com.garfiec.librechat.core.ui.theme.userBubbleColors
+import com.garfiec.librechat.feature.chat.components.sendflight.sendFlightBubble
+import com.garfiec.librechat.feature.chat.components.sendflight.sendFlightHeader
 import com.garfiec.librechat.feature.chat.resources.*
 import com.garfiec.librechat.feature.chat.resources.Res
-import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.stringResource
-
-private const val ACTION_AUTO_HIDE_MILLIS = 30_000L
 
 @Composable
 actual fun MessageBubble(
@@ -68,7 +64,6 @@ actual fun MessageBubble(
     editSession: MessageEditSession?,
     userAvatarUrl: String?,
     userName: String?,
-    selectedEndpoint: String?,
     showImageDescriptions: Boolean,
     showActionsInitially: Boolean,
     searchQuery: String?,
@@ -80,6 +75,7 @@ actual fun MessageBubble(
     chatLayoutStyle: String,
     showAvatars: Boolean,
     showBubbles: Boolean,
+    avatar: IconSource?,
 ) {
     if (chatLayoutStyle == ChatLayoutConstants.TWO_SIDED) {
         TwoSidedMessageBubble(
@@ -102,7 +98,6 @@ actual fun MessageBubble(
             editSession = editSession,
             userAvatarUrl = userAvatarUrl,
             userName = userName,
-            selectedEndpoint = selectedEndpoint,
             showImageDescriptions = showImageDescriptions,
             showActionsInitially = showActionsInitially,
             searchQuery = searchQuery,
@@ -112,6 +107,7 @@ actual fun MessageBubble(
             onFocusedOccurrencePosition = onFocusedOccurrencePosition,
             showAvatars = showAvatars,
             showBubbles = showBubbles,
+            avatar = avatar,
         )
     } else {
         ThreadMessageBubble(
@@ -134,7 +130,6 @@ actual fun MessageBubble(
             editSession = editSession,
             userAvatarUrl = userAvatarUrl,
             userName = userName,
-            selectedEndpoint = selectedEndpoint,
             showImageDescriptions = showImageDescriptions,
             showActionsInitially = showActionsInitially,
             searchQuery = searchQuery,
@@ -144,6 +139,7 @@ actual fun MessageBubble(
             onFocusedOccurrencePosition = onFocusedOccurrencePosition,
             showAvatars = showAvatars,
             showBubbles = showBubbles,
+            avatar = avatar,
         )
     }
 }
@@ -171,7 +167,6 @@ private fun ThreadMessageBubble(
     editSession: MessageEditSession?,
     userAvatarUrl: String?,
     userName: String?,
-    selectedEndpoint: String?,
     showImageDescriptions: Boolean,
     showActionsInitially: Boolean,
     searchQuery: String?,
@@ -181,17 +176,13 @@ private fun ThreadMessageBubble(
     onFocusedOccurrencePosition: ((LayoutCoordinates, Rect) -> Unit)?,
     showAvatars: Boolean,
     showBubbles: Boolean,
+    avatar: IconSource?,
     modifier: Modifier = Modifier,
 ) {
     val isUser = message.isCreatedByUser
-    var showActions by remember(message.messageId) { mutableStateOf(showActionsInitially) }
-    // Auto-hide actions after timeout
-    LaunchedEffect(showActions) {
-        if (showActions) {
-            delay(ACTION_AUTO_HIDE_MILLIS)
-            showActions = false
-        }
-    }
+    var showActions by rememberActionRowShown(message.messageId, showActionsInitially, isReading)
+    // The thread's tap handler leaves focus inside the list alone; a tap on a message ends an inline edit.
+    val focusManager = LocalFocusManager.current
 
     // Determine background color for search state
     val searchBackground = when {
@@ -217,6 +208,7 @@ private fun ThreadMessageBubble(
                 interactionSource = null,
                 indication = null,
             ) {
+                focusManager.clearFocus()
                 showActions = !showActions
             }
             .padding(
@@ -226,24 +218,26 @@ private fun ThreadMessageBubble(
     ) {
         // Sender row with avatar
         Row(
+            modifier = sendFlightHeader(message.messageId, isUser),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (showAvatars) {
-                // A spec's `iconURL` names an endpoint's glyph or a server-relative image.
-                val assistantIcon = resolveIconSource(message.iconURL, message.endpoint ?: selectedEndpoint, baseUrl)
-                val resolvedEndpoint = assistantIcon.endpointName
-                AvatarImage(
-                    imageUrl = if (isUser) userAvatarUrl else assistantIcon.imageUrl,
-                    fallbackText = if (isUser) {
-                        userName ?: stringResource(Res.string.sender_you)
-                    } else {
-                        message.sender ?: stringResource(Res.string.sender_assistant)
-                    },
-                    fallbackIconPainter = if (!isUser && assistantIcon.imageUrl == null) endpointIconPainter(resolvedEndpoint) else null,
-                    showPersonIcon = isUser && userAvatarUrl == null,
-                    tintIcon = if (!isUser && assistantIcon.imageUrl == null) isMonochromeEndpointIcon(resolvedEndpoint) else false,
-                    size = 28.dp,
-                )
+                if (isUser) {
+                    AvatarImage(
+                        imageUrl = userAvatarUrl,
+                        fallbackText = userName ?: stringResource(Res.string.sender_you),
+                        showPersonIcon = userAvatarUrl == null,
+                        size = 28.dp,
+                    )
+                } else {
+                    EndpointAvatar(
+                        imageUrl = avatar?.imageUrl,
+                        endpointName = avatar?.endpointName,
+                        provider = avatar?.provider,
+                        fallbackText = message.sender ?: stringResource(Res.string.sender_assistant),
+                        size = 28.dp,
+                    )
+                }
                 Spacer(modifier = Modifier.width(8.dp))
             }
             Text(
@@ -281,7 +275,7 @@ private fun ThreadMessageBubble(
             if (filledUserBubble) {
                 userBubbleColors().container
             } else if (isUser) {
-                MaterialTheme.colorScheme.secondaryContainer
+                chatColors().userMessage
             } else {
                 MaterialTheme.colorScheme.surfaceVariant
             }
@@ -293,12 +287,13 @@ private fun ThreadMessageBubble(
             Column(
                 modifier = Modifier
                     .padding(start = contentStartPadding)
+                    .then(sendFlightBubble(message.messageId, isUser))
                     .then(
                         if (threadBubbleBackground != null) {
                             Modifier
                                 .background(
                                     color = threadBubbleBackground,
-                                    shape = if (filledUserBubble) UserBubbleShape else BubbleShape, // TCHAT: tail
+                                    shape = if (isUser) themeShapes().userBubble else themeShapes().bubble,
                                 )
                                 .padding(12.dp)
                         } else {
@@ -308,6 +303,7 @@ private fun ThreadMessageBubble(
             ) {
                 MessageContentAndActions(
                     message = message,
+                    avatar = avatar,
                     isUser = isUser,
                     editSession = editSession,
                     baseUrl = baseUrl,
@@ -363,7 +359,6 @@ private fun TwoSidedMessageBubble(
     editSession: MessageEditSession?,
     userAvatarUrl: String?,
     userName: String?,
-    selectedEndpoint: String?,
     showImageDescriptions: Boolean,
     showActionsInitially: Boolean,
     searchQuery: String?,
@@ -373,17 +368,13 @@ private fun TwoSidedMessageBubble(
     onFocusedOccurrencePosition: ((LayoutCoordinates, Rect) -> Unit)?,
     showAvatars: Boolean,
     showBubbles: Boolean,
+    avatar: IconSource?,
     modifier: Modifier = Modifier,
 ) {
     val isUser = message.isCreatedByUser
-    var showActions by remember(message.messageId) { mutableStateOf(showActionsInitially) }
-    // Auto-hide actions after timeout
-    LaunchedEffect(showActions) {
-        if (showActions) {
-            delay(ACTION_AUTO_HIDE_MILLIS)
-            showActions = false
-        }
-    }
+    var showActions by rememberActionRowShown(message.messageId, showActionsInitially, isReading)
+    // The thread's tap handler leaves focus inside the list alone; a tap on a message ends an inline edit.
+    val focusManager = LocalFocusManager.current
 
     // Determine background color for search state
     val searchBackground = when {
@@ -392,15 +383,13 @@ private fun TwoSidedMessageBubble(
         else -> null
     }
 
-    // Use secondaryContainer for user bubbles (better dark mode contrast than primaryContainer)
-    // and surfaceVariant for agent bubbles. Text uses onSecondaryContainer/onSurfaceVariant.
     // TCHAT: the user's bubble is filled (UserBubbleTheme), except while it's being edited.
     val filledUserBubble = showBubbles && isUser && editSession == null
     val bubbleBackground = if (showBubbles) {
         if (filledUserBubble) {
             userBubbleColors().container
         } else if (isUser) {
-            MaterialTheme.colorScheme.secondaryContainer
+            chatColors().userMessage
         } else {
             // TCHAT: assistant replies have no bubble and run the full width (design README).
             null
@@ -436,6 +425,7 @@ private fun TwoSidedMessageBubble(
                 interactionSource = null,
                 indication = null,
             ) {
+                focusManager.clearFocus()
                 showActions = !showActions
             }
             .padding(
@@ -447,13 +437,11 @@ private fun TwoSidedMessageBubble(
     ) {
         // Agent avatar on left
         if (!isUser && showAvatars) {
-            val assistantIcon = resolveIconSource(message.iconURL, message.endpoint ?: selectedEndpoint, baseUrl)
-            val resolvedEndpoint = assistantIcon.endpointName
-            AvatarImage(
-                imageUrl = assistantIcon.imageUrl,
+            EndpointAvatar(
+                imageUrl = avatar?.imageUrl,
+                endpointName = avatar?.endpointName,
+                provider = avatar?.provider,
                 fallbackText = message.sender ?: stringResource(Res.string.sender_assistant),
-                fallbackIconPainter = if (assistantIcon.imageUrl == null) endpointIconPainter(resolvedEndpoint) else null,
-                tintIcon = if (assistantIcon.imageUrl == null) isMonochromeEndpointIcon(resolvedEndpoint) else false,
                 size = 28.dp,
             )
             Spacer(modifier = Modifier.width(6.dp))
@@ -466,12 +454,13 @@ private fun TwoSidedMessageBubble(
                     // TCHAT: the user's bubble hugs its text on the right, at most 80% of the row.
                     .weight(1f, fill = !isUser)
                     .then(if (isUser) Modifier.maxWidthFraction(USER_BUBBLE_MAX_FRACTION) else Modifier)
+                    .then(sendFlightBubble(message.messageId, isUser))
                     .then(
                         if (effectiveBubbleBackground != null) {
                             Modifier
                                 .background(
                                     color = effectiveBubbleBackground,
-                                    shape = if (filledUserBubble) UserBubbleShape else BubbleShape, // TCHAT: tail
+                                    shape = if (isUser) themeShapes().userBubble else themeShapes().bubble,
                                 )
                                 .padding(12.dp)
                         } else {
@@ -513,6 +502,7 @@ private fun TwoSidedMessageBubble(
                 // Message content
                 MessageContentAndActions(
                     message = message,
+                    avatar = avatar,
                     isUser = isUser,
                     editSession = editSession,
                     baseUrl = baseUrl,
@@ -548,6 +538,7 @@ private fun TwoSidedMessageBubble(
             Spacer(modifier = Modifier.width(6.dp))
             AvatarImage(
                 imageUrl = userAvatarUrl,
+                modifier = sendFlightHeader(message.messageId, isUser = true),
                 fallbackText = userName ?: stringResource(Res.string.sender_you),
                 showPersonIcon = userAvatarUrl == null,
                 size = 28.dp,

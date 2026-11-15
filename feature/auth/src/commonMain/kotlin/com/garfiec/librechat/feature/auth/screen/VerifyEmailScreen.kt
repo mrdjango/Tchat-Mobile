@@ -13,9 +13,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
@@ -24,7 +22,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.garfiec.librechat.core.ui.components.AdaptiveButton
-import com.garfiec.librechat.core.ui.components.AdaptiveCircularProgressIndicator
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedButton
 import com.garfiec.librechat.core.ui.components.AdaptiveScaffold
 import com.garfiec.librechat.core.ui.components.topbar.AdaptiveTopBar
@@ -42,22 +39,14 @@ import org.koin.core.parameter.parametersOf
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VerifyEmailScreen(
-    onVerify: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     email: String? = null,
-    viewModel: VerifyEmailViewModel = koinViewModel { parametersOf(email) },
+    sendNow: Boolean = false,
+    viewModel: VerifyEmailViewModel = koinViewModel { parametersOf(email, sendNow) },
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val displayEmail = uiState.email
-    val currentOnVerify by rememberUpdatedState(onVerify)
-
-    LaunchedEffect(uiState.isVerified) {
-        if (uiState.isVerified) {
-            viewModel.consumeVerified()
-            currentOnVerify()
-        }
-    }
 
     AdaptiveScaffold(
         modifier = modifier,
@@ -140,13 +129,11 @@ fun VerifyEmailScreen(
             AdaptiveOutlinedButton(
                 onClick = viewModel::resendVerification,
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !uiState.isLoading && uiState.resendCooldownSeconds == 0,
+                enabled = uiState.resendCooldownSeconds == 0,
+                loading = uiState.isLoading,
             ) {
                 if (uiState.isLoading) {
-                    AdaptiveCircularProgressIndicator(
-                        modifier = Modifier.height(20.dp),
-                        strokeWidth = 2.dp,
-                    )
+                    Text(stringResource(Res.string.progress_sending))
                 } else if (uiState.resendCooldownSeconds > 0) {
                     Text(stringResource(Res.string.resend_in_seconds, uiState.resendCooldownSeconds))
                 } else {

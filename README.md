@@ -1,6 +1,6 @@
 # Tchat: Native Mobile Client
 
-[![LibreChat](https://img.shields.io/badge/LibreChat-v0.8.4_–_v0.8.8-blue)](https://github.com/LibreChat-AI/LibreChat/releases/tag/v0.8.8)
+[![LibreChat](https://img.shields.io/badge/LibreChat-v0.8.4_–_v0.8.9--rc1-blue)](https://github.com/LibreChat-AI/LibreChat/releases/tag/v0.8.9-rc1)
 
 The native Android/iOS client for **Tchat**, TensorGrid's self-hosted deployment of
 [LibreChat](https://www.librechat.ai/) at `chat.tensorgrid.space`. There is no server field to
@@ -10,16 +10,14 @@ This is a rebrand of [Switchboard](https://github.com/garfiec/Librechat-Mobile),
 native LibreChat client, kept as a fork so it can keep pulling in Switchboard's fixes and
 features. See [TCHAT.md](TCHAT.md) for exactly what this fork changes and why.
 
-> **Backend compatibility:** Tested against LibreChat **v0.8.4 – v0.8.8**.
+> **Backend compatibility:** Tested against LibreChat **v0.8.4 – v0.8.9-rc1**.
 
 ## Get it
 
 <p align="center">
   <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/garfiec/Librechat-Mobile"><img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="80"></a>
   <a href="https://f-droid.org/packages/com.garfiec.librechat/"><img src="https://f-droid.org/badge/get-it-on.png" alt="Get it on F-Droid" height="80"></a>
-  <!-- Uncomment once the listing is live.
   <a href="https://play.google.com/store/apps/details?id=com.garfiec.librechat.play"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="80"></a>
-  -->
   <a href="https://testflight.apple.com/join/pVhFr3a5"><img src="docs/badges/testflight.png" alt="Join the beta on TestFlight" height="80"></a>
 </p>
 
@@ -28,7 +26,7 @@ features. See [TCHAT.md](TCHAT.md) for exactly what this fork changes and why.
   <a href="https://f-droid.org/packages/com.garfiec.librechat/"><img src="https://img.shields.io/f-droid/v/com.garfiec.librechat?logo=fdroid" alt="F-Droid version"></a>
 </p>
 
-<p align="center"><sub>Google Play is coming soon. iOS is in public beta on TestFlight. See <a href="#install-android">Install (Android)</a> and <a href="#install-ios">Install (iOS)</a> for details.</sub></p>
+<p align="center"><sub>iOS is in public beta on TestFlight. See <a href="#install-android">Install (Android)</a> and <a href="#install-ios">Install (iOS)</a> for details.</sub></p>
 
 ## Why use this instead of the web app?
 
@@ -106,7 +104,7 @@ that changes, and `TCHAT.md`'s top section for how to build a debug APK yourself
 | Android Studio or IntelliJ IDEA | Latest stable (recommended IDE for all code editing) |
 | Xcode | 15+ (iOS only, Apple Silicon Mac required — IDE not needed, CLI only) |
 | iOS Deployment Target | 16.0+ |
-| Gradle | 9.5.1 (via wrapper) |
+| Gradle | 9.8.2 (via wrapper) |
 | Kotlin | 2.4.10 |
 
 ## Building from Source

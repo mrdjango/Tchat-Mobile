@@ -1,7 +1,10 @@
 package com.garfiec.librechat.feature.chat.viewmodel
 
 import androidx.compose.runtime.Immutable
+import com.garfiec.librechat.core.model.ReasoningOverride
+import com.garfiec.librechat.core.model.request.MAX_MANUAL_SKILLS
 import com.garfiec.librechat.core.model.response.UploadRoute
+import com.garfiec.librechat.core.model.steer.mergeRestagedQuotes
 import com.garfiec.librechat.core.ui.components.ModelParameters
 import com.garfiec.librechat.feature.chat.components.AttachedFile
 import com.garfiec.librechat.feature.chat.util.SpecTools
@@ -21,7 +24,7 @@ data class ComposerState(
      *  user-facing string in the Compose layer. Null means no send-block to show. */
     val sendBlockReason: SendBlockReason? = null,
     /** Non-null while a queued item is being edited in the composer (queued-edit mode). Holds the
-     *  stashed new-message draft + the item's slot so both are restored on commit/cancel. */
+     *  stashed new-message draft, restored when the edit ends. */
     val editingQueuedItem: QueuedEditSession? = null,
     /** True while a tapped send is parked waiting for its attachment(s) to finish uploading (see
      *  `UploadIntakeDelegate.withUploadGate`). Drives the composer's send button into a spinner the user
@@ -50,27 +53,91 @@ data class ComposerState(
     val resolvingPickCount: Int = 0,
     /**
      * Verbatim excerpts staged via the selection toolbar's "Add to chat" (v0.8.7, upstream
-     * #13868), one chip each above the composer until a fresh send or a composer-origin queue
-     * takes them. Taken atomically at spec-mint time (`SendDispatchDelegate.takePendingQuotes`);
+     * #13868), one item each in the composer's attachment strip until a fresh send or a
+     * composer-origin queue takes them. During a queued edit these are the edited item's own; the
+     * draft's are stashed in `ComposerSnapshot`. Taken atomically at spec-mint time (`SendDispatchDelegate.takePendingQuotes`);
      * composer-origin steers leave them staged, and assistants endpoints never take them.
      */
     val pendingQuotes: List<String> = emptyList(),
     /**
-     * Skill names picked for the next turn, one chip each above the composer (deduped by name,
+     * Skill names picked for the next turn, one item each in the composer's attachment strip (deduped by name,
      * at most `MAX_MANUAL_SKILLS`). Taken with the quote chips by a fresh send or a composer-origin
      * queue (`SendDispatchDelegate.takePendingManualSkills`); a steer leaves them staged (the steer
      * route carries no skills), and assistants endpoints never take them. During a queued edit
      * these are the edited item's own picks; the draft's are stashed in `ComposerSnapshot`.
      */
     val pendingManualSkills: List<String> = emptyList(),
+    /**
+     * The Thinking chip's choice for the next message only (v0.8.9-rc1 `reasoningOverride`). Taken
+     * by a fresh send or a composer-origin queue (`SendDispatchDelegate.takePendingReasoningOverride`),
+     * which drops it if the selected model no longer accepts it; a model or endpoint switch drops it
+     * the same way (`ReasoningCatalogDelegate`). During a queued edit this is the edited item's.
+     */
+    val pendingReasoningOverride: ReasoningOverride? = null,
+    /**
+     * The attachment strip's last removal, while its Undo snackbar can still bring it back (see
+     * `DraftItemsDelegate`). Dropped by a send (`SendDispatchDelegate.clearComposer`), the queued-edit
+     * swap (`QueueOrchestrationDelegate.applyComposer`) and a conversation switch (the landing
+     * reset), each inside its own composer write, so an Undo never lands on a different draft.
+     */
+    val pendingDraftUndo: DraftUndo? = null,
+    /**
+     * What a recovery put back while a queued edit held the composer. It belongs to the stashed
+     * draft, not the item on screen, so the edit's end adds it whether saved or cancelled
+     * (`QueueOrchestrationDelegate.applyComposer`). Always empty outside an edit.
+     */
+    val draftRestore: DraftRestore = DraftRestore.NONE,
 ) {
     /** True while at least one intake is still in flight. See [resolvingPickCount]. */
     val isResolvingPickedFiles: Boolean get() = resolvingPickCount > 0
 }
 
+/** See [ComposerState.draftRestore]. [text] is set only when the draft had none. */
+@Immutable
+data class DraftRestore(
+    val text: String = "",
+    val quotes: List<String> = emptyList(),
+    val manualSkills: List<String> = emptyList(),
+) {
+    companion object {
+        val NONE = DraftRestore()
+    }
+}
+
+/** The stashed draft with [restore] added: the text only into a blank draft, the chips merged. */
+internal fun ComposerSnapshot.withRestore(restore: DraftRestore): ComposerSnapshot {
+    if (restore == DraftRestore.NONE) return this
+    return copy(
+        text = text.ifBlank { restore.text },
+        quotes = mergeRestagedQuotes(quotes, restore.quotes),
+        manualSkills = (restore.manualSkills + manualSkills).distinct().take(MAX_MANUAL_SKILLS),
+    )
+}
+
+/**
+ * A removal from the attachment strip that Undo can reverse. [id] tells one removal from the next,
+ * so a snackbar left over from an earlier one can't undo this one.
+ */
+@Immutable
+data class DraftUndo(val id: Long, val removed: RemovedDraftItem)
+
+/** What a [DraftUndo] puts back, and where: [index] in its own list, clamped on the way back. */
+@Immutable
+sealed interface RemovedDraftItem {
+    val index: Int
+
+    /** An uploaded or failed file. A file still uploading is cancelled instead, with no Undo. */
+    data class File(val file: AttachedFile, override val index: Int) : RemovedDraftItem
+
+    /** A picked skill; [heldBack] keeps a chip a new chat's first send held back waiting on the catalog. */
+    data class Skill(val name: String, override val index: Int, val heldBack: Boolean) : RemovedDraftItem
+
+    data class Quote(val text: String, override val index: Int) : RemovedDraftItem
+}
+
 /**
  * One file in a staged routing batch: the pick itself, the route currently selected for it, and
- * whether the user may change that.
+ * the routes it may take (`ChatUiState.uploadRoutesFor`).
  *
  * [choosable] is false for files with only one usable mode (an image, or a type the server cannot
  * extract). Those still ride along so the batch stays whole and the sheet can show what will
@@ -80,8 +147,10 @@ data class ComposerState(
 data class PendingUploadFile(
     val file: PickedFile,
     val route: UploadRoute,
-    val choosable: Boolean,
-)
+    val routes: List<UploadRoute>,
+) {
+    val choosable: Boolean get() = routes.size > 1
+}
 
 /**
  * A staged batch of picked files awaiting a routing decision.
@@ -152,6 +221,10 @@ data class ComposerSnapshot(
      * item's own while editing, so saving the edit sends it as it was queued.
      */
     val skillsToggle: Boolean = false,
+    /** The pending Thinking choice: the draft's while stashed, the queued item's while editing. */
+    val reasoningOverride: ReasoningOverride? = null,
+    /** The staged quote chips: the draft's while stashed, the queued item's own while editing. */
+    val quotes: List<String> = emptyList(),
 ) {
     val endpoint: String get() = choice.endpoint
     val model: String? get() = choice.model
@@ -160,14 +233,13 @@ data class ComposerSnapshot(
 
 /**
  * Active queued-edit session: the composer is loaded with [original]'s content + config for
- * editing, while [stashed] holds the new-message draft to restore afterward and [originalIndex]
- * is the FIFO slot to put the (possibly edited) item back into on commit/cancel.
+ * editing, while [stashed] holds the new-message draft to restore afterward. [original] stays in
+ * the queue until the edit is committed; [originalIndex] is where the edit goes back in if that row
+ * has already left the queue by then.
  */
 @Immutable
 data class QueuedEditSession(
     val original: QueuedMessage,
     val originalIndex: Int,
     val stashed: ComposerSnapshot,
-    /** [original] was withdrawn from the server queue to be edited, so it is offered back there. */
-    val withdrawnFromServer: Boolean = false,
 )

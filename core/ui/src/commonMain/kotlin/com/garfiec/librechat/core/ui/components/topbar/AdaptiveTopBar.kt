@@ -10,19 +10,23 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.DropdownMenuItem
@@ -50,6 +54,9 @@ import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -68,6 +75,7 @@ import com.garfiec.librechat.core.ui.components.AdaptiveCircularProgressIndicato
 import com.garfiec.librechat.core.ui.components.AdaptiveDivider
 import com.garfiec.librechat.core.ui.components.AdaptiveDropdownMenu
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedTextField
+import com.garfiec.librechat.core.ui.components.CornerStatusDot
 import com.garfiec.librechat.core.ui.components.LocalInSeparateWindow
 import com.garfiec.librechat.core.ui.components.MenuDragSelection
 import com.garfiec.librechat.core.ui.components.consumeUnhandledTouches
@@ -79,13 +87,23 @@ import com.garfiec.librechat.core.ui.components.rememberMenuDragSelection
 import com.garfiec.librechat.core.ui.glass.LocalGlassBackdrop
 import com.garfiec.librechat.core.ui.glass.glassSurface
 import com.garfiec.librechat.core.ui.glass.rememberGlassStyle
+import com.garfiec.librechat.core.ui.platform.verticalBarColumn
 import com.garfiec.librechat.core.ui.theme.LocalGlassLevel
 
 private val ControlSize = 44.dp
 
+/** A text action's leading status glyph, its gap to the label, and the dot on its corner. */
+private val TextActionIconSize = 16.dp
+private val TextActionIconGap = 4.dp
+private val TextActionBadgeSize = 6.dp
+
 /**
  * An M3 `TopAppBar` in Material, the system glass bar on iOS 26+, a simulated glass bar elsewhere.
  * [belowBar] holds Compose content that can't be bar data (a search field, a tab row).
+ *
+ * In an `AdaptiveScaffold`'s top bar slot, while the window has vertical bars (iPhone Duo), the
+ * controls go to the scaffold's [AdaptiveSideRail] and only the title (and [belowBar]) draws here,
+ * as a heading.
  */
 @Composable
 fun AdaptiveTopBar(
@@ -93,6 +111,26 @@ fun AdaptiveTopBar(
     modifier: Modifier = Modifier,
     materialStyle: MaterialBarStyle = MaterialBarStyle(),
     belowBar: (@Composable () -> Unit)? = null,
+) {
+    val rail = LocalRailSlot.current
+    // The bar's own row keeps out of the bar column; what's below it gets the column's inset here.
+    val insetBelowBar = belowBar?.let { content ->
+        @Composable { Column(Modifier.windowInsetsPadding(WindowInsets.verticalBarColumn)) { content() } }
+    }
+    // A dialog or sheet window composed inside a top bar slot has bars of its own, not the screen's.
+    if (rail != null && !rail.superseded && !LocalInSeparateWindow.current) {
+        RailHeading(spec, rail, materialStyle, insetBelowBar, modifier)
+        return
+    }
+    HorizontalTopBar(spec.forHorizontalBar(), materialStyle, insetBelowBar, modifier)
+}
+
+@Composable
+private fun HorizontalTopBar(
+    spec: AdaptiveTopBarSpec,
+    materialStyle: MaterialBarStyle,
+    belowBar: (@Composable () -> Unit)?,
+    modifier: Modifier = Modifier,
 ) {
     val level = LocalGlassLevel.current
     if (level == null) {
@@ -133,20 +171,7 @@ private fun TranslucentMaterialTopBar(
     belowBar: (@Composable () -> Unit)? = null,
 ) {
     Box(modifier = modifier) {
-        val surface = MaterialTheme.colorScheme.surface
-        Box(
-            Modifier.matchParentSize().drawWithCache {
-                // Hold the scrim near-opaque behind the title and belowBar so their text stays readable over
-                // the list; only a fixed band at the bottom edge fades, however tall belowBar makes the bar.
-                val fadeStart = ((size.height - TranslucentFade.toPx()) / size.height).coerceIn(0f, 1f)
-                val brush = Brush.verticalGradient(
-                    0f to surface.copy(alpha = 0.92f),
-                    fadeStart to surface.copy(alpha = 0.82f),
-                    1f to Color.Transparent,
-                )
-                onDrawBehind { drawRect(brush) }
-            },
-        )
+        Box(Modifier.matchParentSize().translucentBarScrim(MaterialTheme.colorScheme.surface))
         Column {
             MaterialTopBar(spec, style.copy(containerColor = Color.Transparent))
             belowBar?.invoke()
@@ -227,40 +252,91 @@ private fun MaterialTopBarContent(spec: AdaptiveTopBarSpec, style: MaterialBarSt
 }
 
 /**
+ * Holds the scrim near-opaque behind a translucent Material bar's title and belowBar so their text
+ * stays readable over the list; only a fixed band at the bottom edge fades, however tall belowBar
+ * makes the bar.
+ */
+internal fun Modifier.translucentBarScrim(surface: Color): Modifier = drawWithCache {
+    val fadeStart = ((size.height - TranslucentFade.toPx()) / size.height).coerceIn(0f, 1f)
+    val brush = Brush.verticalGradient(
+        0f to surface.copy(alpha = 0.92f),
+        fadeStart to surface.copy(alpha = 0.82f),
+        1f to Color.Transparent,
+    )
+    onDrawBehind { drawRect(brush) }
+}
+
+/**
  * What separates the two Compose renderers' controls. An unspecified [default] keeps the button's
  * own content colour (Material), which dims a disabled icon.
  */
-private class BarActionColors(val default: Color, val accent: Color, val glass: Boolean = false)
+internal class BarActionColors(val default: Color, val accent: Color, val glass: Boolean = false)
 
 @Composable
-private fun BarActionButton(action: BarAction, colors: BarActionColors) {
+internal fun BarActionButton(action: BarAction, colors: BarActionColors) {
     when (action) {
         is BarAction.Icon -> IconButton(onClick = action.onClick, enabled = action.enabled && !action.busy) {
             if (action.busy) {
                 AdaptiveCircularProgressIndicator(modifier = Modifier.size(20.dp))
             } else {
-                Icon(
-                    imageVector = action.icon.vector,
-                    contentDescription = action.label,
-                    tint = when (action.tint) {
-                        BarTint.DEFAULT -> colors.default.takeOrElse { LocalContentColor.current }
-                        BarTint.DESTRUCTIVE -> if (action.enabled) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    },
-                )
+                val icon = @Composable {
+                    Icon(
+                        imageVector = action.icon.vector,
+                        contentDescription = action.label,
+                        tint = when (action.tint) {
+                            BarTint.DEFAULT -> colors.default.takeOrElse { LocalContentColor.current }
+                            BarTint.DESTRUCTIVE -> if (action.enabled) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        },
+                    )
+                }
+                val badge = action.badge
+                if (badge == null) {
+                    icon()
+                } else {
+                    // The label already says what the badge does, so the badge is not read out again.
+                    BadgedBox(badge = { Badge(Modifier.clearAndSetSemantics {}) { Text(badge) } }) { icon() }
+                }
             }
         }
 
-        is BarAction.Text -> TextButton(onClick = action.onClick, enabled = action.enabled) {
+        is BarAction.Text -> TextButton(
+            onClick = action.onClick,
+            enabled = action.enabled,
+            modifier = action.accessibilityLabel?.let { description ->
+                Modifier.semantics { contentDescription = description }
+            } ?: Modifier,
+        ) {
+            action.leadingIcon?.let { icon ->
+                Box(modifier = Modifier.size(TextActionIconSize)) {
+                    Icon(
+                        imageVector = icon.vector,
+                        contentDescription = null,
+                        tint = action.iconTint ?: LocalContentColor.current,
+                        modifier = Modifier.size(TextActionIconSize),
+                    )
+                    action.badgeTint?.let { badge ->
+                        CornerStatusDot(
+                            color = badge,
+                            size = TextActionBadgeSize,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .offset(x = TextActionBadgeSize / 4, y = TextActionBadgeSize / 4),
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(TextActionIconGap))
+            }
             // Glass labels its text actions in the accent, as iOS does; Material keeps TextButton's own.
             Text(
                 text = action.label,
                 color = if (colors.glass && action.enabled) colors.accent else Color.Unspecified,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = if (action.accessibilityLabel != null) Modifier.clearAndSetSemantics {} else Modifier,
             )
         }
 
@@ -309,6 +385,8 @@ private fun BarActionButton(action: BarAction, colors: BarActionColors) {
                 BarMenu(action, expanded, onDismiss = { expanded = false }, drag, colors)
             }
         }
+
+        is BarAction.Custom -> action.content()
     }
 }
 
@@ -323,7 +401,6 @@ private fun BarMenu(
     AdaptiveDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
-        shape = BarMenuShape,
         offset = BarMenuOffset,
         dragSelection = drag,
     ) {
@@ -381,7 +458,6 @@ private fun BarDropdownItem(item: BarMenuItem, onSelect: () -> Unit, checkTint: 
 }
 
 // The chat bar's menu measures, so every bar menu looks the same.
-private val BarMenuShape = RoundedCornerShape(12.dp) // TCHAT: radius-md (was 16)
 private val BarMenuOffset = DpOffset(x = 0.dp, y = 8.dp)
 
 /** The UIKit bar on iOS; never reached on Android, whose actual forwards to the simulated bar. */
@@ -392,7 +468,7 @@ internal expect fun NativeGlassTopBar(spec: AdaptiveTopBarSpec, modifier: Modifi
 private val TranslucentFade = 12.dp
 
 @Composable
-private fun glassEdgeScrim(): Brush {
+internal fun glassEdgeScrim(): Brush {
     val surface = MaterialTheme.colorScheme.surface
     return remember(surface) {
         // Nearly opaque through the bar, so a title never sits on legible text, then a short fade at
@@ -420,7 +496,7 @@ internal fun SimulatedGlassTopBar(spec: AdaptiveTopBarSpec, modifier: Modifier =
 }
 
 @Composable
-private fun glassTitleStyle() = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+internal fun glassTitleStyle() = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
 
 @Composable
 private fun SimulatedGlassTopBarContent(spec: AdaptiveTopBarSpec) {
@@ -433,6 +509,7 @@ private fun SimulatedGlassTopBarContent(spec: AdaptiveTopBarSpec) {
             .fillMaxWidth()
             .consumeUnhandledTouches()
             .statusBarsPadding()
+            .windowInsetsPadding(WindowInsets.verticalBarColumn)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -598,7 +675,10 @@ private fun labelsSqueezeTitle(
     }
     val actions = spec.actions.fold(0.dp) { sum, action ->
         sum + when (action) {
-            is BarAction.Text -> maxOf(metrics.textActionMinWidth, width(action.label, metrics.labelStyle) + metrics.textActionPadding)
+            is BarAction.Text -> {
+                val icon = if (action.leadingIcon != null) TextActionIconSize + TextActionIconGap else 0.dp
+                maxOf(metrics.textActionMinWidth, width(action.label, metrics.labelStyle) + icon + metrics.textActionPadding)
+            }
             else -> metrics.iconAction
         }
     }
@@ -607,22 +687,6 @@ private fun labelsSqueezeTitle(
     val fontScale = with(density) { titleSize.toDp() / titleSize.value.dp }
     return room < TitleFloor * fontScale && room < width(title, metrics.titleStyle)
 }
-
-internal fun AdaptiveTopBarSpec.withCompactTextActions() = copy(
-    actions = actions.map { action ->
-        if (action is BarAction.Text) {
-            BarAction.Icon(
-                id = action.id,
-                icon = action.compactIcon,
-                label = action.label,
-                enabled = action.enabled,
-                onClick = action.onClick,
-            )
-        } else {
-            action
-        }
-    },
-)
 
 /** The text prompt behind [BarRename] on the Compose renderer; the native bar uses a UIAlertController. */
 @Composable

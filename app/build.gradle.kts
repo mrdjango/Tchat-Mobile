@@ -133,6 +133,7 @@ dependencies {
 
     debugImplementation(libs.leakcanary)
 
+    testImplementation(project(":core:notifications"))
     testImplementation(libs.robolectric)
     testImplementation(libs.android.test.core)
 

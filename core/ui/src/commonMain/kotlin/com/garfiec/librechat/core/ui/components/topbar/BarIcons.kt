@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.filled.AddComment
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Compare
@@ -45,6 +48,8 @@ import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.SaveAs
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Timeline
+import com.garfiec.librechat.core.model.pullrequest.PullRequestIcon
+import com.garfiec.librechat.core.ui.components.pullrequest.PullRequestGlyphs
 
 /**
  * Every icon a top bar may show, paired with its SF Symbol. Adding an icon here is the only way to
@@ -56,6 +61,9 @@ object BarIcons {
     val Close = BarIcon(Icons.Default.Close, "xmark")
     val More = BarIcon(Icons.Default.MoreVert, "ellipsis")
     val Search = BarIcon(Icons.Default.Search, "magnifyingglass")
+    val NewChat = BarIcon(Icons.Default.AddComment, "plus.bubble")
+    val BackgroundTasks = BarIcon(Icons.Default.HourglassTop, "hourglass")
+    val Apps = BarIcon(Icons.Outlined.Apps, "rectangle.stack")
     val Visible = BarIcon(Icons.Default.Visibility, "eye")
     val Hidden = BarIcon(Icons.Default.VisibilityOff, "eye.slash")
     val Media = BarIcon(Icons.Outlined.PhotoLibrary, "photo.on.rectangle")
@@ -71,6 +79,22 @@ object BarIcons {
     val Duplicate = BarIcon(Icons.Outlined.ContentCopy, "doc.on.doc")
     val Archive = BarIcon(Icons.Outlined.Archive, "archivebox")
     val Delete = BarIcon(Icons.Outlined.DeleteOutline, "trash")
+
+    // A conversation's pull request: open, draft and closed share the pull glyph; merged has its own.
+    val PullRequest = BarIcon(PullRequestGlyphs.Open, "arrow.triangle.pull")
+    val PullRequestMerged = BarIcon(PullRequestGlyphs.Merged, "arrow.triangle.merge")
+
+    // The chat bar's pull request chip draws each state's own glyph. SF Symbols has no draft or
+    // closed pull request, so the native bar says those with the nearest general symbols.
+    val PullRequestDraft = BarIcon(PullRequestGlyphs.Draft, "pencil.circle")
+    val PullRequestClosed = BarIcon(PullRequestGlyphs.Closed, "xmark.circle")
+
+    fun pullRequest(icon: PullRequestIcon): BarIcon = when (icon) {
+        PullRequestIcon.OPEN -> PullRequest
+        PullRequestIcon.DRAFT -> PullRequestDraft
+        PullRequestIcon.MERGED -> PullRequestMerged
+        PullRequestIcon.CLOSED -> PullRequestClosed
+    }
 
     // Filled variants: screens that used the filled Material glyph keep it, so Material mode is unchanged.
     val EditFilled = BarIcon(Icons.Default.Edit, "square.and.pencil")
@@ -110,6 +134,7 @@ object BarIcons {
         Compare, Trace, ContextUsage, Compact, Share, Edit, Duplicate, Archive, Delete,
         EditFilled, DuplicateFilled, DeleteFilled, ShareFilled, History, Sort, NewFolder, Tools, Import,
         SelectAll, GridView, ListView, Filter, Source, Rendered, Link, Star, StarFilled, OpenInBrowser,
-        Bookmark, BookmarkFilled, Confirm, Attach, ClearAll,
+        Bookmark, BookmarkFilled, Confirm, Attach, ClearAll, PullRequest, PullRequestMerged,
+        PullRequestDraft, PullRequestClosed, NewChat, BackgroundTasks,
     )
 }

@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.garfiec.librechat.core.common.ChatLayoutConstants
 import com.garfiec.librechat.core.model.Attachment
+import com.garfiec.librechat.core.model.media.IconSource
 import com.garfiec.librechat.feature.chat.resources.*
 import com.garfiec.librechat.feature.chat.util.MessageNode
 import com.garfiec.librechat.feature.chat.util.withPreviews
@@ -39,7 +40,8 @@ import com.garfiec.librechat.feature.chat.viewmodel.ActiveToolCall
 fun SecondaryMessageList(
     displayMessages: List<MessageNode>,
     isStreaming: Boolean,
-    streamingContent: String,
+    /** The lane's live text; read only inside the streaming item, so a flush recomposes that alone. */
+    streamingContent: () -> String,
     modifier: Modifier = Modifier,
     justSettledMessageId: String? = null,
     activeToolCalls: List<ActiveToolCall> = emptyList(),
@@ -48,7 +50,8 @@ fun SecondaryMessageList(
     error: String? = null,
     baseUrl: String = "",
     fontSizeMultiplier: Float = 1.0f,
-    selectedEndpoint: String? = null,
+    /** The streaming reply's avatar, resolved like each node's [MessageNode.avatar]. */
+    streamingAvatar: IconSource? = null,
     streamingSenderName: String = "Assistant",
     showImageDescriptions: Boolean = true,
     chatLayoutStyle: String = ChatLayoutConstants.THREAD,
@@ -56,6 +59,8 @@ fun SecondaryMessageList(
     showBubbles: Boolean = false,
     useKatex: Boolean = false,
     bottomContentPadding: Dp = 160.dp,
+    /** Where the jump-to-bottom button floats, as in [MessageList]. */
+    scrollToBottomPadding: Dp? = null,
     /** The user's own name and avatar, so pane B labels their messages as pane A does. */
     userAvatarUrl: String? = null,
     userName: String? = null,
@@ -73,6 +78,7 @@ fun SecondaryMessageList(
     val isNearBottom = rememberIsNearBottom(listState, extraEndPx)
     // This pane hosts no AskUserQuestionPanel, so an unanswered ask has no affordance to resolve it.
     val renderedToolCalls = remember(activeToolCalls) { activeToolCalls.withoutAnyUnansweredQuestions() }
+    val replyLength = { streamingContent().length }
     // Parsed once per list; `contentType` runs on every measure pass.
     val wakeups = remember(displayMessages) { wakeupsByMessageId(displayMessages) }
 
@@ -166,11 +172,11 @@ fun SecondaryMessageList(
                         fontSizeMultiplier = fontSizeMultiplier,
                         userAvatarUrl = userAvatarUrl,
                         userName = userName,
-                        selectedEndpoint = selectedEndpoint,
                         showImageDescriptions = showImageDescriptions,
                         chatLayoutStyle = chatLayoutStyle,
                         showAvatars = showAvatars,
                         showBubbles = showBubbles,
+                        avatar = node.avatar,
                         useKatex = useKatex,
                     )
                     if (stoppedReply?.messageId == node.message.messageId) {
@@ -198,11 +204,10 @@ fun SecondaryMessageList(
                     item(key = "secondary_$streamingSlotKey") {
                         ProvideMarkdownMedia(liveAttachments, baseUrl) {
                             StreamingMessageBubble(
-                                streamingContent = streamingContent,
+                                streamingContent = streamingContent(),
                                 senderName = streamingSenderName,
-                                senderIconUrl = null,
+                                avatar = streamingAvatar,
                                 fontSizeMultiplier = fontSizeMultiplier,
-                                selectedEndpoint = selectedEndpoint,
                                 chatLayoutStyle = chatLayoutStyle,
                                 showAvatars = showAvatars,
                                 showBubbles = showBubbles,
@@ -225,7 +230,7 @@ fun SecondaryMessageList(
                                     streamingAttachments = streamingWorkspace.inline,
                                     sandboxStarting = toolCall.id in sandboxStartingToolCallIds,
                                     isLatestStep = toolCall.id == renderedToolCalls.lastOrNull()?.id,
-                                    replyLength = streamingContent.length,
+                                    replyLength = replyLength,
                                 )
                             }
                         }
@@ -254,7 +259,7 @@ fun SecondaryMessageList(
                 backdrop = null,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = scrollToBottomButtonPadding(bottomContentPadding)),
+                    .padding(bottom = scrollToBottomPadding ?: scrollToBottomButtonPadding(bottomContentPadding)),
             )
         }
     }

@@ -7,8 +7,11 @@ import com.garfiec.librechat.core.common.identity.currentAccountId
 import com.garfiec.librechat.core.data.datastore.SettingsDataStore
 import com.garfiec.librechat.core.data.repository.ChatRepository
 import com.garfiec.librechat.core.data.repository.DraftRepository
+import com.garfiec.librechat.core.logging.redact.LogRedactor
 import com.garfiec.librechat.core.model.Message
+import com.garfiec.librechat.core.model.ReasoningOverride
 import com.garfiec.librechat.core.model.StreamEvent
+import com.garfiec.librechat.core.model.code.CodeWorkspaceSubmission
 import com.garfiec.librechat.core.model.request.AddedConversation
 import com.garfiec.librechat.core.model.request.MAX_MANUAL_SKILLS
 import com.garfiec.librechat.core.model.request.manualSkillsSupportedOn
@@ -16,9 +19,12 @@ import com.garfiec.librechat.core.model.steer.mergeRestagedQuotes
 import com.garfiec.librechat.feature.chat.util.NEW_CHAT_DRAFT_KEY
 import com.garfiec.librechat.feature.chat.util.buildActiveMessagePath
 import com.garfiec.librechat.feature.chat.util.sendableManualSkills
+import com.garfiec.librechat.feature.chat.util.storedAgainst
+import com.garfiec.librechat.feature.chat.util.withChoice
 import com.garfiec.librechat.feature.chat.viewmodel.ChatNotice
 import com.garfiec.librechat.feature.chat.viewmodel.ChatRequestBuilder
 import com.garfiec.librechat.feature.chat.viewmodel.ChatScreenState
+import com.garfiec.librechat.feature.chat.viewmodel.ModelChoice
 import com.garfiec.librechat.feature.chat.viewmodel.QueuedMessage
 import com.garfiec.librechat.feature.chat.viewmodel.SendDispatchHandle
 import com.garfiec.librechat.feature.chat.viewmodel.quotesSupportedOn
@@ -26,6 +32,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonObject
 import kotlin.time.Clock
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -61,8 +68,15 @@ class SendDispatchDelegate(
     private val launchStream: (Flow<StreamEvent>) -> Unit,
     /** `ComparisonModeDelegate.onSendStart`, before the added conversation is built. */
     private val onComparisonSendStart: () -> Unit,
-    /** `ComparisonModeDelegate.buildAddedConvo` for the parent this turn attaches to. */
-    private val buildAddedConvo: (parentMessageId: String?) -> AddedConversation?,
+    /**
+     * `ComparisonModeDelegate.buildAddedConvo` for the parent this turn attaches to, given the
+     * primary's model-parameter payload (the second model shares its instructions).
+     */
+    private val buildAddedConvo: (
+        parentMessageId: String?,
+        primaryEndpoint: String?,
+        primaryModelParams: JsonObject?,
+    ) -> AddedConversation?,
     /** The project a new chat from this landing is filed into; sent on its first turn only. */
     private val chatProjectId: String? = null,
     private val newChatDraftKey: String = NEW_CHAT_DRAFT_KEY,
@@ -76,6 +90,15 @@ class SendDispatchDelegate(
      * skill catalog ([stageHeldBackManualSkills]) with none loaded, so it asks for one again.
      */
     private val loadSkillCatalog: () -> Unit = {},
+    /**
+     * `CodeWorkspaceDelegate.submissionForSend`: the chat's code-workspace decision for this turn,
+     * or null while the composer's workspace row holds the send.
+     */
+    private val codeWorkspace: () -> CodeWorkspaceSubmission? = { CodeWorkspaceSubmission.NONE },
+    /** `CodeWorkspaceDelegate.sendsWithoutWorkspace`: this send seals the chat "No workspace". */
+    private val sendsWithoutWorkspace: () -> Boolean = { false },
+    /** A drained turn the workspace row holds: put it back and pause the queue. */
+    private val onDrainHeld: (QueuedMessage) -> Unit = {},
 ) {
     /**
      * Staged chips a new chat's first send already held back, handed to this chat
@@ -86,7 +109,8 @@ class SendDispatchDelegate(
 
     /**
      * Snapshots the current send config into a [QueuedMessage]. Used both for a normal send
-     * (fired immediately) and for queueing (fired later, unchanged by intervening config edits).
+     * (fired immediately) and for queueing (fired later, with the composer as it was; a drain
+     * re-derives the request fields from it under the config of that moment).
      * Returns null when there is nothing to send (blank text and no uploaded files).
      */
     @OptIn(ExperimentalUuidApi::class)
@@ -101,7 +125,7 @@ class SendDispatchDelegate(
         if (dropped.isNotEmpty()) {
             Logger.w {
                 "buildSendSpec: ${dropped.size} attachment(s) not yet uploaded, excluded from send: " +
-                    dropped.joinToString { it.name }
+                    dropped.joinToString { LogRedactor.redactFileName(it.name) }
             }
         }
         if (text.isBlank() && files.isEmpty()) return null
@@ -120,6 +144,7 @@ class SendDispatchDelegate(
             ephemeralAgent = requestBuilder.buildEphemeralAgent(),
             dispatch = requestBuilder.currentDispatch(),
             isTemporary = state.isTemporaryChat,
+            codeWorkspace = codeWorkspace(),
             // Capture the composing account so a drain after an account switch drops this item rather
             // than POSTing it to the newly-active account's server.
             accountId = activeAccountProvider.currentAccountId()?.value,
@@ -128,7 +153,26 @@ class SendDispatchDelegate(
 
     fun sendNow(text: String) {
         val spec = buildSendSpec(text) ?: return
-        if (doSendWithSpec(spec, fromComposer = true)) noticeHeldBackManualSkills()
+        // The workspace row holds the send and says why; the button is disabled for the same reason.
+        if (spec.codeWorkspace == null) return
+        val withoutWorkspace = sendsWithoutWorkspace()
+        if (doSendWithSpec(spec, fromComposer = true)) {
+            noticeHeldBackManualSkills()
+            if (withoutWorkspace) handle.setError(ChatNotice.CODE_WORKSPACE_SENT_WITHOUT.marker())
+        }
+    }
+
+    /**
+     * Sends an MCP App's approved message as a user turn on the chat's current selection, as
+     * web's `ask` with every composer override emptied: only [text]. The composer's draft, staged
+     * files, quotes, skill chips and one-turn reasoning choice are not read, taken or cleared.
+     * False when the chat can't start a run now (a reply is running), so the App gets an error.
+     */
+    fun sendAppText(text: String): Boolean {
+        if (text.isBlank() || handle.state.isStreaming) return false
+        val spec = buildSendSpec(text)?.copy(attachments = emptyList()) ?: return false
+        if (spec.codeWorkspace == null) return false
+        return doSendWithSpec(spec, fromComposer = false)
     }
 
     /**
@@ -226,10 +270,23 @@ class SendDispatchDelegate(
         return added
     }
 
-    /** Removes one pending skill chip (its ×). */
-    fun removePendingManualSkill(name: String) {
+    /** Returns whether a new chat's first send held it back for the catalog, for [restorePendingManualSkill]. */
+    fun removePendingManualSkill(name: String): Boolean {
         handle.update { pendingManualSkills = pendingManualSkills - name }
+        val heldBack = name in heldBackForCatalog
         heldBackForCatalog = heldBackForCatalog - name
+        return heldBack
+    }
+
+    /** A no-op when [name] is staged again already or the chips are at [MAX_MANUAL_SKILLS]. */
+    fun restorePendingManualSkill(index: Int, name: String, heldBack: Boolean) {
+        var restored = false
+        handle.update {
+            if (name in pendingManualSkills || pendingManualSkills.size >= MAX_MANUAL_SKILLS) return@update
+            pendingManualSkills = pendingManualSkills.insertedAt(index, name)
+            restored = true
+        }
+        if (restored && heldBack) heldBackForCatalog = heldBackForCatalog + name
     }
 
     /**
@@ -239,6 +296,23 @@ class SendDispatchDelegate(
      * a selection staged elsewhere must not silently ride along (web's `quotesSupported` guard).
      * Regenerate/continue/edit never call this — those flows replay a prior turn.
      */
+    /**
+     * Takes the composer's Thinking choice for the turn being minted, or null. One the selection
+     * no longer accepts is dropped rather than sent: the server 400s it (upstream
+     * `resolveSubmittedReasoning`). While the selection's catalog is not known the choice can't be
+     * checked, so it is not sent and stays staged for the next message, as upstream's
+     * `restoreStaged` puts it back; `ReasoningCatalogDelegate` judges it once the catalog lands.
+     */
+    fun takePendingReasoningOverride(): ReasoningOverride? {
+        if (handle.state.isCatalogPending()) return null
+        var taken: ReasoningOverride? = null
+        handle.update {
+            taken = pendingReasoningOverride
+            pendingReasoningOverride = null
+        }
+        return taken?.takeIf { handle.state.acceptsReasoning(it) }
+    }
+
     fun takePendingQuotes(endpoint: String): List<String> {
         if (!quotesSupportedOn(endpoint)) return emptyList()
         var taken: List<String> = emptyList()
@@ -265,7 +339,21 @@ class SendDispatchDelegate(
      */
     fun restagePendingQuotes(quotes: List<String>) {
         if (quotes.isEmpty()) return
-        handle.update { pendingQuotes = mergeRestagedQuotes(pendingQuotes, quotes) }
+        handle.update {
+            // During a queued edit the chips on screen are that item's: the excerpts go to the
+            // stashed draft the steer was sent from, which the edit's end restores.
+            if (handle.state.editingQueuedItem != null) {
+                draftRestore = draftRestore.copy(quotes = mergeRestagedQuotes(draftRestore.quotes, quotes))
+            } else {
+                pendingQuotes = mergeRestagedQuotes(pendingQuotes, quotes)
+            }
+        }
+    }
+
+    fun restorePendingQuote(index: Int, quote: String) {
+        handle.update {
+            pendingQuotes = pendingQuotes.insertedAt(index, quote)
+        }
     }
 
     /** Removes one staged quote chip (its ×). */
@@ -291,22 +379,71 @@ class SendDispatchDelegate(
         }
     }
 
+    /** Puts [text] in the composer for a send that follows at once, without saving it as a draft. */
+    fun stageForSend(text: String) {
+        if (text.isNotBlank()) handle.update { inputText = text }
+    }
+
     /** Clears the input, its persisted draft, and any attached files. */
     fun clearComposer() {
         val draftKey = handle.state.conversationId ?: newChatDraftKey
         // Drop any staged batch too: it belongs to the message just sent, and surviving here would
-        // attach it to the next one.
+        // attach it to the next one. A pending Undo goes for the same reason: what it would restore
+        // was removed from the message just sent.
         handle.update {
             inputText = ""
             pendingUploadRouting = null
+            pendingDraftUndo = null
         }
         handle.scope.launch { draftRepository.deleteDraft(draftKey) }
         fileHandler.clearAttachedFiles()
     }
 
     /**
+     * A drained turn's request fields re-derived from its own composer snapshot on [choice] (the
+     * snapshot's spec held against the current config) under the current config and gates, through
+     * the builder a live send uses. The config may have changed while the turn waited: a dropped or
+     * moved spec takes its tools and preset parameters with it, and a web-search route captured while
+     * the key check was out ([com.garfiec.librechat.feature.chat.util.WebSearchRoute.CHECKING]) runs
+     * the search the check answered.
+     */
+    private fun QueuedMessage.rebuiltForDrain(choice: ModelChoice): QueuedMessage {
+        val state = handle.state
+        val selection = state.selection.copy(
+            choice = this.choice,
+            enabledTools = enabledTools,
+            selectedMcpServerNames = mcpServerNames,
+            specTools = specTools,
+            modelParameters = modelParameters,
+            skillsToggle = ephemeralAgent?.skills == true,
+        ).withChoice(choice, from = this.choice)
+        val rebuilt = state.copy(selection = selection)
+        val builder = ChatRequestBuilder { rebuilt }
+        return copy(
+            choice = choice,
+            specTools = selection.specTools,
+            modelParameters = selection.modelParameters,
+            webSearch = builder.builtInWebSearch(),
+            modelParamsPayload = builder.buildModelParams(),
+            ephemeralAgent = builder.buildEphemeralAgent(),
+            dispatch = builder.currentDispatch(),
+        )
+    }
+
+    /**
+     * The decision for a turn queued while the workspace row held the send. A new chat's never goes
+     * out: sending no fields would seal it "No workspace". A saved chat's takes the one held now,
+     * and while that is still held the turn goes back to the queue ([onDrainHeld]).
+     */
+    private fun decisionForHeldSpec(spec: QueuedMessage): CodeWorkspaceSubmission? {
+        if (handle.state.conversationId == null) return null
+        return codeWorkspace().also { if (it == null) onDrainHeld(spec) }
+    }
+
+    /**
      * Sends one message from a [QueuedMessage] config snapshot. The config (endpoint/model/
-     * tools/webSearch/attachments/dispatch/ephemeralAgent) comes from the spec, but the
+     * tools/webSearch/attachments/dispatch/ephemeralAgent) comes from the spec (a drain re-derives
+     * the request fields from it, see [rebuiltForDrain]), but the
      * lineage — conversationId, parentMessageId, and the minted optimistic user-message id —
      * is recomputed from the *current* tree, so a drained item chains onto the freshly-
      * finalized turn.
@@ -324,14 +461,19 @@ class SendDispatchDelegate(
         val hasFiles = fileRefs.isNotEmpty()
         val messageText = baseSpec.text
         if ((messageText.isBlank() && !hasFiles) || handle.state.isStreaming) return false
+        val codeWorkspace = baseSpec.codeWorkspace ?: decisionForHeldSpec(baseSpec) ?: return false
         // Guard passed: safe to take the chips and clear the composer without risking their loss.
+        // A drained turn's spec was held at enqueue; the config may have changed while it waited.
+        val choice = baseSpec.choice.storedAgainst(handle.state.modelSpecs)
         val spec = if (fromComposer) {
             baseSpec.copy(
+                choice = choice,
                 quotes = takePendingQuotes(baseSpec.endpoint),
                 manualSkills = takePendingManualSkills(baseSpec.endpoint),
+                reasoningOverride = takePendingReasoningOverride(),
             )
         } else {
-            baseSpec
+            baseSpec.rebuiltForDrain(choice)
         }
         if (fromComposer) clearComposer()
 
@@ -365,6 +507,8 @@ class SendDispatchDelegate(
             quotes = spec.quotes.takeIf { it.isNotEmpty() },
             // Painted now for the same reason: the user bubble's skill pills.
             manualSkills = spec.manualSkills.takeIf { it.isNotEmpty() },
+            // Not shown, but an edit or regenerate of this turn before the reload replays it.
+            reasoningOverride = spec.reasoningOverride,
         )
         val isNewChat = conversationId == null
         handle.update {
@@ -373,6 +517,7 @@ class SendDispatchDelegate(
                 buildActiveMessagePath(updatedMessages, content.activeBranches, optimisticMessage.messageId)
             content = content.copy(
                 isStreaming = true,
+                attachedRun = null,
                 streamingContent = "",
                 streamingThinking = "",
                 activeToolCalls = emptyList(),
@@ -402,7 +547,7 @@ class SendDispatchDelegate(
         val effectiveAgentId = spec.agentId
         onComparisonSendStart()
 
-        val effectiveAddedConvo = buildAddedConvo(lastMessageId)
+        val effectiveAddedConvo = buildAddedConvo(lastMessageId, spec.endpoint, spec.modelParamsPayload)
         val stream = chatRepository.startChat(
             text = messageText,
             conversationId = conversationId,
@@ -423,9 +568,12 @@ class SendDispatchDelegate(
             modelParams = spec.modelParamsPayload,
             quotes = spec.quotes.takeIf { it.isNotEmpty() },
             manualSkills = spec.manualSkills.takeIf { it.isNotEmpty() },
+            reasoningOverride = spec.reasoningOverride,
             // First turn only: the server saves it on every turn that carries it, so a later one
             // would move the chat. A temporary chat is never filed.
             chatProjectId = if (isNewChat && !spec.isTemporary) chatProjectId else null,
+            // NONE and null both send neither field; null keeps the call identical to one before the feature.
+            codeWorkspace = codeWorkspace.takeUnless { it == CodeWorkspaceSubmission.NONE },
         )
         launchStream(stream)
         return true

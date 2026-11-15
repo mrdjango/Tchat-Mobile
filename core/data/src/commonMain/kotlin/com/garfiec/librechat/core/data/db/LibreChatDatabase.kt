@@ -19,6 +19,7 @@ import com.garfiec.librechat.core.data.db.dao.PrefetchWatermarkDao
 import com.garfiec.librechat.core.data.db.dao.PresetDao
 import com.garfiec.librechat.core.data.db.dao.ProjectOrderDao
 import com.garfiec.librechat.core.data.db.dao.ServerDao
+import com.garfiec.librechat.core.data.db.dao.ToolCallPartDao
 import com.garfiec.librechat.core.data.db.entity.AgentEntity
 import com.garfiec.librechat.core.data.db.entity.ArtifactShortcutEntity
 import com.garfiec.librechat.core.data.db.entity.ConversationEntity
@@ -31,6 +32,7 @@ import com.garfiec.librechat.core.data.db.entity.PrefetchWatermarkEntity
 import com.garfiec.librechat.core.data.db.entity.PresetEntity
 import com.garfiec.librechat.core.data.db.entity.ProjectOrderEntity
 import com.garfiec.librechat.core.data.db.entity.ServerEntity
+import com.garfiec.librechat.core.data.db.entity.ToolCallPartEntity
 
 @Database(
     entities = [
@@ -46,8 +48,9 @@ import com.garfiec.librechat.core.data.db.entity.ServerEntity
         MessageSearchEntity::class,
         MessageSearchFtsEntity::class,
         ProjectOrderEntity::class,
+        ToolCallPartEntity::class,
     ],
-    version = 13,
+    version = 15,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -74,6 +77,19 @@ import com.garfiec.librechat.core.data.db.entity.ServerEntity
         AutoMigration(from = 11, to = 12),
         // 12 -> 13 adds the account-scoped project_order table (Switchboard-only drawer folder order).
         AutoMigration(from = 12, to = 13),
+        // 13 -> 14 adds every nullable v0.8.9-rc1 column in one hop (none shipped as a released DB
+        // version). On messages: `isUserSubmitted`, so a user's own text that quotes a wake-up header
+        // stays a user bubble when the chat opens from the cache; `reasoningOverride`, so an edit or
+        // regenerate of a cached turn sends the one-turn reasoning choice it was sent with; and
+        // `privacyRevision`, so a redacted turn opened from the cache still says its private details
+        // were hidden and fetches the original (only the marker: the original text is never stored).
+        // On conversations: the five read-state columns (unseen replies); rows cached before it read
+        // as seen until the next list page restamps them. And `isCodeConversation` (null = not known),
+        // so the drawer asks for pull requests only for code chats from a cold start.
+        AutoMigration(from = 13, to = 14),
+        // 14 -> 15 adds the account-scoped tool_call_parts table: full tool calls fetched for previewed
+        // cards of finished messages, so a later or offline session opens them without a refetch.
+        AutoMigration(from = 14, to = 15),
     ],
 )
 @TypeConverters(Converters::class)
@@ -91,6 +107,7 @@ abstract class LibreChatDatabase : RoomDatabase() {
     abstract fun prefetchWatermarkDao(): PrefetchWatermarkDao
     abstract fun messageSearchDao(): MessageSearchDao
     abstract fun projectOrderDao(): ProjectOrderDao
+    abstract fun toolCallPartDao(): ToolCallPartDao
 }
 
 // Room KSP auto-generates the actual implementations for each platform

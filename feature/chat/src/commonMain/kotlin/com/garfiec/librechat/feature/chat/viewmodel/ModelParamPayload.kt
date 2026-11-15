@@ -35,7 +35,22 @@ object ModelParamPayload {
 
     /**
      * Builds the model-parameter map for the given endpoint selection, carrying only the params the
-     * user changed from the default composer state. Returns an empty object when nothing was customized.
+     * user changed from the default composer state, plus [alwaysSent]. Returns an empty object when
+     * there is neither.
+     *
+     * [settingsEndpoint] / [settingsProvider] pick the parameter set, and so the wire key of every
+     * value (`top_p` on a custom endpoint, `topP` on Anthropic): see `paramSettingsKey`. [endpoint] /
+     * [provider] are the configured names `dropParams` is keyed on. They differ only for a custom
+     * endpoint (or an agent on one).
+     *
+     * **Only the keys of that set, and its [EndpointParameterRegistry.wireOnlyDefinitions], go out, and
+     * the server unsets every stored field a request leaves out** (`getUnsetFields`,
+     * `packages/api/src/conversations/save.ts`). A value lost on the way here,
+     * a key missing from the set or sent under another provider's spelling, is erased from the
+     * conversation on the next send, including one set on web.
+     *
+     * [alwaysSent] keys go out even at their default, where the server would otherwise apply a
+     * default of its own (an admin's `paramDefinitions` default for `web_search`).
      */
     fun build(
         endpoint: String,
@@ -44,25 +59,27 @@ object ModelParamPayload {
         extendedEffortSupported: Boolean,
         params: ModelParameters,
         dropParamsMap: Map<String, JsonElement>? = null,
-        // TCHAT: the parameter set a custom endpoint declares (`paramsEndpointFor`); dropParams stays keyed by name.
-        paramsEndpoint: String = endpoint,
-        paramsProvider: String? = provider,
+        settingsEndpoint: String = endpoint,
+        settingsProvider: String? = provider,
+        alwaysSent: Set<String> = emptySet(),
     ): JsonObject {
+        val dropParams = EndpointDropParams.resolve(dropParamsMap, endpoint, provider, model)
         val definitions = EndpointParameterRegistry.getDefinitions(
-            endpoint = paramsEndpoint,
+            endpoint = settingsEndpoint,
             extendedEffortSupported = extendedEffortSupported,
-            provider = paramsProvider,
+            provider = settingsProvider,
             model = model,
-            dropParams = EndpointDropParams.resolve(dropParamsMap, endpoint, provider, model),
+            dropParams = dropParams,
         )
         val modelRemoved = EndpointParameterRegistry.modelRemovedOptions(
-            endpoint = paramsEndpoint,
-            provider = paramsProvider,
+            endpoint = settingsEndpoint,
+            provider = settingsProvider,
             model = model,
-            dropParams = EndpointDropParams.resolve(dropParamsMap, endpoint, provider, model),
+            dropParams = dropParams,
         )
+        val wireOnly = EndpointParameterRegistry.wireOnlyDefinitions(settingsEndpoint, settingsProvider, model, dropParams)
         val out = LinkedHashMap<String, JsonElement>()
-        for (definition in definitions) {
+        for (definition in definitions + wireOnly) {
             val key = definition.key
             val raw = params.getValueForKey(key)
             // Skip any value the server would apply on its own: a blank (unset), the composer baseline
@@ -70,7 +87,8 @@ object ModelParamPayload {
             // must be checked too — for a dynamic-only key like promptCache the composer baseline is ""
             // (empty dynamicValues), so a seeded default-valued entry would otherwise be over-sent. Mere
             // presence in `dynamicValues` is not "changed": the sheet seeds default-valued entries on open.
-            if (raw.isBlank() || raw == ModelParameters.DEFAULT.getValueForKey(key) || raw == definition.default) continue
+            val atDefault = raw == ModelParameters.DEFAULT.getValueForKey(key) || raw == definition.default
+            if (raw.isBlank() || (atDefault && key !in alwaysSent)) continue
             if (raw in modelRemoved[key].orEmpty()) continue
             out[key] = encode(definition.type, raw)
         }

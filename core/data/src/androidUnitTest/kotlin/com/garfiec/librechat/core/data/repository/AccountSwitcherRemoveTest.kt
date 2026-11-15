@@ -202,6 +202,23 @@ class AccountSwitcherRemoveTest {
     }
 
     @Test
+    fun `failing over skips an account whose stored session has lapsed`() = runTest(testDispatcher) {
+        val h = harness()
+        val accountC = deriveAccountId(deriveServerId(serverB), "user-c")
+        h.roster.upsertAndActivate(entry(accountC, serverB, lastActiveAt = 5L))
+        h.roster.upsertAndActivate(entry(accountB, serverB, lastActiveAt = 10L))
+        h.roster.upsertAndActivate(entry(accountA, serverA, lastActiveAt = 20L))
+        h.tokenManager.expiredAccounts += accountA.value
+        h.tokenManager.lapsedAccounts += accountB.value
+
+        val result = h.switcher.failOverFromActive()
+
+        assertThat((result as FailoverResult.Switched).entry.accountId).isEqualTo(accountC.value)
+        assertThat(h.switcher.hasSession(accountB.value)).isFalse()
+        assertThat(h.switcher.switch(accountB.value)).isFalse()
+    }
+
+    @Test
     fun `removing the last account tears down to logged-out and signals session expiry`() =
         runTest(testDispatcher) {
             val h = harness()
@@ -213,6 +230,8 @@ class AccountSwitcherRemoveTest {
             assertThat(h.provider.state.value).isEqualTo(Resolved(null))
             assertThat(h.tokenManager.clearedActive).isTrue()
             assertThat(h.switchCacheCleaner.clearCount).isEqualTo(1)
+            // Nothing left to re-authenticate: the next sign-in must reach the provider's chooser.
+            assertThat(h.switcher.signInReauthenticatesActive()).isFalse()
             assertThat(h.sessionCacheCleaner.fileClearCount).isEqualTo(1)
             assertThat(h.roster.snapshot().entries).isEmpty()
             assertThat(h.tokenManager.expiredEmissions).containsExactly(null)

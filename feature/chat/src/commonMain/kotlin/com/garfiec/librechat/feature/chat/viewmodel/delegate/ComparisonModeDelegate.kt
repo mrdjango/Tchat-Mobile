@@ -9,12 +9,15 @@ import com.garfiec.librechat.core.model.StreamEvent
 import com.garfiec.librechat.core.model.config.ModelSpec
 import com.garfiec.librechat.core.model.config.ModelSpecs
 import com.garfiec.librechat.core.model.request.AddedConversation
+import com.garfiec.librechat.feature.chat.util.buildActiveMessagePath
 import com.garfiec.librechat.feature.chat.util.isEphemeralAgentId
+import com.garfiec.librechat.feature.chat.util.mergeFinalMessagesInMemory
 import com.garfiec.librechat.feature.chat.util.parseEphemeralAgentId
 import com.garfiec.librechat.feature.chat.util.primaryAgentId
 import com.garfiec.librechat.feature.chat.util.secondaryAgentId
 import com.garfiec.librechat.feature.chat.util.stripAgentIdSuffix
 import com.garfiec.librechat.feature.chat.util.toSeed
+import com.garfiec.librechat.feature.chat.util.treeParentKeyOf
 import com.garfiec.librechat.feature.chat.viewmodel.ActiveToolCall
 import com.garfiec.librechat.feature.chat.viewmodel.ChatNotice
 import com.garfiec.librechat.feature.chat.viewmodel.ChatScreenState
@@ -22,9 +25,12 @@ import com.garfiec.librechat.feature.chat.viewmodel.ComparisonHandle
 import com.garfiec.librechat.feature.chat.viewmodel.ComparisonState
 import com.garfiec.librechat.feature.chat.viewmodel.laneBSpec
 import com.garfiec.librechat.feature.chat.viewmodel.resolveEndpointDispatch
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Owns model-comparison mode end to end: selecting the secondary model, building its
@@ -39,8 +45,11 @@ import kotlinx.coroutines.withTimeoutOrNull
 class ComparisonModeDelegate(
     private val handle: ComparisonHandle,
     private val messageRepository: MessageRepository,
-    /** Reloads the conversation from the server after branching (VM-owned Room observer). */
-    private val reloadConversation: (String) -> Unit,
+    /**
+     * Reloads the conversation from the server after branching (VM-owned Room observer), then runs
+     * the callback once the settled read is on screen. Does nothing in a temporary chat.
+     */
+    private val reloadConversation: (conversationId: String, onSettled: (() -> Unit)?) -> Unit,
     /**
      * The server's spec config as last fetched, read directly: a reopen can land before the
      * selection's copy is filled in.
@@ -51,8 +60,33 @@ class ComparisonModeDelegate(
     private val primaryBuffer = StringBuilder()
     private val secondaryBuffer = StringBuilder()
 
-    /** Accumulated primary-pane text — used as the auto-read source on Final. */
-    fun primaryContent(): String = primaryBuffer.toString()
+    /**
+     * The primary pane's answer deltas only. [primaryBuffer] also carries the reasoning (the pane
+     * renders both), which auto-read must not speak.
+     */
+    private val primaryAnswerBuffer = StringBuilder()
+
+    /** The primary pane's streamed answer, without its reasoning — the auto-read source on Final. */
+    fun primaryAnswerText(): String = primaryAnswerBuffer.toString()
+
+    /** Text appended since the last [flushText]. */
+    private var textDirty = false
+
+    /**
+     * Publishes both panes' text. Driven by the stream's 50 ms text flush ([StreamTextBuffer]), so a
+     * comparison updates its panes at the rate a single reply does rather than on every chunk.
+     */
+    fun flushText() {
+        if (!textDirty) return
+        textDirty = false
+        handle.update {
+            comparisonState = comparisonState.copy(
+                primaryStreamingContent = primaryBuffer.toString(),
+                secondaryStreamingContent = secondaryBuffer.toString(),
+            )
+            content = content.copy(streamingContent = primaryBuffer.toString())
+        }
+    }
 
     // ── Selection ────────────────────────────────────────────────────
 
@@ -110,7 +144,9 @@ class ComparisonModeDelegate(
     fun stopComparison() {
         if (handle.state.isStreaming) return
         primaryBuffer.clear()
+        primaryAnswerBuffer.clear()
         secondaryBuffer.clear()
+        textDirty = false
         handle.update {
             comparisonState = ComparisonState()
             if (conversation.conversationId == null &&
@@ -162,10 +198,21 @@ class ComparisonModeDelegate(
      * A spec lane carries its preset's sampling settings (see [AddedConversation]). Not its
      * prompt: the served config leaves a spec's `promptPrefix` out, and the server applies it to
      * the primary only.
+     *
+     * A model lane carries the primary's custom instructions, read from [primaryModelParams] (the
+     * payload the primary's own request sends). A saved-agent lane gets none (it runs its own), and
+     * a saved-agent primary gives none (the server ignores its payload). [primaryEndpoint] is the
+     * turn's own primary, not the live selection: a queued turn drains with the config it was
+     * composed with. See "Lane B's settings" in feature/chat/CLAUDE.md.
+     *
      * It must send no `modelLabel`: the server would save that as the lane's sender in place of
      * the spec's label, and [rehydrateFromMessage] reads the spec back from it.
      */
-    fun buildAddedConvo(parentMessageId: String? = null): AddedConversation? {
+    fun buildAddedConvo(
+        parentMessageId: String? = null,
+        primaryEndpoint: String? = null,
+        primaryModelParams: JsonObject? = null,
+    ): AddedConversation? {
         val state = handle.state
         val comparison = state.comparisonState
         if (!comparison.isEnabled) return null
@@ -178,7 +225,7 @@ class ComparisonModeDelegate(
             endpointKeyStates = state.endpointKeyStates,
         )
         val specs = currentModelSpecs()
-        val spec = comparison.laneBSpec(specs)
+        val spec = comparison.laneBSpec(specs, state.endpointConfigs)
         val preset = spec?.let { name -> specs?.list?.firstOrNull { it.name == name }?.preset }
         return AddedConversation(
             conversationId = state.conversationId,
@@ -190,15 +237,32 @@ class ComparisonModeDelegate(
             agentId = if (isAgent) model else null,
             model = if (isAgent) null else model,
             spec = spec,
+            promptPrefix = if (isAgent || primaryEndpoint == EndpointConstants.AGENTS) {
+                null
+            } else {
+                primaryModelParams.customInstructions()
+            },
             temperature = preset?.temperature,
-            topP = preset?.topP,
+            topPSnake = preset?.topPSnake,
+            topPCamel = preset?.topPCamel,
             topK = preset?.topK,
             presencePenalty = preset?.presencePenalty,
             frequencyPenalty = preset?.frequencyPenalty,
             maxOutputTokens = preset?.maxOutputTokens,
-            maxTokens = preset?.maxTokens,
+            maxTokensSnake = preset?.maxTokensSnake,
+            maxTokensCamel = preset?.maxTokensCamel,
         )
     }
+
+    /**
+     * The custom instructions a primary payload carries: `promptPrefix`, or `system` where the
+     * provider's parameter set names it that (Bedrock). The added convo takes them as `promptPrefix`
+     * whatever its provider: that is the one name `loadAddedAgent` reads.
+     */
+    private fun JsonObject?.customInstructions(): String? =
+        sequenceOf("promptPrefix", "system")
+            .mapNotNull { key -> (this?.get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content }
+            .firstOrNull { it.isNotBlank() }
 
     /**
      * Rebuilds comparison mode from a persisted parallel response [message] on reopen.
@@ -211,21 +275,18 @@ class ComparisonModeDelegate(
      * comparing via [buildAddedConvo]. No-op if the message has no added-agent part.
      *
      * The server saves no spec for the added lane, so an ephemeral lane's spec is read back from
-     * the id ([laneBSpec]). The id is kept too, so a reopen that lands before the spec config
-     * still finds the spec once it has loaded.
+     * the id ([laneBSpec]) on every use, never pinned here: a reopen can land before the spec
+     * config or the endpoint configs it is read against, and either can change the answer.
      */
     fun rehydrateFromMessage(message: Message) {
         val secondaryId = secondaryAgentId(message) ?: return
         val (endpoint, model) = resolveSecondarySelection(secondaryId)
-        val reopened = ComparisonState(
-            isEnabled = true,
-            secondaryEndpoint = endpoint,
-            secondaryModel = model,
-            reopenedSecondaryId = secondaryId.takeIf { isEphemeralAgentId(it) },
-        )
         handle.update {
-            comparisonState = reopened.copy(
-                secondarySpec = reopened.laneBSpec(currentModelSpecs()),
+            comparisonState = ComparisonState(
+                isEnabled = true,
+                secondaryEndpoint = endpoint,
+                secondaryModel = model,
+                reopenedSecondaryId = secondaryId.takeIf { isEphemeralAgentId(it) },
                 primaryAgentId = primaryAgentId(message),
                 secondaryAgentId = secondaryId,
                 parallelMessageId = message.messageId,
@@ -260,7 +321,9 @@ class ComparisonModeDelegate(
     fun onSendStart() {
         if (!handle.state.comparisonState.isEnabled) return
         primaryBuffer.clear()
+        primaryAnswerBuffer.clear()
         secondaryBuffer.clear()
+        textDirty = false
         handle.update {
             comparisonState = comparisonState.copy(
                 primaryIsStreaming = true,
@@ -297,6 +360,45 @@ class ComparisonModeDelegate(
     }
 
     /**
+     * An MCP sign-in is per user, not per pane, so it goes to whichever pane holds the call, found
+     * as the single stream finds it: a subagent child's prompt lands on the pane's `subagent` call
+     * whose trace holds the child (else [envelopeParentId]).
+     */
+    private fun routeToolCallAuth(event: StreamEvent.ToolCallAuthRequired, envelopeParentId: String? = null) {
+        val traces = handle.state.subagentProgress
+        handle.update {
+            comparisonState = comparisonState.copy(
+                primaryActiveToolCalls = comparisonState.primaryActiveToolCalls.withAuthRequired(event, traces, envelopeParentId),
+                secondaryActiveToolCalls = comparisonState.secondaryActiveToolCalls.withAuthRequired(event, traces, envelopeParentId),
+            )
+        }
+    }
+
+    /** A subagent child call ended, so whichever pane's parent card carried its sign-in drops it. */
+    private fun clearSubagentAuthFor(childToolCallId: String) {
+        val state = handle.state.comparisonState
+        if ((state.primaryActiveToolCalls + state.secondaryActiveToolCalls).none { it.authToolCallId == childToolCallId }) {
+            return
+        }
+        handle.update {
+            comparisonState = comparisonState.copy(
+                primaryActiveToolCalls = comparisonState.primaryActiveToolCalls.withoutSubagentAuthFor(childToolCallId),
+                secondaryActiveToolCalls = comparisonState.secondaryActiveToolCalls.withoutSubagentAuthFor(childToolCallId),
+            )
+        }
+    }
+
+    /** The pane half of a subagent envelope: its sign-in, and the end of the child call that held one. */
+    private fun routeSubagentAuth(event: StreamEvent.SubagentUpdate) {
+        when (val inner = event.inner) {
+            is StreamEvent.ToolCallAuthRequired -> routeToolCallAuth(inner, event.parentToolCallId)
+            is StreamEvent.ToolCallComplete -> clearSubagentAuthFor(inner.toolCallId)
+            is StreamEvent.ToolCallClosed -> clearSubagentAuthFor(inner.toolCallId)
+            else -> Unit
+        }
+    }
+
+    /**
      * Routes a streaming event into the comparison panes. Returns `true` if the event
      * was consumed for comparison mode (so the caller skips its normal handling), `false`
      * otherwise — including when comparison is disabled, leaving the standard path intact.
@@ -304,16 +406,41 @@ class ComparisonModeDelegate(
      * A tool-call event with no branch here falls through to the standard path, which writes the
      * non-comparison `activeToolCalls` the panes never read. That is why the closure needs one:
      * without it an aborted comparison run leaves both panes' cards spinning.
+     *
+     * A `subagent_update` is the one event routed here and still passed on (`false`): the panes take
+     * its MCP sign-in, and the standard path still records the subagent's trace.
      */
     fun routeEvent(event: StreamEvent): Boolean {
         if (!handle.state.comparisonState.isEnabled) return false
         return when (event) {
             // Thinking and content deltas both feed the same pane buffer in comparison mode.
-            is StreamEvent.ContentDelta -> { routeTextDelta(event.agentId, event.chunk); true }
-            is StreamEvent.ThinkingDelta -> { routeTextDelta(event.agentId, event.chunk); true }
+            is StreamEvent.ContentDelta -> { routeTextDelta(event.agentId, event.chunk, isReasoning = false); true }
+            is StreamEvent.ThinkingDelta -> { routeTextDelta(event.agentId, event.chunk, isReasoning = true); true }
             is StreamEvent.ToolCallStart -> { routeToolCallStart(event); true }
-            is StreamEvent.ToolCallComplete -> { routeToolCallComplete(event); clearSandboxStarting(event.toolCallId); true }
-            is StreamEvent.ToolCallClosed -> { routeToolCallClosed(event); clearSandboxStarting(event.toolCallId); true }
+            is StreamEvent.ToolCallComplete -> {
+                routeToolCallComplete(event)
+                clearSandboxStarting(event.toolCallId)
+                clearSubagentAuthFor(event.toolCallId)
+                true
+            }
+            is StreamEvent.ToolCallClosed -> {
+                routeToolCallClosed(event)
+                clearSandboxStarting(event.toolCallId)
+                clearSubagentAuthFor(event.toolCallId)
+                true
+            }
+            is StreamEvent.ToolCallAuthRequired -> { routeToolCallAuth(event); true }
+            is StreamEvent.SubagentUpdate -> { routeSubagentAuth(event); false }
+            // No agent on the marker either; the ids are unique across panes, so both lists take it.
+            is StreamEvent.ToolCallPreparation -> {
+                handle.update {
+                    comparisonState = comparisonState.copy(
+                        primaryActiveToolCalls = comparisonState.primaryActiveToolCalls.preparedBy(event),
+                        secondaryActiveToolCalls = comparisonState.secondaryActiveToolCalls.preparedBy(event),
+                    )
+                }
+                true
+            }
             else -> false
         }
     }
@@ -328,31 +455,41 @@ class ComparisonModeDelegate(
         handle.update { content = content.withoutSandboxStarting(toolCallId) }
     }
 
-    private fun routeTextDelta(agentId: String?, chunk: String) {
+    /** Buffers the text for [flushText]; the lane's streaming flag and agent id go out at once. */
+    private fun routeTextDelta(agentId: String?, chunk: String, isReasoning: Boolean) {
+        val lanes = handle.state.comparisonState
         if (isSecondaryEvent(agentId)) {
             secondaryBuffer.append(chunk)
-            handle.update {
-                comparisonState = comparisonState.copy(
-                    secondaryStreamingContent = secondaryBuffer.toString(),
-                    secondaryIsStreaming = true,
-                    secondaryAgentId = comparisonState.secondaryAgentId ?: agentId,
-                )
+            if (!lanes.secondaryIsStreaming || (lanes.secondaryAgentId == null && agentId != null)) {
+                handle.update {
+                    comparisonState = comparisonState.copy(
+                        secondaryIsStreaming = true,
+                        secondaryAgentId = comparisonState.secondaryAgentId ?: agentId,
+                    )
+                }
             }
         } else {
             primaryBuffer.append(chunk)
-            handle.update {
-                comparisonState = comparisonState.copy(
-                    primaryStreamingContent = primaryBuffer.toString(),
-                    primaryIsStreaming = true,
-                    primaryAgentId = comparisonState.primaryAgentId ?: agentId,
-                )
-                content = content.copy(streamingContent = primaryBuffer.toString())
+            if (!isReasoning) primaryAnswerBuffer.append(chunk)
+            if (!lanes.primaryIsStreaming || (lanes.primaryAgentId == null && agentId != null)) {
+                handle.update {
+                    comparisonState = comparisonState.copy(
+                        primaryIsStreaming = true,
+                        primaryAgentId = comparisonState.primaryAgentId ?: agentId,
+                    )
+                }
             }
         }
+        textDirty = true
     }
 
     private fun routeToolCallStart(event: StreamEvent.ToolCallStart) {
-        val newToolCall = ActiveToolCall(id = event.toolCallId, name = event.toolName, input = event.input)
+        val newToolCall = ActiveToolCall(
+            id = event.toolCallId,
+            name = event.toolName,
+            input = event.input,
+            preparationStarted = event.preparing,
+        )
         if (isSecondaryEvent(event.agentId)) {
             handle.update {
                 comparisonState = comparisonState.copy(
@@ -394,6 +531,7 @@ class ComparisonModeDelegate(
      */
     fun endStreaming(clearContent: Boolean = false) {
         if (!handle.state.comparisonState.isEnabled) return
+        if (clearContent) textDirty = false else flushText()
         handle.update {
             comparisonState = comparisonState.copy(
                 primaryIsStreaming = false,
@@ -409,17 +547,26 @@ class ComparisonModeDelegate(
     /**
      * Finalizes both panes on a successful Final: freezes each buffer as the pane's final
      * content and records the parallel response message id for branch-from-comparison.
+     *
+     * Only text and thinking deltas name a lane's agent while streaming, so a lane stopped during
+     * its first tool call has none yet; the final [message]'s parts name it (as web reads the lane
+     * from each part), which is what lets that pane offer Keep. The parts win over an id learned
+     * while streaming, since they are what the server branches on. A lane with no parts keeps the
+     * streamed id or none: the server refuses to branch to a lane with no parts either way.
      */
-    fun onFinal(parallelMessageId: String?) {
+    fun onFinal(message: Message?) {
+        textDirty = false
         handle.update {
             comparisonState = comparisonState.copy(
+                primaryAgentId = message?.let(::primaryAgentId) ?: comparisonState.primaryAgentId,
+                secondaryAgentId = message?.let(::secondaryAgentId) ?: comparisonState.secondaryAgentId,
                 primaryIsStreaming = false,
                 secondaryIsStreaming = false,
                 primaryStreamingContent = "",
                 secondaryStreamingContent = "",
                 primaryActiveToolCalls = emptyList(),
                 secondaryActiveToolCalls = emptyList(),
-                parallelMessageId = parallelMessageId,
+                parallelMessageId = message?.messageId,
                 primaryFinalContent = primaryBuffer.toString(),
                 secondaryFinalContent = secondaryBuffer.toString(),
             )
@@ -445,11 +592,12 @@ class ComparisonModeDelegate(
      *
      * A new chat's move to its own screen is held back until then: the move replaces this
      * ViewModel, which would drop the pending Continue. The Continue's `created` event moves it
-     * instead, handing the live stream over as a new chat's first send does. When the reply never
-     * shows, or the Continue never starts, the chat moves as a plain branch would.
+     * instead, handing the live stream over as a new chat's first send does. When the reload never
+     * settles or the reply never shows, the user is told and the chat moves as a plain branch
+     * would; when the Continue never starts, it just moves.
      */
     fun keepAndContinue(agentId: String, continueReply: () -> Unit) {
-        branch(agentId) { branchedId ->
+        branch(agentId, afterReload = true) { branchedId ->
             handle.scope.launch {
                 val shown = withTimeoutOrNull(KEEP_SETTLE_TIMEOUT_MS) {
                     handle.stateFlow.first { state ->
@@ -468,8 +616,19 @@ class ComparisonModeDelegate(
         }
     }
 
-    /** Keeps [agentId]'s lane as the conversation's reply, then [onBranched] with the kept message's id. */
-    private fun branch(agentId: String, onBranched: (String) -> Unit) {
+    /**
+     * Keeps [agentId]'s lane as the conversation's reply, then [onBranched] with the kept message's
+     * id: at once, or with [afterReload] once the reload has settled.
+     *
+     * The server's saved message goes into the tree in the update that ends the comparison, as web
+     * appends it without refetching (`useBranchMessageMutation`). A temporary chat depends on that:
+     * it never loads from the server or Room.
+     *
+     * [afterReload] holds a Continue until the reload settles: a reload that lands mid-stream writes
+     * Room and the observer rebuilds the path without the streaming anchor. [KEEP_RELOAD_TIMEOUT_MS]
+     * is only a backstop.
+     */
+    private fun branch(agentId: String, afterReload: Boolean = false, onBranched: (String) -> Unit) {
         val messageId = handle.state.comparisonState.parallelMessageId ?: return
         val conversationId = handle.state.conversationId ?: return
         handle.scope.launch {
@@ -483,9 +642,40 @@ class ComparisonModeDelegate(
                 handle.setError(ChatNotice.CONTINUE_RESPONSE_FAILED.marker())
                 return@launch
             }
-            handle.update { comparisonState = ComparisonState() }
-            reloadConversation(conversationId)
-            onBranched(result.data.messageId)
+            val kept = result.data
+            // Into Room before the reload: a reload whose fetch fails settles on the cached rows, and
+            // without the kept reply there the path falls back to the comparison reply, which the
+            // load's rehydrate then turns back into a comparison.
+            if (!handle.state.isTemporaryChat) messageRepository.cacheMessages(listOf(kept), originAccount = null)
+            // Changing activeBranches re-emits the live Room observer with the pre-branch rows; the
+            // reload below cancels that observer in this same dispatch, so nothing may suspend between.
+            handle.update {
+                val messages = mergeFinalMessagesInMemory(content.messages, listOf(kept))
+                // Newest sibling wins without an override, and the kept reply is the newest. Keyed as
+                // the path builder keys it, so a reply under a blank or missing parent is found too.
+                val parentKey = treeParentKeyOf(messages, kept.messageId)
+                val branches = parentKey?.let { content.activeBranches - it } ?: content.activeBranches
+                content = content.copy(
+                    messages = messages,
+                    activeBranches = branches,
+                    displayMessages = buildActiveMessagePath(messages, branches),
+                )
+                comparisonState = ComparisonState()
+            }
+            if (!afterReload || handle.state.isTemporaryChat) {
+                reloadConversation(conversationId, null)
+                onBranched(kept.messageId)
+                return@launch
+            }
+            val reloaded = CompletableDeferred<Unit>()
+            reloadConversation(conversationId) { reloaded.complete(Unit) }
+            if (withTimeoutOrNull(KEEP_RELOAD_TIMEOUT_MS) { reloaded.await() } == null) {
+                // Still out: a Continue now could land under it.
+                handle.setError(ChatNotice.CONTINUE_RESPONSE_FAILED.marker())
+                armDeferredNavigation()
+                return@launch
+            }
+            onBranched(kept.messageId)
         }
     }
 
@@ -517,7 +707,13 @@ class ComparisonModeDelegate(
     }
 
     private companion object {
-        /** How long Keep and continue waits for the branched reply to load before giving up. */
+        /** How long Keep and continue waits for the kept reply to show, and for the Continue to start. */
         const val KEEP_SETTLE_TIMEOUT_MS = 10_000L
+
+        /**
+         * How long Keep and continue waits for the branch's reload: past a `GET /messages` that
+         * retries twice on a 30s request timeout with exponential backoff (about 96s).
+         */
+        const val KEEP_RELOAD_TIMEOUT_MS = 100_000L
     }
 }

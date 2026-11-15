@@ -27,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,8 +38,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.garfiec.librechat.core.model.Attachment
 import com.garfiec.librechat.core.ui.components.AdaptiveCircularProgressIndicator
+import com.garfiec.librechat.feature.chat.components.mcpapp.McpAppRows
 import com.garfiec.librechat.feature.chat.resources.*
 import com.garfiec.librechat.feature.chat.resources.Res
+import com.garfiec.librechat.feature.chat.util.outputToolCallIds
 import com.garfiec.librechat.feature.chat.viewmodel.ActiveToolCall
 import org.jetbrains.compose.resources.stringResource
 
@@ -56,9 +59,25 @@ fun StreamingToolCallCard(
     sandboxStarting: Boolean = false,
     /** This is the reply's most recent tool call, so a finished search may still be being read. */
     isLatestStep: Boolean = false,
-    /** The reply text's length so far, to tell when the model has moved past a finished search. */
-    replyLength: Int = 0,
+    /**
+     * The reply text's length so far, to tell when the model has moved past a finished search. Read
+     * through [derivedStateOf], so the card recomposes when that answer flips, not on every flush.
+     */
+    replyLength: () -> Int = { 0 },
 ) {
+    // The run is holding this call for an MCP sign-in (delta.auth). Upstream shows the action only
+    // while the step runs; the completion that follows the callback flips isComplete and hides it.
+    val authUrl = toolCall.authUrl
+    if (authUrl != null && !toolCall.isComplete) {
+        McpSignInToolCallCard(
+            serverName = toolCall.authServerName,
+            authUrl = authUrl,
+            modifier = modifier,
+            actionId = toolCall.authActionId,
+        )
+        return
+    }
+
     // Image-gen tool calls render as an ImageGenCard placeholder (matching web): a
     // faux-progress spinner while generating, swapping to the real image the moment
     // its attachment SSE event arrives (linked by toolCallId) — before the final reload.
@@ -143,17 +162,19 @@ fun StreamingToolCallCard(
         return
     }
 
-    // Status only while the step runs — the wire carries no args at step start and no progressive
-    // output — then the code and output the completion reports, in the card the reload renders.
-    if (isCodeExecutionToolCall(toolCall.name.lowercase())) {
-        val result = remember(toolCall.name, toolCall.input, toolCall.output) {
-            parseCodeExecution(toolCall.name, toolCall.input, toolCall.output)
+    // The card the reload draws. While the call runs its args are usually still unknown (this client
+    // does not follow argument deltas), so it reads "Reading file" until the completion names it.
+    val fileToolKind = FileToolKind.of(toolCall.name)
+    if (fileToolKind != null) {
+        val intent = remember(toolCall.input) { parseToolIntent(toolCall.input) }
+        val view = remember(fileToolKind, toolCall.input, toolCall.output, intent) {
+            fileToolView(fileToolKind, toolCall.input, toolCall.output, intent)
         }
-        val verdict = toolCallVerdict(toolCall.closedStatus, toolCall.isComplete)
         Column(modifier = modifier.fillMaxWidth()) {
-            CodeExecutionCard(
-                result = result ?: EMPTY_CODE_RESULT,
-                phase = codeExecutionPhase(verdict, sandboxStarting, result),
+            FileToolCallCard(
+                view = view,
+                verdict = toolCallVerdict(toolCall.closedStatus, toolCall.isComplete),
+                outputFailed = isToolErrorOutput(toolCall.output),
                 durationMs = toolCall.durationMs,
                 stateKey = toolCall.id,
                 live = true,
@@ -169,13 +190,45 @@ fun StreamingToolCallCard(
         return
     }
 
+    // Status only while the step runs — the wire carries no args at step start and no progressive
+    // output — then the code and output the completion reports, in the card the reload renders.
+    if (isCodeExecutionToolCall(toolCall.name.lowercase())) {
+        val result = remember(toolCall.name, toolCall.input, toolCall.output, toolCall.executor) {
+            parseCodeExecution(toolCall.name, toolCall.input, toolCall.output)
+                ?.withAttachedCommand(toolCall.executor, toolCall.output)
+        }
+        val verdict = toolCallVerdict(toolCall.closedStatus, toolCall.isComplete)
+        Column(modifier = modifier.fillMaxWidth()) {
+            CodeExecutionCard(
+                result = result ?: EMPTY_CODE_RESULT,
+                phase = codeExecutionPhase(verdict, sandboxStarting, result),
+                durationMs = toolCall.durationMs,
+                stateKey = toolCall.id,
+                live = true,
+                toolCallId = toolCall.id,
+            )
+            ToolCallAttachments(
+                attachments = streamingAttachments,
+                toolCallId = toolCall.id,
+                baseUrl = baseUrl,
+                modifier = Modifier.padding(top = 8.dp),
+                live = true,
+            )
+            McpAppRows(streamingAttachments, listOf(toolCall.id), Modifier.padding(top = 8.dp))
+        }
+        return
+    }
+
     val nameLower = toolCall.name.lowercase()
     val verdict = toolCallVerdict(toolCall.closedStatus, toolCall.isComplete)
     // The reply's length when this call finished: text growing past it means the model has moved on.
     val replyLengthAtComplete =
         // Saveable: this is a LazyColumn item, and a plain remember re-captured on scroll-back would
         // put a settled search back to "Reading results".
-        rememberSaveable(toolCall.id, toolCall.isComplete) { if (toolCall.isComplete) replyLength else -1 }
+        rememberSaveable(toolCall.id, toolCall.isComplete) { if (toolCall.isComplete) replyLength() else -1 }
+    val replyMovedOn by remember(replyLengthAtComplete, replyLength) {
+        derivedStateOf { replyLengthAtComplete >= 0 && replyLength() > replyLengthAtComplete }
+    }
 
     // Web search: the phase line while it runs ("Searching the web" → "Processing results" →
     // "Reading results"), then the same settled card the finalized message uses, with sources
@@ -193,7 +246,7 @@ fun StreamingToolCallCard(
                 isComplete = verdict != ToolCallVerdict.RUNNING,
                 hasSources = sources.isNotEmpty(),
                 isLatestStep = isLatestStep,
-                replyMovedOn = replyLengthAtComplete >= 0 && replyLength > replyLengthAtComplete,
+                replyMovedOn = replyMovedOn,
             )
             WebSearchCard(
                 sources = sources,
@@ -281,13 +334,18 @@ private fun GenericStreamingToolCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = toolCall.name,
+                        text = preparingToolLabel(toolCall)?.let { stringResource(Res.string.tool_preparing, it) }
+                            ?: toolCall.name,
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f),
                     )
 
-                    when (toolCallVerdict(toolCall.closedStatus, toolCall.isComplete)) {
+                    // Null: the user's own interrupt cancelled it (see InterruptedToolStatus).
+                    val interrupted = toolCall.isComplete && isInterruptedToolOutput(toolCall.output)
+                    when (if (interrupted) null else toolCallVerdict(toolCall.closedStatus, toolCall.isComplete)) {
+                        null -> InterruptedToolStatus()
+
                         ToolCallVerdict.CANCELLED -> Icon(
                             imageVector = Icons.Default.Block,
                             contentDescription = stringResource(Res.string.cd_tool_cancelled),
@@ -359,8 +417,30 @@ private fun GenericStreamingToolCard(
             modifier = Modifier.padding(top = 8.dp),
             live = true,
         )
+        // An App can be opened mid-reply: its tool has settled once the attachment arrives. A live
+        // subagent's child calls exist only in its trace, so their Apps go under this card.
+        val trace = LocalSubagentProgress.current[toolCall.id]
+        val appOwnerIds = remember(toolCall.id, trace) {
+            listOf(toolCall.id) + outputToolCallIds(trace?.parts.orEmpty())
+        }
+        McpAppRows(streamingAttachments, appOwnerIds, Modifier.padding(top = 8.dp))
     }
 }
 
 private val EMPTY_CODE_RESULT =
     CodeExecutionResult(language = null, code = null, output = null, error = null, exitCode = null)
+
+/**
+ * The tool name to put in "Preparing {tool}" while the model is still writing the call's
+ * arguments (upstream `ToolPreparation`, #16619), or null when the card shows its ordinary title.
+ * An MCP or action tool keeps its own name: upstream leaves those to the integration card's own
+ * name parsing rather than prefixing a raw `tool_mcp_server` string.
+ */
+internal fun preparingToolLabel(toolCall: ActiveToolCall): String? {
+    if (!toolCall.isPreparing) return null
+    val name = toolCall.name
+    if (name.isBlank() || MCP_TOOL_DELIMITER in name || ACTION_DELIMITER in name) return null
+    return name
+}
+
+private const val ACTION_DELIMITER = "_action_"

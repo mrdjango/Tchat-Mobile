@@ -4,6 +4,7 @@ import com.garfiec.librechat.core.common.result.Result
 import com.garfiec.librechat.core.model.schedule.CreateScheduleRequest
 import com.garfiec.librechat.core.model.schedule.Schedule
 import com.garfiec.librechat.core.model.schedule.ScheduleListResponse
+import com.garfiec.librechat.core.model.schedule.ScheduleMcpConsentView
 import com.garfiec.librechat.core.model.schedule.ScheduleRunNowResponse
 import com.garfiec.librechat.core.model.schedule.UpdateScheduleRequest
 
@@ -13,7 +14,9 @@ import com.garfiec.librechat.core.model.schedule.UpdateScheduleRequest
  *
  * Caching would be actively wrong here: `nextRunAt`, `lastRun` and `inFlight` all change without
  * this client doing anything, and a stale card claiming a run is still generating is worse than a
- * spinner.
+ * spinner. Each successful [listSchedules] also rewrites the
+ * [com.garfiec.librechat.core.data.datastore.ScheduleWatchList] that run notifications compare
+ * against; nothing on screen ever reads it.
  */
 interface ScheduleRepository {
 
@@ -37,4 +40,20 @@ interface ScheduleRepository {
     suspend fun deleteSchedule(id: String): Result<Unit>
 
     suspend fun runScheduleNow(id: String): Result<ScheduleRunNowResponse>
+
+    /** The schedule's MCP consent (v0.8.9-rc1): status, targets and the offer to authorize. */
+    suspend fun getMcpConsent(id: String): Result<ScheduleMcpConsentView>
+
+    /**
+     * Authorizes the offer identified by [offerDigest] for [lifetimeHours]. [expectedRevision] is
+     * the view's `revision`, null for a first authorization. Never touches the schedule itself.
+     */
+    suspend fun confirmMcpConsent(
+        id: String,
+        offerDigest: String,
+        expectedRevision: String?,
+        lifetimeHours: Int,
+    ): Result<ScheduleMcpConsentView>
+
+    suspend fun revokeMcpConsent(id: String, expectedRevision: String): Result<Unit>
 }

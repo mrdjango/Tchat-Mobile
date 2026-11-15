@@ -50,9 +50,24 @@ class McpRepositoryImpl(
     override suspend fun reinitialize(serverName: String): Result<McpReinitializeResponse> =
         safeApiCall { mcpApi.reinitialize(serverName) }
 
+    override suspend fun bindOAuth(serverName: String): Result<List<String>> =
+        safeApiCall { mcpApi.bindOAuth(serverName) }
+
+    override suspend fun cancelOAuth(serverName: String): Result<Unit> =
+        safeApiCall { mcpApi.cancelOAuth(serverName) }
+
     override suspend fun getTools(): Result<McpToolCatalog> =
         safeApiCall { mcpApi.getTools() }
 
     override suspend fun getConnectionStatus(): Result<Map<String, McpServerStatus>> =
         safeApiCall { mcpApi.getConnectionStatus() }
+
+    override suspend fun getUserVarFlags(serverName: String): Result<Map<String, Boolean>> =
+        safeApiCall { mcpApi.getUserVarFlags(serverName) }
+
+    override suspend fun saveUserVars(serverName: String, values: Map<String, String>): Result<Unit> =
+        safeApiCall { mcpApi.saveUserVars(serverName, values.filterValues { it.isNotBlank() }) }
+
+    override suspend fun removeUserVars(serverName: String): Result<Unit> =
+        safeApiCall { mcpApi.removeUserVars(serverName) }
 }

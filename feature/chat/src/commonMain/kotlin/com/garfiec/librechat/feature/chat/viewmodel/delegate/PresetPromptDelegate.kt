@@ -7,6 +7,7 @@ import com.garfiec.librechat.core.data.repository.PresetRepository
 import com.garfiec.librechat.core.data.repository.PromptRepository
 import com.garfiec.librechat.core.model.Preset
 import com.garfiec.librechat.core.model.PromptGroup
+import com.garfiec.librechat.core.ui.components.EndpointParameterRegistry
 import com.garfiec.librechat.core.ui.components.ModelParameters
 import com.garfiec.librechat.feature.chat.model.PresetDisplayData
 import com.garfiec.librechat.feature.chat.model.PromptMentionDisplayData
@@ -14,11 +15,12 @@ import com.garfiec.librechat.feature.chat.prompts.PromptInsertion
 import com.garfiec.librechat.feature.chat.prompts.resolvePromptInsertion
 import com.garfiec.librechat.feature.chat.prompts.resolvePromptText
 import com.garfiec.librechat.feature.chat.util.WebSearchRoute
-import com.garfiec.librechat.feature.chat.util.offeredOrUnchecked
 import com.garfiec.librechat.feature.chat.util.parametersFor
 import com.garfiec.librechat.feature.chat.util.requiresSpec
+import com.garfiec.librechat.feature.chat.util.stored
 import com.garfiec.librechat.feature.chat.util.toSeed
 import com.garfiec.librechat.feature.chat.viewmodel.ChatNotice
+import com.garfiec.librechat.feature.chat.viewmodel.ModelChoice
 import com.garfiec.librechat.feature.chat.viewmodel.PendingVariablePrompt
 import com.garfiec.librechat.feature.chat.viewmodel.PresetPromptHandle
 import kotlinx.coroutines.Job
@@ -46,16 +48,23 @@ class PresetPromptDelegate(
                 is Result.Success -> {
                     cachedPresets = result.data
                     handle.update {
-                        presetPrompts = presetPrompts.copy(presets = result.data.map { it.toDisplayData() })
+                        presetPrompts = presetPrompts.copy(
+                            presets = result.data.map { it.toDisplayData() },
+                            presetsLoadFailed = false,
+                        )
                     }
                 }
                 is Result.Error -> {
-                    // Presets are non-critical; don't block the user
                     Logger.d(result.exception) { "Failed to load presets: ${result.message}" }
+                    handle.update { presetPrompts = presetPrompts.copy(presetsLoadFailed = true) }
                 }
                 is Result.Loading -> { /* no-op */ }
             }
         }
+    }
+
+    fun reloadPresetsIfFailed() {
+        if (handle.state.presetPrompts.presetsLoadFailed) loadPresets()
     }
 
     /**
@@ -110,6 +119,18 @@ class PresetPromptDelegate(
         // What the chat shows: under a spec its tools, not the user's hidden toggles.
         val params = state.selection.sendParameters
         val dyn = params.dynamicValues
+        // Each value under the key the chat's parameter set spells it with, as the send does, so web
+        // reads it back: `top_p` / `max_tokens` on openAI and custom, `topP` on the native providers.
+        val target = state.parameterTarget
+        fun wireKey(spellings: List<String>) = EndpointParameterRegistry.wireKeyFor(
+            endpoint = target.settingsEndpoint,
+            provider = target.settingsProvider,
+            model = target.model,
+            spellings = spellings,
+        )
+        val topP = params.topP.toDouble().takeIf { it != ModelParameters.DEFAULT.topP.toDouble() }
+        val topPKey = wireKey(EndpointParameterRegistry.TOP_P_KEYS)
+        val maxTokensKey = wireKey(EndpointParameterRegistry.MAX_OUTPUT_TOKENS_KEYS)
         val preset = Preset(
             title = name,
             endpoint = state.selectedEndpoint.takeIf { it.isNotBlank() },
@@ -127,13 +148,12 @@ class PresetPromptDelegate(
             // equal these mobile defaults, so on reload the value is
             // restored from upstream's schema default.
             temperature = params.temperature.toDouble().takeIf { it != ModelParameters.DEFAULT.temperature.toDouble() },
-            topP = params.topP.toDouble().takeIf { it != ModelParameters.DEFAULT.topP.toDouble() },
+            topPSnake = topP.takeIf { topPKey == "top_p" },
+            topPCamel = topP.takeIf { topPKey == "topP" },
             topK = params.topK,
-            // maxOutputTokens is the canonical wire key; older clients also
-            // expect maxTokens, but emit only one to avoid an ambiguous
-            // payload — pickers/loaders coalesce via `?: preset.maxTokens`.
-            maxTokens = null,
-            maxOutputTokens = params.maxOutputTokens,
+            maxTokensSnake = params.maxOutputTokens.takeIf { maxTokensKey == "max_tokens" },
+            maxTokensCamel = params.maxOutputTokens.takeIf { maxTokensKey == "maxTokens" },
+            maxOutputTokens = params.maxOutputTokens.takeIf { maxTokensKey == "maxOutputTokens" },
             maxContextTokens = params.maxContextTokens,
             frequencyPenalty = params.frequencyPenalty.toDouble().takeIf { it != ModelParameters.DEFAULT.frequencyPenalty.toDouble() },
             presencePenalty = params.presencePenalty.toDouble().takeIf { it != ModelParameters.DEFAULT.presencePenalty.toDouble() },
@@ -144,6 +164,8 @@ class PresetPromptDelegate(
             stop = dyn["stop"]?.takeIf { it.isNotBlank() }?.split("\n")?.filter { it.isNotBlank() },
             effort = dyn["effort"],
             reasoningEffort = dyn["reasoning_effort"],
+            reasoningMode = dyn["reasoning_mode"],
+            reasoningContext = dyn["reasoning_context"],
             reasoningSummary = dyn["reasoning_summary"],
             verbosity = dyn["verbosity"],
             useResponsesApi = dyn["useResponsesApi"]?.toBooleanStrictOrNull(),
@@ -193,12 +215,10 @@ class PresetPromptDelegate(
             val model = specSeed?.model ?: preset.model ?: selection.selectedModel
             // A preset carrying only parameters leaves the selection, spec included, as it is.
             val namesNoModel = preset.spec == null && preset.endpoint == null && preset.model == null
-            // The spec is kept only while the server still offers it on that pair: a retargeted
-            // spec fails every send with "Model spec mismatch". Unchecked before the spec config loads.
             val choice = if (namesNoModel) {
                 selection.choice
             } else {
-                preset.spec.offeredOrUnchecked(endpoint, model, specs, checkable = specs != null)
+                ModelChoice.stored(endpoint, model, preset.spec, specs)
             }
             // Authoritative load: a preset represents a complete saved
             // configuration. Merging from current parameters would let
@@ -269,6 +289,24 @@ class PresetPromptDelegate(
      */
     fun handleSlashCommand(displayData: PromptMentionDisplayData) {
         val group = cachedPromptGroups.find { it.id == displayData.id } ?: return
+        if (group.isExternal) {
+            // An externally managed group (v0.8.9-rc1) stores no text: read it live first.
+            handle.scope.launch {
+                when (val resolved = promptRepository.withResolvedText(group)) {
+                    is Result.Success -> insertSlashCommand(displayData, resolved.data)
+                    is Result.Error -> {
+                        Logger.d(resolved.exception) { "Failed to resolve prompt text: ${resolved.message}" }
+                        handle.setError(resolved.message ?: ChatNotice.PROMPT_RESOLVE_FAILED.marker())
+                    }
+                    is Result.Loading -> { /* no-op */ }
+                }
+            }
+            return
+        }
+        insertSlashCommand(displayData, group)
+    }
+
+    private fun insertSlashCommand(displayData: PromptMentionDisplayData, group: PromptGroup) {
         when (val insertion = resolvePromptInsertion(group)) {
             // Nothing to insert; leave the composer alone rather than writing the group's name.
             null -> return
@@ -342,6 +380,8 @@ internal fun ModelParameters.mergedFromPreset(preset: Preset): ModelParameters {
     preset.stop?.takeIf { it.isNotEmpty() }?.let { dyn["stop"] = it.joinToString("\n") }
     preset.effort?.let { dyn["effort"] = it }
     preset.reasoningEffort?.let { dyn["reasoning_effort"] = it }
+    preset.reasoningMode?.let { dyn["reasoning_mode"] = it }
+    preset.reasoningContext?.let { dyn["reasoning_context"] = it }
     preset.reasoningSummary?.let { dyn["reasoning_summary"] = it }
     preset.verbosity?.let { dyn["verbosity"] = it }
     preset.useResponsesApi?.let { dyn["useResponsesApi"] = it.toString() }
@@ -355,9 +395,10 @@ internal fun ModelParameters.mergedFromPreset(preset: Preset): ModelParameters {
     preset.region?.let { dyn["region"] = it }
     return copy(
         temperature = preset.temperature?.toFloat() ?: temperature,
-        topP = preset.topP?.toFloat() ?: topP,
+        // Each provider keeps one spelling; a preset or conversation carries whichever it was saved under.
+        topP = (preset.topPSnake ?: preset.topPCamel)?.toFloat() ?: topP,
         topK = preset.topK ?: topK,
-        maxOutputTokens = preset.maxOutputTokens ?: preset.maxTokens ?: maxOutputTokens,
+        maxOutputTokens = preset.maxOutputTokens ?: preset.maxTokensSnake ?: preset.maxTokensCamel ?: maxOutputTokens,
         maxContextTokens = preset.maxContextTokens ?: maxContextTokens,
         frequencyPenalty = preset.frequencyPenalty?.toFloat() ?: frequencyPenalty,
         presencePenalty = preset.presencePenalty?.toFloat() ?: presencePenalty,

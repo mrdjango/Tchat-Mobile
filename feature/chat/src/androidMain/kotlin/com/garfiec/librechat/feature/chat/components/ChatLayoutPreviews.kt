@@ -14,6 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.garfiec.librechat.core.model.ui.UiStyle
 import com.garfiec.librechat.core.model.usage.ContextDetailPreset
@@ -53,6 +54,55 @@ private fun SpecLandingPreview() = PreviewSurface(UiStyle.MATERIAL) {
 @Composable
 private fun AgentSpecLandingGlassPreview() = PreviewSurface(UiStyle.LIQUID_GLASS) {
     LandingHost(title = "Travel Planner", description = "Plans trips end to end.", agentName = null, caption = "Helper Spec")
+}
+
+/**
+ * A spec's landing with the keyboard up and starters docked: too short for the full hero, so the
+ * icon goes and the description is cut to two lines.
+ */
+@PreviewNarrowScreens
+@Composable
+private fun CompactSpecLandingPreview() = PreviewSurface(UiStyle.MATERIAL) { SpecLandingIconHost(compact = true) }
+
+@PreviewNarrowScreens
+@Composable
+private fun CompactSpecLandingGlassPreview() = PreviewSurface(UiStyle.LIQUID_GLASS) { SpecLandingIconHost(compact = true) }
+
+/** A temporary chat on a spec with its own icon: temporary chat's glyph leads, not the spec's. */
+@PreviewNarrowScreens
+@Composable
+private fun TemporarySpecLandingPreview() = PreviewSurface(UiStyle.MATERIAL) { SpecLandingIconHost(compact = false) }
+
+@PreviewNarrowScreens
+@Composable
+private fun TemporarySpecLandingGlassPreview() = PreviewSurface(UiStyle.LIQUID_GLASS) { SpecLandingIconHost(compact = false) }
+
+/** [compact]: the keyboard-up landing with starters docked; else a temporary chat on the spec. */
+@Composable
+private fun SpecLandingIconHost(compact: Boolean) {
+    val heroIcon = LandingHeroIcon(endpointName = "anthropic", iconUrl = null)
+    if (compact) {
+        Box(Modifier.height(PreviewKeyboardUpHeight)) {
+            LandingHost(
+                title = "Research Assistant",
+                description = "Finds and summarises sources, with citations. Ask it about a paper, a person or a field, " +
+                    "and it reads what it finds before it answers, so the summary says where each claim came from.",
+                agentName = null,
+                caption = null,
+                heroIcon = heroIcon,
+                bottomPadding = PreviewStartersHeight,
+            )
+        }
+    } else {
+        LandingHost(
+            isTemporaryChat = true,
+            title = "Research Assistant",
+            description = "Finds and summarises sources, with citations.",
+            agentName = null,
+            caption = null,
+            heroIcon = heroIcon,
+        )
+    }
 }
 
 @PreviewNarrowScreens
@@ -102,13 +152,17 @@ private fun LandingHost(
     description: String? = null,
     agentName: String? = "Travel Planner",
     caption: String? = "gpt-5",
+    heroIcon: LandingHeroIcon? = null,
+    bottomPadding: Dp = 120.dp,
 ) = ChatBodyHost { modifier ->
     LandingContent(
         selectedModel = caption,
         selectedAgentName = agentName,
+        heroIcon = heroIcon,
         isTemporaryChat = isTemporaryChat,
         title = title,
         description = description,
+        bottomPadding = bottomPadding,
         modifier = modifier,
     )
 }
@@ -138,7 +192,7 @@ private fun ContextUsageSheetHost() {
 
 @Composable
 private fun ForkOptionsHost() {
-    ForkOptionsBottomSheet(onDismiss = {}, onFork = { _, _ -> })
+    ForkOptionsBottomSheet(onDismiss = {}, onFork = { _, _, _ -> }, excludeFilesSupported = true)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -156,3 +210,9 @@ private fun PromptFilterSheetHost() {
 
 private val PreviewTopBarHeight = 80.dp
 private val PreviewComposerHeight = 72.dp
+
+/** What is left of a phone's height above the keyboard. */
+private val PreviewKeyboardUpHeight = 480.dp
+
+/** The composer plus two starter rows docked on it. */
+private val PreviewStartersHeight = 200.dp

@@ -7,11 +7,15 @@ import com.garfiec.librechat.core.common.datetime.DateFormatStyle
 import com.garfiec.librechat.core.common.datetime.DateTimeFormatPrefs
 import com.garfiec.librechat.core.common.datetime.TimestampStyle
 import com.garfiec.librechat.core.data.datastore.AppPreferences
+import com.garfiec.librechat.core.data.datastore.ArtifactDisplayMode
 import com.garfiec.librechat.core.data.datastore.DateTimePrefsStore
 import com.garfiec.librechat.core.data.datastore.PreferenceStore
 import com.garfiec.librechat.core.data.datastore.ServerDataStore
 import com.garfiec.librechat.core.data.datastore.SettingsDataStore
 import com.garfiec.librechat.core.data.repository.ConfigRepository
+import com.garfiec.librechat.core.logging.PlatformInfo
+import com.garfiec.librechat.core.model.config.BuildInfo
+import com.garfiec.librechat.core.model.config.StartupConfig
 import com.garfiec.librechat.core.network.client.CertificateAuthority
 import com.garfiec.librechat.core.network.client.CertificateTrustRegistry
 import com.google.common.truth.Truth.assertThat
@@ -42,9 +46,14 @@ class GeneralSettingsViewModelTest {
     private val selectedLanguageFlow = MutableStateFlow(SettingsDataStore.DEFAULT_LANGUAGE)
     private val dateTimePrefsFlow = MutableStateFlow(DateTimeFormatPrefs())
     private val version = MutableStateFlow<String?>(null)
+    private val startupConfig = MutableStateFlow<StartupConfig?>(null)
+    private val thinkingOpenFlow = MutableStateFlow(false)
+    private val artifactDisplayFlow = MutableStateFlow(ArtifactDisplayMode.AUTOMATIC)
+    private val autoReadFlow = MutableStateFlow(false)
     private val certificateTrust = CertificateTrustRegistry()
     private val preferenceStore = mockk<PreferenceStore>(relaxed = true) {
         every { observe(AppPreferences.AdvancedSearch) } returns MutableStateFlow(false)
+        every { observe(AppPreferences.ArtifactDisplay) } returns artifactDisplayFlow
     }
 
     @Before
@@ -53,10 +62,14 @@ class GeneralSettingsViewModelTest {
         every { settingsDataStore.selectedLanguage } returns selectedLanguageFlow
         coEvery { settingsDataStore.setSelectedLanguage(any()) } answers { selectedLanguageFlow.value = firstArg() }
         every { settingsDataStore.tabletSidebarGestureEnabled } returns MutableStateFlow(true)
+        every { settingsDataStore.thinkingOpenByDefault } returns thinkingOpenFlow
+        every { settingsDataStore.autoReadEnabled } returns autoReadFlow
         every { dateTimePrefsStore.prefs } returns dateTimePrefsFlow
-        coEvery { dateTimePrefsStore.set(any()) } answers { dateTimePrefsFlow.value = firstArg() }
+        coEvery { dateTimePrefsStore.update(any()) } answers {
+            dateTimePrefsFlow.value = firstArg<(DateTimeFormatPrefs) -> DateTimeFormatPrefs>()(dateTimePrefsFlow.value)
+        }
         every { serverDataStore.currentUrlFlow } returns MutableStateFlow("https://chat.example.com")
-        every { configRepository.startupConfig } returns MutableStateFlow(null)
+        every { configRepository.startupConfig } returns startupConfig
         every { configRepository.detectedBackendVersion } returns version
     }
 
@@ -78,7 +91,33 @@ class GeneralSettingsViewModelTest {
         },
         preferenceStore = preferenceStore,
         certificateTrust = certificateTrust,
+        platformInfo = object : PlatformInfo {
+            override val osName = "Android"
+            override val osVersion = "17"
+            override val deviceModel = "Google Pixel 9 Pro Fold"
+            override val installSource = "F-Droid"
+        },
     )
+
+    @Test
+    fun `home chat summaries follow the thinking, artifact and read-aloud prefs`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.homeChats).isEqualTo(HomeChatPrefs())
+        assertThat(viewModel.uiState.value.homeChats.artifactDisplayMode).isEqualTo(ArtifactDisplayMode.AUTOMATIC)
+
+        thinkingOpenFlow.value = true
+        artifactDisplayFlow.value = ArtifactDisplayMode.FULLSCREEN
+        autoReadFlow.value = true
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.homeChats).isEqualTo(
+            HomeChatPrefs(
+                thinkingOpenByDefault = true,
+                artifactDisplayMode = ArtifactDisplayMode.FULLSCREEN,
+                autoReadEnabled = true,
+            ),
+        )
+    }
 
     @Test
     fun `About notes a server trusted through a user-installed CA`() = runTest {
@@ -127,34 +166,16 @@ class GeneralSettingsViewModelTest {
     }
 
     @Test
-    fun `saveDateTimePrefs writes all three choices and dismisses dialog`() = runTest {
+    fun `updateDateTimePrefs changes only the field it is given`() = runTest {
+        dateTimePrefsFlow.value = DateTimeFormatPrefs(TimestampStyle.SMART, ClockFormat.H24, DateFormatStyle.YMD_DASH)
         val viewModel = createViewModel()
         advanceUntilIdle()
 
-        viewModel.showDateTimeDialog()
-        advanceUntilIdle()
-        assertThat(viewModel.uiState.value.showDateTimeDialog).isTrue()
-
-        val chosen = DateTimeFormatPrefs(TimestampStyle.SMART, ClockFormat.H24, DateFormatStyle.YMD_DASH)
-        viewModel.saveDateTimePrefs(chosen)
+        viewModel.updateDateTimePrefs { it.copy(date = DateFormatStyle.DMY_DOT) }
         advanceUntilIdle()
 
-        coVerify(exactly = 1) { dateTimePrefsStore.set(chosen) }
-        assertThat(viewModel.uiState.value.dateTimePrefs).isEqualTo(chosen)
-        assertThat(viewModel.uiState.value.showDateTimeDialog).isFalse()
-    }
-
-    @Test
-    fun `dismissing the date-time dialog writes nothing`() = runTest {
-        val viewModel = createViewModel()
-        advanceUntilIdle()
-
-        viewModel.showDateTimeDialog()
-        viewModel.dismissDateTimeDialog()
-        advanceUntilIdle()
-
-        coVerify(exactly = 0) { dateTimePrefsStore.set(any()) }
-        assertThat(viewModel.uiState.value.showDateTimeDialog).isFalse()
+        assertThat(viewModel.uiState.value.dateTimePrefs)
+            .isEqualTo(DateTimeFormatPrefs(TimestampStyle.SMART, ClockFormat.H24, DateFormatStyle.DMY_DOT))
     }
 
     @Test
@@ -165,5 +186,50 @@ class GeneralSettingsViewModelTest {
         advanceUntilIdle()
 
         coVerify { settingsDataStore.setTabletSidebarGestureEnabled(false) }
+    }
+
+    @Test
+    fun `the admin panel link follows the server's adminPanelURL`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.adminPanelUrl).isNull()
+
+        startupConfig.value = StartupConfig(adminPanelURL = "https://admin.example.com")
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.adminPanelUrl).isEqualTo("https://admin.example.com")
+
+        startupConfig.value = StartupConfig(adminPanelURL = " ")
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.adminPanelUrl).isNull()
+    }
+
+    @Test
+    fun `diagnostics name the app, server build and device but not the server address`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.diagnostics).isEqualTo(
+            listOf(
+                "Switchboard version: 0.1.0",
+                "Switchboard build: testsha0",
+                "Install source: oss · F-Droid",
+                "LibreChat version: —",
+                "Commit: —",
+                "Branch: —",
+                "Build date: —",
+                "Device: Android 17 · Google Pixel 9 Pro Fold",
+            ).joinToString("\n"),
+        )
+
+        version.value = "0.8.9-rc1"
+        startupConfig.value = StartupConfig(
+            buildInfo = BuildInfo(commit = "abcdef1234", commitShort = "abcdef1", branch = "main", buildDate = "2026-11-01"),
+        )
+        advanceUntilIdle()
+        val text = viewModel.uiState.value.diagnostics
+        assertThat(text).contains("LibreChat version: 0.8.9-rc1")
+        assertThat(text).contains("Commit: abcdef1234")
+        assertThat(text).contains("Branch: main")
+        assertThat(text).contains("Build date: 2026-11-01")
+        assertThat(text).doesNotContain("chat.example.com")
     }
 }

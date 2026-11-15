@@ -14,6 +14,7 @@ import com.garfiec.librechat.core.common.identity.currentAccountId
 import com.garfiec.librechat.core.common.identity.flatMapAccountOrEmpty
 import com.garfiec.librechat.core.data.prefetch.PrefetchRunOutcome
 import com.garfiec.librechat.core.data.prefetch.ScheduledRunRecord
+import com.garfiec.librechat.core.model.ArtifactsMode
 import com.garfiec.librechat.core.model.ModelRef
 import com.garfiec.librechat.core.model.usage.ContextDetailPreset
 import com.garfiec.librechat.core.model.usage.ContextDetailSections
@@ -105,10 +106,6 @@ class SettingsDataStore(
 
     val chatHeaderAlignment: Flow<ChatHeaderAlignment> = dataStore.data.map { prefs ->
         ChatHeaderAlignment.fromString(prefs[KEY_CHAT_HEADER_ALIGNMENT])
-    }
-
-    val autoScrollEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[KEY_AUTO_SCROLL_ENABLED] ?: true
     }
 
     /**
@@ -248,7 +245,7 @@ class SettingsDataStore(
     }
 
     val ttsSource: Flow<String> = dataStore.data.map { prefs ->
-        prefs[KEY_TTS_SOURCE] ?: "device"
+        prefs[KEY_TTS_SOURCE] ?: TTS_SOURCE_DEVICE
     }
 
     val ttsSpeechRate: Flow<Float> = dataStore.data.map { prefs ->
@@ -304,18 +301,6 @@ class SettingsDataStore(
         prefs[KEY_STT_END_OF_SPEECH] ?: false
     }
 
-    val ttsEngine: Flow<String> = dataStore.data.map { prefs ->
-        prefs[KEY_TTS_ENGINE] ?: ""
-    }
-
-    val ttsVoice: Flow<String> = dataStore.data.map { prefs ->
-        prefs[KEY_TTS_VOICE] ?: ""
-    }
-
-    val ttsCaching: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[KEY_TTS_CACHING] ?: true
-    }
-
     val chatLayoutStyle: Flow<String> = dataStore.data.map { prefs ->
         prefs[KEY_CHAT_LAYOUT_STYLE] ?: ChatLayoutConstants.DEFAULT // TCHAT: was "thread"
     }
@@ -363,18 +348,17 @@ class SettingsDataStore(
         )
     }
 
-    val artifactDisplayPrefs: Flow<ArtifactDisplayPrefs> = dataStore.data.map { prefs ->
-        ArtifactDisplayPrefs(
-            mode = ArtifactDisplayMode.fromString(prefs[KEY_ARTIFACT_DISPLAY_MODE]),
-        )
-    }
-
     val selectedMcpServers: Flow<Set<String>> = dataStore.data.map { prefs ->
         prefs[KEY_SELECTED_MCP_SERVERS]?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
     }
 
     val enabledTools: Flow<Set<String>> = dataStore.data.map { prefs ->
         prefs[KEY_ENABLED_TOOLS]?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+    }
+
+    /** The mode the Artifacts tool sends while it is on; app-wide, like [enabledTools]. */
+    val artifactsMode: Flow<ArtifactsMode> = dataStore.data.map { prefs ->
+        ArtifactsMode.fromWire(prefs[KEY_ARTIFACTS_MODE]) ?: ArtifactsMode.DEFAULT
     }
 
     /**
@@ -418,12 +402,6 @@ class SettingsDataStore(
     suspend fun setChatHeaderAlignment(alignment: ChatHeaderAlignment) {
         dataStore.edit { prefs ->
             prefs[KEY_CHAT_HEADER_ALIGNMENT] = alignment.toStorageString()
-        }
-    }
-
-    suspend fun setAutoScrollEnabled(enabled: Boolean) {
-        dataStore.edit { prefs ->
-            prefs[KEY_AUTO_SCROLL_ENABLED] = enabled
         }
     }
 
@@ -787,24 +765,6 @@ class SettingsDataStore(
         }
     }
 
-    suspend fun setTtsEngine(engine: String) {
-        dataStore.edit { prefs ->
-            prefs[KEY_TTS_ENGINE] = engine
-        }
-    }
-
-    suspend fun setTtsVoice(voice: String) {
-        dataStore.edit { prefs ->
-            prefs[KEY_TTS_VOICE] = voice
-        }
-    }
-
-    suspend fun setTtsCaching(enabled: Boolean) {
-        dataStore.edit { prefs ->
-            prefs[KEY_TTS_CACHING] = enabled
-        }
-    }
-
     suspend fun setChatLayoutStyle(style: String) {
         dataStore.edit { prefs ->
             prefs[KEY_CHAT_LAYOUT_STYLE] = style
@@ -862,10 +822,6 @@ class SettingsDataStore(
         dataStore.edit { prefs -> prefs[KEY_INLINE_ARTIFACT_MARKDOWN] = enabled }
     }
 
-    suspend fun setArtifactDisplayMode(mode: ArtifactDisplayMode) {
-        dataStore.edit { prefs -> prefs[KEY_ARTIFACT_DISPLAY_MODE] = mode.toStorageString() }
-    }
-
     /**
      * Saves the backend version for which the user chose "Don't warn again".
      * If the backend later updates to a different version, the warning will reappear.
@@ -896,6 +852,10 @@ class SettingsDataStore(
         }
     }
 
+    suspend fun setArtifactsMode(mode: ArtifactsMode) {
+        dataStore.edit { prefs -> prefs[KEY_ARTIFACTS_MODE] = mode.wire }
+    }
+
     companion object {
         /**
          * Sentinel meaning "follow the device locale" — the default until the user picks a
@@ -913,13 +873,16 @@ class SettingsDataStore(
          */
         const val SKILLS_TOGGLE_SPEC_DEFAULTS_SLOT = "__defaults__"
 
+        /** The stored [ttsSource] values: the device's own engine, or the server's TTS route. */
+        const val TTS_SOURCE_DEVICE = "device"
+        const val TTS_SOURCE_SERVER = "server"
+
         private val KEY_SELECTED_LANGUAGE = stringPreferencesKey("selected_language")
         private val KEY_LATEX_RENDERER = stringPreferencesKey("latex_renderer")
         private val KEY_CHAT_FONT_SIZE = stringPreferencesKey("chat_font_size")
         private val KEY_STARRED_MODELS_DISPLAY = stringPreferencesKey("starred_models_display")
         private val KEY_CHAT_HEADER_CONTENT = stringPreferencesKey("chat_header_content")
         private val KEY_CHAT_HEADER_ALIGNMENT = stringPreferencesKey("chat_header_alignment")
-        private val KEY_AUTO_SCROLL_ENABLED = booleanPreferencesKey("auto_scroll_enabled")
         private val KEY_SHOW_THINKING_BLOCKS = booleanPreferencesKey("show_thinking_blocks")
         private val KEY_CONTEXT_BAR_PLACEMENT = stringPreferencesKey("context_bar_placement")
         private val KEY_DURING_RUN_ACTION = stringPreferencesKey("during_run_action")
@@ -956,9 +919,6 @@ class SettingsDataStore(
         private val KEY_STT_LANGUAGE = stringPreferencesKey("stt_language")
         private val KEY_STT_ON_DEVICE = booleanPreferencesKey("stt_on_device")
         private val KEY_STT_END_OF_SPEECH = booleanPreferencesKey("stt_end_of_speech")
-        private val KEY_TTS_ENGINE = stringPreferencesKey("tts_engine")
-        private val KEY_TTS_VOICE = stringPreferencesKey("tts_voice")
-        private val KEY_TTS_CACHING = booleanPreferencesKey("tts_caching")
         private val KEY_CHAT_LAYOUT_STYLE = stringPreferencesKey("chat_layout_style")
         private val KEY_FILES_VIEW_MODE = stringPreferencesKey("files_view_mode")
         private val KEY_FILES_SORT_FIELD = stringPreferencesKey("files_sort_field")
@@ -971,10 +931,10 @@ class SettingsDataStore(
         private val KEY_INLINE_ARTIFACT_HTML = booleanPreferencesKey("inline_artifact_html")
         private val KEY_INLINE_ARTIFACT_REACT = booleanPreferencesKey("inline_artifact_react")
         private val KEY_INLINE_ARTIFACT_MARKDOWN = booleanPreferencesKey("inline_artifact_markdown")
-        private val KEY_ARTIFACT_DISPLAY_MODE = stringPreferencesKey("artifact_display_mode")
         private val KEY_DISMISSED_VERSION_WARNING = stringPreferencesKey("dismissed_version_warning")
         private val KEY_SELECTED_MCP_SERVERS = stringPreferencesKey("selected_mcp_servers")
         private val KEY_ENABLED_TOOLS = stringPreferencesKey("enabled_tools")
+        private val KEY_ARTIFACTS_MODE = stringPreferencesKey("artifacts_mode")
     }
 }
 

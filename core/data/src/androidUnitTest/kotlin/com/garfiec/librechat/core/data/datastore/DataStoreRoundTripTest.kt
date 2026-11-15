@@ -16,6 +16,7 @@ import com.garfiec.librechat.core.common.identity.AccountId
 import com.garfiec.librechat.core.common.identity.ActiveAccountProvider
 import com.garfiec.librechat.core.common.identity.InMemoryActiveAccountProvider
 import com.garfiec.librechat.core.data.prefetch.PrefetchDepth
+import com.garfiec.librechat.core.model.ArtifactsMode
 import com.garfiec.librechat.core.model.ModelRef
 import com.garfiec.librechat.core.model.usage.ContextDetailPreset
 import com.garfiec.librechat.core.model.usage.ModelTokenomics
@@ -66,6 +67,17 @@ class DataStoreRoundTripTest {
         ds: DataStore<Preferences>,
         accountProvider: ActiveAccountProvider = resolvedAccountProvider(),
     ) = SettingsDataStore(ds, accountProvider, CoroutineScope(testDispatcher), testDispatcher)
+
+    @Test
+    fun settingsDataStore_artifactsModeDefaultsAndRoundTrips() = runTest(testDispatcher) {
+        val store = settingsStore(createDataStore("settings-artifacts-mode"))
+
+        assertThat(store.artifactsMode.first()).isEqualTo(ArtifactsMode.DEFAULT)
+        store.setArtifactsMode(ArtifactsMode.SHADCN_UI)
+        assertThat(store.artifactsMode.first()).isEqualTo(ArtifactsMode.SHADCN_UI)
+        store.setArtifactsMode(ArtifactsMode.CUSTOM)
+        assertThat(store.artifactsMode.first()).isEqualTo(ArtifactsMode.CUSTOM)
+    }
 
     // --- ServerDataStore ---
 
@@ -143,7 +155,6 @@ class DataStoreRoundTripTest {
         val ds = createDataStore("settings")
         val store = settingsStore(ds)
 
-        assertThat(store.autoScrollEnabled.first()).isTrue()
         assertThat(store.thinkingOpenByDefault.first()).isFalse()
         assertThat(store.autoReadEnabled.first()).isFalse()
         assertThat(store.dismissKeyboardOnSend.first()).isTrue()
@@ -162,7 +173,6 @@ class DataStoreRoundTripTest {
         val ds = createDataStore("settings-bool")
         val store = settingsStore(ds)
 
-        store.setAutoScrollEnabled(false)
         store.setThinkingOpenByDefault(true)
         store.setAutoReadEnabled(true)
         store.setDismissKeyboardOnSend(false)
@@ -170,7 +180,6 @@ class DataStoreRoundTripTest {
         store.setSttOnDevice(false)
         store.setSttEndOfSpeech(true)
 
-        assertThat(store.autoScrollEnabled.first()).isFalse()
         assertThat(store.thinkingOpenByDefault.first()).isTrue()
         assertThat(store.autoReadEnabled.first()).isTrue()
         assertThat(store.dismissKeyboardOnSend.first()).isFalse()
@@ -266,7 +275,9 @@ class DataStoreRoundTripTest {
         assertThat(store.prefs.first()).isEqualTo(DateTimeFormatPrefs())
 
         val chosen = DateTimeFormatPrefs(TimestampStyle.SMART, ClockFormat.H24, DateFormatStyle.DMY_DOT)
-        store.set(chosen)
+        store.update { it.copy(style = TimestampStyle.SMART) }
+        store.update { it.copy(clock = ClockFormat.H24) }
+        store.update { it.copy(date = DateFormatStyle.DMY_DOT) }
         assertThat(store.prefs.first()).isEqualTo(chosen)
 
         // A fresh instance seeds the first frame from disk. The warm-up is real file IO, which
@@ -282,6 +293,18 @@ class DataStoreRoundTripTest {
         assertThat(UploadRoutingMode.fromString("garbage")).isEqualTo(UploadRoutingMode.AUTO)
         for (mode in UploadRoutingMode.entries) {
             assertThat(UploadRoutingMode.fromString(mode.toStorageString())).isEqualTo(mode)
+        }
+    }
+
+    @Test
+    fun artifactDisplayMode_readsStoredChoicesAndDefaultsToAutomatic() {
+        assertThat(ArtifactDisplayMode.fromString(null)).isEqualTo(ArtifactDisplayMode.AUTOMATIC)
+        assertThat(ArtifactDisplayMode.fromString("auto")).isEqualTo(ArtifactDisplayMode.AUTOMATIC)
+        assertThat(ArtifactDisplayMode.fromString("bottom_sheet")).isEqualTo(ArtifactDisplayMode.BOTTOM_SHEET)
+        assertThat(ArtifactDisplayMode.fromString("fullscreen")).isEqualTo(ArtifactDisplayMode.FULLSCREEN)
+        assertThat(ArtifactDisplayMode.fromString("split")).isEqualTo(ArtifactDisplayMode.AUTOMATIC)
+        for (mode in ArtifactDisplayMode.entries) {
+            assertThat(ArtifactDisplayMode.fromString(mode.toStorageString())).isEqualTo(mode)
         }
     }
 

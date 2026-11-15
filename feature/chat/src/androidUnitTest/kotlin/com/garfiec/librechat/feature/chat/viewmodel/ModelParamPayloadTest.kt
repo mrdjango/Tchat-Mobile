@@ -2,6 +2,7 @@ package com.garfiec.librechat.feature.chat.viewmodel
 
 import com.garfiec.librechat.core.ui.components.ModelParameters
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.double
@@ -24,6 +25,52 @@ class ModelParamPayloadTest {
     @Test
     fun `untouched params send nothing`() {
         assertTrue(build(ModelParameters.DEFAULT).isEmpty())
+    }
+
+    @Test
+    fun `an always-sent key goes out at its default, only where the parameter set has it`() {
+        val result = ModelParamPayload.build(
+            endpoint = "anthropic",
+            provider = null,
+            model = null,
+            extendedEffortSupported = false,
+            params = ModelParameters.DEFAULT,
+            alwaysSent = setOf("web_search"),
+        )
+        assertEquals(JsonObject(mapOf("web_search" to JsonPrimitive(false))), result)
+        val bedrock = ModelParamPayload.build(
+            endpoint = "bedrock",
+            provider = null,
+            model = "anthropic.claude-3",
+            extendedEffortSupported = false,
+            params = ModelParameters.DEFAULT,
+            alwaysSent = setOf("web_search"),
+        )
+        assertNull(bedrock["web_search"])
+    }
+
+    @Test
+    fun `resend files switched off is sent as false, and on is left to the server, on every parameter set`() {
+        // "Groq" has no set of its own, so it covers the generic default set.
+        val sets = listOf(
+            "anthropic" to null,
+            "openAI" to null,
+            "google" to null,
+            "bedrock" to "anthropic.claude-3",
+            "Groq" to null,
+        )
+        for ((endpoint, model) in sets) {
+            fun payload(params: ModelParameters) = ModelParamPayload.build(
+                endpoint = endpoint,
+                provider = null,
+                model = model,
+                extendedEffortSupported = false,
+                params = params,
+            )
+            val off = payload(ModelParameters.DEFAULT.copy(resendFiles = false))
+            assertEquals(false, off["resendFiles"]?.jsonPrimitive?.boolean, endpoint)
+            assertNull(payload(ModelParameters.DEFAULT)["resendFiles"], endpoint)
+        }
     }
 
     @Test

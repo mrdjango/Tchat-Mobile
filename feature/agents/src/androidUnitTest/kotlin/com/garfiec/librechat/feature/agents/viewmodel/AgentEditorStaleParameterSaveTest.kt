@@ -3,15 +3,19 @@ package com.garfiec.librechat.feature.agents.viewmodel
 import com.garfiec.librechat.core.common.result.Result
 import com.garfiec.librechat.core.data.repository.AgentRepository
 import com.garfiec.librechat.core.data.repository.AgentToolsRepository
+import com.garfiec.librechat.core.data.repository.CodeEnvironmentRepository
 import com.garfiec.librechat.core.data.repository.ConfigRepository
 import com.garfiec.librechat.core.data.repository.FileRepository
 import com.garfiec.librechat.core.data.repository.McpRepository
 import com.garfiec.librechat.core.data.repository.RoleRepository
 import com.garfiec.librechat.core.data.repository.SkillsRepository
 import com.garfiec.librechat.core.data.repository.ToolFavoritesRepository
+import com.garfiec.librechat.core.data.repository.UserRepository
 import com.garfiec.librechat.core.model.Agent
 import com.garfiec.librechat.core.model.request.UpdateAgentRequest
 import com.garfiec.librechat.feature.agents.util.ContentReader
+import com.garfiec.librechat.feature.agents.viewmodel.delegate.AgentCodeSources
+import com.garfiec.librechat.feature.agents.viewmodel.delegate.AgentToolKeySources
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.every
@@ -71,11 +75,12 @@ class AgentEditorStaleParameterSaveTest {
         agentRepository = agentRepository,
         configRepository = configRepository,
         mcpRepository = mockk<McpRepository>(relaxed = true),
-        agentToolsRepository = mockk<AgentToolsRepository>(relaxed = true),
+        toolKeys = AgentToolKeySources(mockk<AgentToolsRepository>(relaxed = true), mockk(relaxed = true)),
         fileRepository = mockk<FileRepository>(relaxed = true),
         skillsRepository = mockk<SkillsRepository>(relaxed = true),
         roleRepository = roleRepository,
         toolFavoritesRepository = toolFavoritesRepository,
+        codeSources = AgentCodeSources(mockk<CodeEnvironmentRepository>(relaxed = true), mockk<UserRepository>(relaxed = true)),
         contentReader = mockk<ContentReader>(relaxed = true),
         ioDispatcher = dispatcher,
         initialAgentId = agent.id,

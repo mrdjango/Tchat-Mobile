@@ -30,11 +30,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.garfiec.librechat.core.ui.components.AdaptiveButton
-import com.garfiec.librechat.core.ui.components.AdaptiveCircularProgressIndicator
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedTextField
 import com.garfiec.librechat.core.ui.components.AdaptiveScaffold
 import com.garfiec.librechat.core.ui.components.OTP_LENGTH
 import com.garfiec.librechat.core.ui.components.OtpCodeInput
+import com.garfiec.librechat.core.ui.components.VerbatimKeyboardOptions
 import com.garfiec.librechat.core.ui.components.topbar.AdaptiveTopBar
 import com.garfiec.librechat.core.ui.components.topbar.AdaptiveTopBarSpec
 import com.garfiec.librechat.core.ui.components.topbar.BarIcons
@@ -126,10 +126,11 @@ fun TwoFactorScreen(
                 )
             }
 
-            if (uiState.error != null) {
+            val errorText = authErrorText(uiState.refusal, uiState.error)
+            if (errorText != null) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = uiState.error!!,
+                    text = errorText,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag("twofa_error"),
@@ -144,21 +145,14 @@ fun TwoFactorScreen(
             AdaptiveButton(
                 onClick = viewModel::submit,
                 modifier = Modifier.fillMaxWidth().testTag("twofa_verify"),
-                enabled = !uiState.isLoading && if (uiState.isBackupMode) {
+                enabled = if (uiState.isBackupMode) {
                     uiState.backupCode.isNotBlank()
                 } else {
                     uiState.code.length == OTP_LENGTH
                 },
+                loading = uiState.isLoading,
             ) {
-                if (uiState.isLoading) {
-                    AdaptiveCircularProgressIndicator(
-                        modifier = Modifier.height(20.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Text(stringResource(Res.string.verify))
-                }
+                Text(stringResource(if (uiState.isLoading) Res.string.progress_verifying else Res.string.verify))
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -215,6 +209,7 @@ private fun BackupCodeInput(
         modifier = modifier.fillMaxWidth().testTag("twofa_backup_code"),
         enabled = enabled,
         singleLine = true,
+        keyboardOptions = VerbatimKeyboardOptions,
         label = { Text(stringResource(Res.string.backup_code_label)) },
     )
 }

@@ -3,6 +3,8 @@ package com.garfiec.librechat.feature.chat.viewmodel
 import androidx.compose.runtime.Immutable
 import com.garfiec.librechat.core.common.EndpointConstants
 import com.garfiec.librechat.core.data.endpoint.EndpointDispatch
+import com.garfiec.librechat.core.model.ReasoningOverride
+import com.garfiec.librechat.core.model.code.CodeWorkspaceSubmission
 import com.garfiec.librechat.core.model.request.EphemeralAgent
 import com.garfiec.librechat.core.ui.components.ModelParameters
 import com.garfiec.librechat.feature.chat.components.AttachedFile
@@ -86,13 +88,14 @@ data class QueuedMessage(
     val modelParameters: ModelParameters = ModelParameters.DEFAULT,
     /**
      * The top-level `web_search` sent: whether the provider's built-in search is the one the control
-     * runs ([ChatUiState.webSearchRoute]) when the turn was composed. LibreChat's search rides in
+     * runs ([ChatUiState.webSearchRoute]) when the turn is sent. LibreChat's search rides in
      * [ephemeralAgent] instead, and the two are never both set.
      */
     val webSearch: Boolean = false,
     /**
-     * Non-default model params (provider-keyed) serialized for the wire, snapshotted at enqueue time
-     * so a queued send carries the params it was composed with. Null when nothing was customized.
+     * Non-default model params (provider-keyed) serialized for the wire from [modelParameters]. Like
+     * [webSearch] and [ephemeralAgent], a drain re-derives it under the config of that moment
+     * (`SendDispatchDelegate.rebuiltForDrain`). Null when nothing was customized.
      */
     val modelParamsPayload: JsonObject? = null,
     val ephemeralAgent: EphemeralAgent? = null,
@@ -114,6 +117,18 @@ data class QueuedMessage(
      * stay in the composer.
      */
     val manualSkills: List<String> = emptyList(),
+    /**
+     * The Thinking choice taken with the composer when this spec was minted (v0.8.9-rc1), sent as
+     * the turn's `reasoningOverride`. A steer's spec carries none: a staged choice makes the
+     * composer queue instead (`ChatUiState.canSteerNow`).
+     */
+    val reasoningOverride: ReasoningOverride? = null,
+    /**
+     * The chat's code-workspace decision when this spec was minted, so a queued turn carries the
+     * decision it was composed under. Null holds a NEW chat's send (it must not go out without one);
+     * a drain into an existing chat sends nothing in its place, which keeps the recorded decision.
+     */
+    val codeWorkspace: CodeWorkspaceSubmission? = CodeWorkspaceSubmission.NONE,
     val dispatch: EndpointDispatch,
     val isTemporary: Boolean = false,
     /**
@@ -208,4 +223,6 @@ fun QueuedMessage.toComposerSnapshot(): ComposerSnapshot = ComposerSnapshot(
     modelParameters = modelParameters,
     manualSkills = manualSkills,
     skillsToggle = ephemeralAgent?.skills == true,
+    reasoningOverride = reasoningOverride,
+    quotes = quotes,
 )

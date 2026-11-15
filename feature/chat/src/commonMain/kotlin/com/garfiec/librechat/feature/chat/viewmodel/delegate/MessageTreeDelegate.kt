@@ -6,8 +6,10 @@ import com.garfiec.librechat.core.model.StreamEvent
 import com.garfiec.librechat.feature.chat.util.buildActiveMessagePath
 import com.garfiec.librechat.feature.chat.util.mergeFinalMessagesInMemory
 import com.garfiec.librechat.feature.chat.util.resolvedResponseMessage
+import com.garfiec.librechat.feature.chat.util.treeParentKeyOf
 import com.garfiec.librechat.feature.chat.viewmodel.ChatScreenState
 import com.garfiec.librechat.feature.chat.viewmodel.MessageTreeHandle
+import com.garfiec.librechat.feature.chat.viewmodel.PendingUnpin
 
 /**
  * Owns the message-tree branch state and the in-place streaming anchor — the parts
@@ -76,13 +78,16 @@ class MessageTreeDelegate(
         // active the toggle is a read-only indicator — the server already created
         // it temporary, so flipping it off here would be misleading.
         if (handle.state.conversationId != null) return
+        // An administrator forces temporary chats; the toggle is a read-only indicator.
+        if (handle.state.temporaryChatEnforced) return
         handle.update { conversation = conversation.copy(isTemporaryChat = !conversation.isTemporaryChat) }
     }
 
     /**
      * Finalizes a chat's display purely in memory by merging the SSE [event]'s
-     * request/response into the in-memory list (replacing the optimistic user message by id)
-     * and recomputing the display path — no Room access. This keeps the just-streamed reply
+     * request/response into the in-memory list (folding the request over this turn's optimistic
+     * user message, [optimisticUserMessageId], whose id the server replaced; see
+     * [mergeFinalMessagesInMemory]) and recomputing the display path — no Room access. This keeps the just-streamed reply
      * on screen the instant `isStreaming` flips false, instead of round-tripping a network
      * reload. Normal chats follow up with a background Room reconcile (server stays source of
      * truth); temp chats deliberately skip it, since the read-through cache would upsert their
@@ -93,21 +98,10 @@ class MessageTreeDelegate(
      * from the POST-merge state, not the raw event, so the cached rows are the same merged
      * instances the screen shows (caching the frame's skeletal request would diverge disk from
      * display). The request resolves via the response's parentMessageId when the payload omits
-     * it — the server adopts the client-minted id (PR #139), so it matches the optimistic user
-     * message, which was never written to Room during streaming and would otherwise be lost on
-     * reopen. Temp chats ignore the return value.
+     * it. The optimistic user message was never written to Room during streaming, so this is what
+     * keeps it on reopen. Temp chats ignore the return value.
      */
-    /**
-     * Names the response that is about to take over from the streaming bubble, for the one path
-     * that never reaches [finalizeChatDisplay]: a live comparison turn, which rebuilds from a
-     * background reload. The message is not in the tree yet — the flag is only an id, and the
-     * reload's emission is what makes it match.
-     */
-    fun markSettled(messageId: String?) {
-        handle.update { content = content.copy(justSettledMessageId = messageId) }
-    }
-
-    fun finalizeChatDisplay(event: StreamEvent.Final): List<Message> {
+    fun finalizeChatDisplay(event: StreamEvent.Final, optimisticUserMessageId: String? = null): List<Message> {
         // Defensive: upstream 0.8.7 sets responseMessage.attachments before saving, but the app
         // supports a backend version range. If the Final payload omitted a file that streamed in
         // via `attachment` SSE events, fold it back in (by fileId or filepath) so it survives the reload — the
@@ -115,6 +109,7 @@ class MessageTreeDelegate(
         val streamedAttachments = handle.state.streamingAttachments
         val response = event.resolvedResponseMessage()?.let { mergeStreamedAttachments(it, streamedAttachments) }
         val finalMessages = listOfNotNull(event.requestMessage, response)
+        val isTemporary = handle.state.isTemporaryChat
         // Retiring the streaming bubble (clearing the streaming fields) and swapping in the
         // finalized message MUST be ONE update: with a Main.immediate StateFlow every write is
         // observed, so two updates leave a frame where the bubble is gone but the reply isn't
@@ -123,14 +118,28 @@ class MessageTreeDelegate(
             val mergedMessages = if (finalMessages.isEmpty()) {
                 content.messages
             } else {
-                mergeFinalMessagesInMemory(content.messages, finalMessages)
+                mergeFinalMessagesInMemory(content.messages, finalMessages, optimisticUserMessageId)
             }
+            // A sibling this turn added (an edit, retry or regenerate) is shown over any pin on its
+            // parent. Only a temp chat writes the map now; elsewhere the Room reconcile drops the pins
+            // once it reads the turn (see MessagesState.unpinWhenCached).
+            val unpinKeys = appendedSiblingKeys(
+                content.messages, mergedMessages, event, response, optimisticUserMessageId, content.isCompacting,
+            )
+                .filterTo(HashSet()) { it in content.activeBranches }
+            val branches = content.activeBranches - unpinKeys
             // Retire the streaming bubble and swap in the finalized message in ONE slice copy —
             // all these fields live in `content`, so this stays a single StateFlow emission and
             // the completion-flash invariant holds structurally.
             content = content.copy(
                 messages = mergedMessages,
-                displayMessages = buildActiveMessagePath(mergedMessages, content.activeBranches),
+                displayMessages = buildActiveMessagePath(mergedMessages, branches),
+                activeBranches = if (isTemporary) branches else content.activeBranches,
+                // Keyed on the row cacheTurn writes: the response, or the request of a stopped turn.
+                unpinWhenCached = finalMessages.lastOrNull()
+                    ?.takeUnless { isTemporary || unpinKeys.isEmpty() }
+                    ?.let { PendingUnpin(it.messageId, content.unpinWhenCached?.keys.orEmpty() + unpinKeys) }
+                    ?: content.unpinWhenCached,
                 screenState = ChatScreenState.ACTIVE,
                 isStreaming = false,
                 streamingContent = "",
@@ -164,6 +173,29 @@ class MessageTreeDelegate(
         val mergedResponse = response?.messageId
             ?.let { id -> merged.firstOrNull { it.messageId == id } }
         return listOfNotNull(request, mergedResponse)
+    }
+
+    /**
+     * The `activeBranches` keys under which this Final put a new sibling: the request's when it took
+     * this turn's optimistic slot or had no reply in [before] (a re-attached edit or retry has no
+     * optimistic id), and the response's when its id wasn't in [before] (a Continue reuses it).
+     * A compaction's request is the existing branch leaf, so it never counts as new.
+     */
+    private fun appendedSiblingKeys(
+        before: List<Message>,
+        merged: List<Message>,
+        event: StreamEvent.Final,
+        response: Message?,
+        optimisticUserMessageId: String?,
+        isCompaction: Boolean,
+    ): Set<String> = buildSet {
+        val requestId = event.requestMessage?.messageId ?: response?.parentMessageId
+        val requestIsNew = optimisticUserMessageId != null ||
+            (!isCompaction && before.none { it.parentMessageId == requestId })
+        if (requestId != null && requestIsNew) treeParentKeyOf(merged, requestId)?.let(::add)
+        if (response != null && before.none { it.messageId == response.messageId }) {
+            treeParentKeyOf(merged, response.messageId)?.let(::add)
+        }
     }
 
     /**
