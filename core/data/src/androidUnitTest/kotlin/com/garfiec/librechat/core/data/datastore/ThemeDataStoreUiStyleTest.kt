@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.garfiec.librechat.core.model.config.theme.ThemeRole
 import com.garfiec.librechat.core.model.ui.UiStyle
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.CoroutineScope
@@ -15,6 +16,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -72,6 +75,7 @@ class ThemeDataStoreUiStyleTest {
         val file = File(tmpFolder.root, "warm.preferences_pb")
         val (_, writer) = newStore(file)
         writer.setUiStyle(UiStyle.LIQUID_GLASS)
+        writer.setServerTheme("srv1", acme)
 
         // A second store over the same file stands in for the next cold start. DataStore allows one
         // active instance per file per scope, so it gets a scope of its own.
@@ -86,8 +90,53 @@ class ThemeDataStoreUiStyleTest {
             )
             cold.isReady.first { it }
             assertThat(cold.initialUiStyle).isEqualTo(UiStyle.LIQUID_GLASS)
+            assertThat(cold.initialServerTheme?.definition?.name).isEqualTo("Acme")
         } finally {
             coldScope.cancel()
         }
     }
+
+    @Test
+    fun serverThemeRoundTripsAndIsOnUntilSwitchboardIsPickedForItsServer() = runBlocking {
+        val (_, store) = newStore()
+        assertThat(store.serverTheme.first()).isNull()
+
+        store.setServerTheme("srv1", acme)
+        assertThat(store.serverTheme.first()?.painted?.name).isEqualTo("Acme")
+        assertThat(store.serverTheme.first()?.painted?.light).containsEntry(ThemeRole.ACCENT_PRIMARY, 0x10A37F)
+
+        store.setUseServerTheme("srv1", false)
+        assertThat(store.serverTheme.first()?.painted).isNull()
+        assertThat(store.serverTheme.first()?.enabled).isFalse()
+
+        // Another server's theme is on by default: the choice is per server.
+        store.setServerTheme("srv2", JsonPrimitive("clickhouse"))
+        assertThat(store.serverTheme.first()?.painted?.name).isEqualTo("ClickHouse")
+
+        // A withdrawn theme clears it.
+        store.setServerTheme("srv2", null)
+        assertThat(store.serverTheme.first()).isNull()
+    }
+
+    @Test
+    fun turningTheServerAccentOffBeforeThemesKeepsSwitchboardsColours() = runBlocking {
+        val (prefs, store) = newStore()
+        prefs.edit { it[stringPreferencesKey("srv:srv1:use_server_accent")] = "false" }
+        store.setServerTheme("srv1", acme)
+        assertThat(store.serverTheme.first()?.enabled).isFalse()
+    }
+
+    @Test
+    fun aCachedValueThatNoLongerReadsAsAThemeIsNone() = runBlocking {
+        val (prefs, store) = newStore()
+        prefs.edit {
+            it[stringPreferencesKey("server_theme_server_id")] = "srv1"
+            it[stringPreferencesKey("server_theme")] = "{not json"
+        }
+        assertThat(store.serverTheme.first()).isNull()
+    }
+
+    private val acme = Json.parseToJsonElement(
+        """{"version":1,"name":"Acme","modes":{"light":{"colors":{"rgb-accent-primary":"16 163 127"}}}}""",
+    )
 }

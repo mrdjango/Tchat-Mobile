@@ -2,10 +2,12 @@ package com.garfiec.librechat.feature.conversations.navigation
 
 import androidx.navigation3.runtime.EntryProviderScope
 import androidx.navigation3.runtime.NavKey
+import com.garfiec.librechat.core.ui.navigation.FullWidthRoute
 import com.garfiec.librechat.feature.conversations.screen.ArchivedConversationsScreen
 import com.garfiec.librechat.feature.conversations.screen.BookmarkChatsScreen
 import com.garfiec.librechat.feature.conversations.screen.BookmarksScreen
 import com.garfiec.librechat.feature.conversations.screen.ProjectChatsScreen
+import com.garfiec.librechat.feature.conversations.screen.ProjectInstructionsScreen
 import com.garfiec.librechat.feature.conversations.screen.ProjectsScreen
 import com.garfiec.librechat.feature.conversations.search.SearchScreen
 import kotlinx.serialization.Serializable
@@ -34,7 +36,7 @@ import kotlinx.serialization.modules.subclass
 /** Full message search, opened from the drawer with its query (or empty). */
 @Serializable data class Search(
     val query: String = "",
-) : ConversationsRoute
+) : ConversationsRoute, FullWidthRoute
 
 /** Per-project filtered conversation list ("Show all" / folder tap) — v0.8.7. */
 @Serializable data class ProjectChats(
@@ -42,10 +44,17 @@ import kotlinx.serialization.modules.subclass
     val projectName: String,
 ) : ConversationsRoute
 
+/** A project's instructions editor (v0.8.9-rc1), opened from its Instructions card. */
+@Serializable data class ProjectInstructions(
+    val projectId: String,
+) : ConversationsRoute
+
 fun EntryProviderScope<NavKey>.conversationsEntries(
     onConversationClick: (String) -> Unit,
     onNavigateToProject: (projectId: String, projectName: String) -> Unit = { _, _ -> },
     onNewChatInProject: (projectId: String, projectName: String) -> Unit = { _, _ -> },
+    /** The project page's Instructions card asked for its editor. */
+    onOpenProjectInstructions: (projectId: String) -> Unit = {},
     /** A bookmark card was tapped: open that bookmark's chats. */
     onNavigateToBookmark: (tag: String) -> Unit = {},
     onBack: () -> Unit = {},
@@ -98,6 +107,13 @@ fun EntryProviderScope<NavKey>.conversationsEntries(
             onNavigateBack = onBack,
             onCloseSelf = { onRemove(route) },
             onNewChatInProject = onNewChatInProject,
+            onEditInstructions = onOpenProjectInstructions,
+        )
+    }
+    entry<ProjectInstructions> { route ->
+        ProjectInstructionsScreen(
+            projectId = route.projectId,
+            onClose = { onRemove(route) },
         )
     }
 }
@@ -110,5 +126,6 @@ val conversationsSerializersModule = SerializersModule {
         subclass(BookmarkChats::class, BookmarkChats.serializer())
         subclass(ProjectChats::class, ProjectChats.serializer())
         subclass(Search::class, Search.serializer())
+        subclass(ProjectInstructions::class, ProjectInstructions.serializer())
     }
 }

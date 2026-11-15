@@ -1,9 +1,11 @@
 package com.garfiec.librechat.feature.chat.viewmodel
 
 import androidx.compose.runtime.Immutable
+import com.garfiec.librechat.core.model.EndpointConfig
 import com.garfiec.librechat.core.model.config.ModelSpecs
 import com.garfiec.librechat.feature.chat.util.laneBSpecFor
 import com.garfiec.librechat.feature.chat.util.parseEphemeralAgentId
+import com.garfiec.librechat.feature.chat.util.stored
 
 @Immutable
 data class ComparisonState(
@@ -42,11 +44,27 @@ data class ComparisonState(
 data class ComparisonPick(val endpoint: String, val model: String, val spec: String? = null)
 
 /**
- * Lane B's spec: the one picked, else the one a reopened comparison was sent with, read against
- * [specs] ([laneBSpecFor]). Null for a raw model or a saved agent.
+ * Lane B's spec: the one picked, held against [specs] as the server holds a stored spec
+ * ([ModelChoice.Companion.stored]: dropped once it moved to another endpoint, where the server would
+ * add its tools to the wrong model), else the one a reopened comparison was sent with, read against
+ * [specs] and the lane endpoint's display label in [endpointConfigs] ([laneBSpecFor]). Null for a
+ * raw model or a saved agent.
  */
-internal fun ComparisonState.laneBSpec(specs: ModelSpecs?): String? {
-    secondarySpec?.let { return it }
+internal fun ComparisonState.laneBSpec(
+    specs: ModelSpecs?,
+    endpointConfigs: Map<String, EndpointConfig>,
+): String? {
+    secondarySpec?.let { name ->
+        val endpoint = secondaryEndpoint ?: return name
+        return ModelChoice.stored(endpoint, secondaryModel, name, specs).spec
+    }
     val reopened = reopenedSecondaryId?.let(::parseEphemeralAgentId) ?: return null
-    return specs.laneBSpecFor(reopened.endpoint, reopened.model, reopened.sender)
+    val config = endpointConfigs[reopened.endpoint]
+    return specs.laneBSpecFor(
+        endpoint = reopened.endpoint,
+        model = reopened.model,
+        sender = reopened.sender,
+        displayLabel = config?.modelDisplayLabel,
+        displayLabelKnown = config != null,
+    )
 }

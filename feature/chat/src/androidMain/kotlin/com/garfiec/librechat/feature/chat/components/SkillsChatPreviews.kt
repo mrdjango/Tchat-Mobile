@@ -12,23 +12,31 @@ import androidx.compose.ui.unit.dp
 import com.garfiec.librechat.core.model.ui.UiStyle
 import com.garfiec.librechat.core.ui.preview.PreviewNarrowScreens
 import com.garfiec.librechat.core.ui.theme.LibreChatTheme
+import com.garfiec.librechat.feature.chat.model.PickerMcpServer
 import com.garfiec.librechat.feature.chat.model.PickerSkill
 import com.garfiec.librechat.feature.chat.model.PromptMentionDisplayData
+import com.garfiec.librechat.feature.chat.util.ModelPickerBlock
+import com.garfiec.librechat.feature.chat.util.PickerModel
+import com.garfiec.librechat.feature.chat.util.draftItemsOf
 
 // The chat side of skills: the combined `/` + `$` picker with its typed rows, the picked-skill
 // chips above the composer, the pills on a sent user message, and the skill call card's states.
 
 @PreviewNarrowScreens
 @Composable
-private fun SkillPickerMixedMaterialPreview() = SkillsSurface(UiStyle.MATERIAL) { PickerHost("\$pd") }
+private fun SkillPickerDollarMaterialPreview() = SkillsSurface(UiStyle.MATERIAL) { PickerHost("\$pd") }
 
 @PreviewNarrowScreens
 @Composable
-private fun SkillPickerMixedGlassPreview() = SkillsSurface(UiStyle.LIQUID_GLASS) { PickerHost("\$pd") }
+private fun SkillPickerDollarGlassPreview() = SkillsSurface(UiStyle.LIQUID_GLASS) { PickerHost("\$pd") }
 
 @PreviewNarrowScreens
 @Composable
 private fun SkillPickerSlashMaterialPreview() = SkillsSurface(UiStyle.MATERIAL) { PickerHost("/") }
+
+@PreviewNarrowScreens
+@Composable
+private fun SkillPickerSlashGlassPreview() = SkillsSurface(UiStyle.LIQUID_GLASS) { PickerHost("/") }
 
 @PreviewNarrowScreens
 @Composable
@@ -93,14 +101,18 @@ private val previewSkills = listOf(
     ),
 )
 
-/** The composer with the picker open on [text] (or closed, showing the picked-skill chips). */
+/** The composer with the picker open on [text] (or closed, the picked skills in the attachment strip). */
 @Composable
 internal fun PickerHost(
     text: String,
     skills: List<PickerSkill> = previewSkills,
     loading: Boolean = false,
     failed: Boolean = false,
+    canPickSkills: Boolean = true,
     chips: List<String> = listOf("brand-voice", "quarterly-report-formatting-house-style"),
+    mcp: List<PickerMcpServer> = emptyList(),
+    models: List<PickerModel> = emptyList(),
+    modelBlock: ModelPickerBlock? = ModelPickerBlock.NO_PICKER,
 ) {
     ChatInput(
         inputText = text,
@@ -109,12 +121,17 @@ internal fun PickerHost(
         onSend = {},
         onStop = {},
         onOpenTools = {},
-        pendingManualSkills = chips,
+        chrome = ComposerChrome(
+            draftItems = draftItemsOf(emptyList(), chips, emptyList(), serverUrl = ""),
+            pickerMcpServers = mcp,
+            pickerModels = models,
+            pickerModelBlock = modelBlock,
+        ),
         promptSuggestions = previewPrompts,
         skillSuggestions = skills,
         isLoadingSkills = loading,
         skillsLoadFailed = failed,
-        canPickSkills = true,
+        canPickSkills = canPickSkills,
     )
 }
 

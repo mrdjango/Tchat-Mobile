@@ -2,6 +2,7 @@ package com.garfiec.librechat.feature.chat.util
 
 import androidx.compose.runtime.Immutable
 import com.garfiec.librechat.core.model.Message
+import com.garfiec.librechat.core.model.media.IconSource
 import com.garfiec.librechat.core.model.request.NO_PARENT
 
 @Immutable
@@ -14,6 +15,11 @@ data class MessageNode(
      *  when orphan re-parenting moves the message under NO_PARENT. Use this as the
      *  key for activeBranches in switchBranch(). */
     val treeParentKey: String = NO_PARENT,
+    /**
+     * The reply avatar, resolved where the screen's state is mapped ([withReplyAvatars]) so a bubble
+     * draws it as given. Null for the user's messages and on a path not yet mapped.
+     */
+    val avatar: IconSource? = null,
 )
 
 /**
@@ -134,6 +140,28 @@ private fun childrenByTreeParent(messages: List<Message>, messageIds: Set<String
         }
     }
     return childrenByParent
+}
+
+/**
+ * The path without the partial the server saved for the reply a resumed stream is writing
+ * ([replyId], `MessagesState.resumedReplyId`), which the streaming bubble already shows. Only an
+ * `unfinished` copy goes: the finished reply arrives under the same id. The same list when nothing
+ * is dropped.
+ */
+fun List<MessageNode>.withoutLivePartial(replyId: String?): List<MessageNode> {
+    if (replyId == null) return this
+    val isPartial = { node: MessageNode -> node.message.messageId == replyId && node.message.unfinished }
+    return if (any(isPartial)) filterNot(isPartial) else this
+}
+
+/**
+ * The `activeBranches` key [buildActiveMessagePath] files [messageId] under: its parent, or
+ * [NO_PARENT] when the parent is blank or not in [messages]. Null when [messageId] isn't there.
+ */
+fun treeParentKeyOf(messages: List<Message>, messageId: String): String? {
+    val message = messages.firstOrNull { it.messageId == messageId } ?: return null
+    val parentId = message.parentMessageId?.takeIf { it != NO_PARENT && it.isNotBlank() } ?: return NO_PARENT
+    return parentId.takeIf { id -> messages.any { it.messageId == id } } ?: NO_PARENT
 }
 
 /**

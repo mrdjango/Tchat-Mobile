@@ -42,7 +42,7 @@ class PresetSpecLoadTest {
         val flow = MutableStateFlow(ChatUiState(selection = state.copy(modelSpecs = specs)))
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job())
         val delegate = PresetPromptDelegate(
-            handle = PresetPromptHandle(ChatStateHandle(flow, scope)),
+            handle = PresetPromptHandle(ChatStateHandle(flow, scope), persistDraft = {}),
             presetRepository = presetRepository,
             promptRepository = mockk<PromptRepository>(relaxed = true),
         )
@@ -62,22 +62,39 @@ class PresetSpecLoadTest {
     }
 
     @Test
-    fun `a spec the server retargeted is dropped and the preset's own pair kept`() = runTest {
+    fun `a spec the server moved to another model on its endpoint is kept on the preset's own pair`() = runTest {
         val preset = Preset(presetId = "p1", endpoint = "openAI", model = "gpt-4o", spec = "fast")
 
         val selection = loadPreset(preset, ModelSpecs(list = listOf(fast)))
 
-        assertThat(selection.selectedModel).isEqualTo("gpt-4o")
-        assertThat(selection.selectedSpec).isNull()
+        assertThat(selection.choice).isEqualTo(ModelChoice.Spec("fast", "openAI", "gpt-4o"))
     }
 
     @Test
-    fun `a spec the server no longer lists is dropped`() = runTest {
+    fun `under enforce a spec moved to another model opens on the spec's pair`() = runTest {
+        val preset = Preset(presetId = "p1", endpoint = "openAI", model = "gpt-4o", spec = "fast")
+
+        val selection = loadPreset(preset, ModelSpecs(list = listOf(fast), enforce = true))
+
+        assertThat(selection.choice).isEqualTo(ModelChoice.Spec("fast", "openAI", "gpt-4.1"))
+    }
+
+    @Test
+    fun `a spec the server does not serve is kept, since it may be hidden`() = runTest {
         val preset = Preset(presetId = "p1", endpoint = "openAI", model = "gpt-4.1", spec = "fast")
 
         val selection = loadPreset(preset, ModelSpecs(list = emptyList()))
 
-        assertThat(selection.selectedSpec).isNull()
+        assertThat(selection.selectedSpec).isEqualTo("fast")
+    }
+
+    @Test
+    fun `a spec the server moved to another endpoint is dropped`() = runTest {
+        val preset = Preset(presetId = "p1", endpoint = "azureOpenAI", model = "gpt-4.1", spec = "fast")
+
+        val selection = loadPreset(preset, ModelSpecs(list = listOf(fast)))
+
+        assertThat(selection.choice).isEqualTo(ModelChoice.Raw("azureOpenAI", "gpt-4.1"))
     }
 
     @Test
@@ -147,7 +164,7 @@ class PresetSpecLoadTest {
     fun `a preset over an active spec replaces the spec's parameters`() = runTest {
         val deep = ModelSpec(
             name = "deep",
-            preset = Preset(endpoint = "openAI", model = "gpt-4.1", temperature = 0.9, topP = 0.5),
+            preset = Preset(endpoint = "openAI", model = "gpt-4.1", temperature = 0.9, topPSnake = 0.5),
         )
         val spec = ModelChoice.Spec("deep", "openAI", "gpt-4.1")
 
@@ -187,7 +204,7 @@ class PresetSpecLoadTest {
         val shown = ModelParameters.DEFAULT.copy(temperature = 0.9f, webSearch = true)
 
         val selection = loadPreset(
-            Preset(presetId = "p1", temperature = 0.2, topP = 0.3),
+            Preset(presetId = "p1", temperature = 0.2, topPSnake = 0.3),
             ModelSpecs(list = listOf(deep), enforce = true),
             state = ModelSelectionState(choice = ModelChoice.Spec("deep", "openAI", "gpt-4.1"), modelParameters = shown),
         )

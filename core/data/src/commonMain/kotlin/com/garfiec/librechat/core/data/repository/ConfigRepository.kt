@@ -26,14 +26,35 @@ data class VersionCheckResult(
 
 /** Outcome of [ConfigRepository.resolveServer]. */
 sealed interface ServerResolution {
-    /** [url] is the candidate that served LibreChat, exactly as it was passed in. */
+    /**
+     * [url] is the address that served LibreChat: a candidate exactly as it was passed in, or the
+     * address that candidate's `/api/config` redirected to.
+     */
     data class Resolved(val url: String, val config: StartupConfig) : ServerResolution
 
     data class Failed(val error: Result.Error) : ServerResolution
 }
 
+/** A startup config with the server it was read from or fetched for (`deriveServerId`). */
+data class ServerStartupConfig(val serverId: String, val config: StartupConfig)
+
 interface ConfigRepository {
     val startupConfig: StateFlow<StartupConfig?>
+
+    /**
+     * [startupConfig] tagged with its server. During a switch the active URL flips before the
+     * in-memory config is reseeded, so [startupConfig] alone can pair the old server's config with
+     * the new URL; anything persisted per server reads this instead and checks the id.
+     */
+    val startupConfigForServer: StateFlow<ServerStartupConfig?>
+
+    /**
+     * One emission per config the server answered ([fetchStartupConfig] succeeding, or
+     * [publishStartupConfig]), equal or not. [startupConfig] dedupes an unchanged config, so a reader
+     * that has to notice "the server spoke again" (lifting a state a route reported) collects this.
+     * Not replayed; a cached or reseeded config is not a refresh.
+     */
+    val startupConfigRefreshes: Flow<StartupConfig>
     val endpointConfigs: StateFlow<Map<String, EndpointConfig>>
     val availableModels: StateFlow<Map<String, List<String>>>
 

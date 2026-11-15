@@ -3,6 +3,7 @@ package com.garfiec.librechat.feature.auth.viewmodel
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.garfiec.librechat.core.common.result.ApiException
 import com.garfiec.librechat.core.common.result.Result
 import com.garfiec.librechat.core.data.datastore.ServerDataStore
 import com.garfiec.librechat.core.data.repository.AccountSwitcher
@@ -29,6 +30,12 @@ sealed interface SsoLoginError {
 
     /** Token-exchange failure. [message] is already screened by `Throwable.toSafeError`. */
     data class Exchange(val message: String?) : SsoLoginError
+
+    /**
+     * The server answered the token exchange or the user fetch with an HTTP error: a refusal, a
+     * redirect to `/login`, or a 5xx.
+     */
+    data object ExchangeRejected : SsoLoginError
 }
 
 @Immutable
@@ -50,6 +57,10 @@ class SsoLoginViewModel(
     /** The server this screen signs into: the pending add target when set, else the live one. */
     val serverUrl: String = accountSwitcher.pendingAdd?.serverUrl ?: serverDataStore.getBaseUrl()
 
+    /** Whether the round-trip may reuse the provider's session: only to re-authenticate the account
+     *  whose session ended. Any other sign-in must reach the provider's account chooser. */
+    val keepProviderSession: Boolean = accountSwitcher.signInReauthenticatesActive()
+
     private var tokenConsumed = false
 
     fun onTokenCapture(cookies: AuthCookies) {
@@ -64,7 +75,14 @@ class SsoLoginViewModel(
                     _uiState.update { it.copy(isLoading = false, isLoggedIn = true) }
                 is Result.Error ->
                     _uiState.update {
-                        it.copy(isLoading = false, error = SsoLoginError.Exchange(result.message))
+                        it.copy(
+                            isLoading = false,
+                            error = if (result.exception is ApiException) {
+                                SsoLoginError.ExchangeRejected
+                            } else {
+                                SsoLoginError.Exchange(result.message)
+                            },
+                        )
                     }
                 is Result.Loading -> Unit
             }

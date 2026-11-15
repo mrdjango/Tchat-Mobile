@@ -13,6 +13,9 @@ import com.garfiec.librechat.core.model.mcp.McpServerStatus
 import com.garfiec.librechat.core.model.mcp.McpServerType
 import com.garfiec.librechat.core.model.mcp.McpTool
 import com.garfiec.librechat.core.model.mcp.McpToolCatalog
+import com.garfiec.librechat.core.model.mcp.McpUserVar
+import com.garfiec.librechat.core.network.api.dto.UpdateUserPluginAuthRequest
+import com.garfiec.librechat.core.network.client.CookieHelper
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.delete
@@ -21,6 +24,7 @@ import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.appendPathSegments
 import io.ktor.http.path
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -91,6 +95,30 @@ class McpApi constructor(
         return json.decodeFromString(text)
     }
 
+    /**
+     * POST /api/mcp/:serverName/oauth/bind — sets the cookies the OAuth callback checks: `oauth_csrf`
+     * (bound to this user's flow for [serverName], 10 min, Path `/api/mcp`) and `oauth_session`
+     * (bound to the user, 24 h, Path `/api`). This client keeps no cookie jar, so they come back as
+     * `Set-Cookie` values for the in-app sign-in WebView to seed. Empty when the server set none.
+     */
+    suspend fun bindOAuth(serverName: String): List<String> {
+        val response = client.post {
+            url { appendPathSegments("api", "mcp", serverName, "oauth", "bind") }
+        }
+        return CookieHelper.setCookieValues(response.headers, MCP_OAUTH_BINDING_COOKIES)
+    }
+
+    /**
+     * POST /api/mcp/oauth/cancel/:serverName — fails this user's pending `mcp_oauth` flow for
+     * [serverName], so the status route stops reading it as connecting (web's
+     * `useCancelMCPOAuthMutation`). Answers success when there is no flow to cancel too.
+     */
+    suspend fun cancelOAuth(serverName: String) {
+        client.post {
+            url { appendPathSegments("api", "mcp", "oauth", "cancel", serverName) }
+        }
+    }
+
     suspend fun getConnectionStatus(): Map<String, McpServerStatus> {
         val response: McpConnectionStatusResponse = client.get {
             url { path("api/mcp/connection/status") }
@@ -121,11 +149,45 @@ class McpApi constructor(
                 obo = ((config["obo"] as? JsonObject)?.get("scopes") as? JsonPrimitive)?.contentOrNull
                     ?.takeIf { it.isNotBlank() }
                     ?.let(::McpOboConfig),
-                chatMenu = (config["chatMenu"] as? JsonPrimitive)?.booleanOrNull, // TCHAT
                 dbId = (config["dbId"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() },
                 consumeOnly = (config["consumeOnly"] as? JsonPrimitive)?.booleanOrNull ?: false,
+                chatMenu = (config["chatMenu"] as? JsonPrimitive)?.booleanOrNull ?: true,
                 requestScoped = (config["requestScoped"] as? JsonPrimitive)?.booleanOrNull ?: false,
+                customUserVars = (config["customUserVars"] as? JsonObject)?.let(::parseUserVars).orEmpty(),
             )
+        }
+    }
+
+    /**
+     * GET /api/mcp/:serverName/auth-values — which of the server's `customUserVars` this user has
+     * saved, by key. The values themselves are never returned.
+     */
+    suspend fun getUserVarFlags(serverName: String): Map<String, Boolean> {
+        val response: JsonObject = client.get {
+            url { appendPathSegments("api", "mcp", serverName, "auth-values") }
+        }.body()
+        val flags = response["authValueFlags"] as? JsonObject ?: return emptyMap()
+        return flags.mapValues { (_, value) -> (value as? JsonPrimitive)?.booleanOrNull == true }
+    }
+
+    /**
+     * Saves this user's variables for [serverName] through web's plugin-auth route
+     * (`POST /api/user/plugins`, not `arg`-wrapped). Every key sent is overwritten, a blank one with
+     * an empty value, so callers send only what the user typed. The server drops the user's
+     * connection, so a reconnect follows.
+     */
+    suspend fun saveUserVars(serverName: String, values: Map<String, String>) {
+        client.post {
+            url { path("api/user/plugins") }
+            setBody(UpdateUserPluginAuthRequest(pluginKey = MCP_PLUGIN_PREFIX + serverName, action = "install", auth = values))
+        }
+    }
+
+    /** Deletes every saved variable for [serverName]; the server also revokes its OAuth tokens. */
+    suspend fun removeUserVars(serverName: String) {
+        client.post {
+            url { path("api/user/plugins") }
+            setBody(UpdateUserPluginAuthRequest(pluginKey = MCP_PLUGIN_PREFIX + serverName, action = "uninstall", auth = emptyMap()))
         }
     }
 
@@ -255,6 +317,16 @@ class McpApi constructor(
         }
     }
 
+    private fun parseUserVars(vars: JsonObject): List<McpUserVar> = vars.mapNotNull { (key, value) ->
+        val obj = value as? JsonObject ?: return@mapNotNull null
+        McpUserVar(
+            key = key,
+            title = (obj["title"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: key,
+            description = (obj["description"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+            sensitive = (obj["sensitive"] as? JsonPrimitive)?.booleanOrNull ?: true,
+        )
+    }
+
     private fun parseServerType(type: String?): McpServerType = when (type) {
         "sse" -> McpServerType.SSE
         "streamable-http", "http" -> McpServerType.STREAMABLE_HTTP
@@ -303,6 +375,15 @@ private val McpApiKeySource.serialName: String
         McpApiKeySource.ADMIN -> "admin"
         McpApiKeySource.USER -> "user"
     }
+
+/**
+ * Upstream `OAUTH_CSRF_COOKIE` / `OAUTH_SESSION_COOKIE` (`packages/api/src/oauth/csrf.ts`), the two
+ * cookies the MCP OAuth callback accepts as proof the browser belongs to the flow's user.
+ */
+internal val MCP_OAUTH_BINDING_COOKIES: Set<String> = setOf("oauth_csrf", "oauth_session")
+
+/** Upstream `Constants.mcp_prefix`: the plugin-auth key a server's user variables are saved under. */
+internal const val MCP_PLUGIN_PREFIX = "mcp_"
 
 private val McpAuthorizationType.serialName: String
     get() = when (this) {

@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,7 +26,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.garfiec.librechat.core.ui.components.AdaptiveButton
-import com.garfiec.librechat.core.ui.components.AdaptiveCircularProgressIndicator
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedTextField
 import com.garfiec.librechat.core.ui.components.AdaptiveScaffold
 import com.garfiec.librechat.core.ui.components.topbar.AdaptiveTopBar
@@ -67,80 +67,83 @@ fun ForgotPasswordScreen(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
                 .padding(padding)
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+                .imePadding(),
         ) {
-            if (uiState.isSent) {
-                Text(
-                    text = stringResource(Res.string.check_your_email),
-                    style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.semantics { heading() },
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = stringResource(Res.string.reset_link_sent, uiState.email),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-                AdaptiveButton(onClick = onBack) {
-                    Text(stringResource(Res.string.back_to_sign_in))
-                }
-            } else {
-                Text(
-                    text = stringResource(Res.string.forgot_your_password),
-                    style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.semantics { heading() },
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = stringResource(Res.string.enter_email_for_reset),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(32.dp))
-
-                AdaptiveOutlinedTextField(
-                    value = uiState.email,
-                    onValueChange = viewModel::onEmailChanged,
-                    label = { Text(stringResource(Res.string.email_label)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Email,
-                        autoCorrectEnabled = false,
-                    ),
-                    isError = uiState.error != null,
-                    supportingText = uiState.error?.let { error ->
-                        { Text(text = error, color = MaterialTheme.colorScheme.error) }
-                    },
-                    enabled = !uiState.isLoading,
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                AdaptiveButton(
-                    onClick = viewModel::requestReset,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !uiState.isLoading && uiState.email.isNotBlank(),
-                ) {
-                    if (uiState.isLoading) {
-                        AdaptiveCircularProgressIndicator(
-                            modifier = Modifier.height(20.dp),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        Text(stringResource(Res.string.send_reset_link))
+            // The scaffold padding holds the bar column without consuming it; the banner pads that column itself.
+            AuthBanner(uiState.banner, Modifier.consumeWindowInsets(padding))
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                if (uiState.isSent) {
+                    Text(
+                        text = stringResource(Res.string.check_your_email),
+                        style = MaterialTheme.typography.headlineMedium,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = stringResource(Res.string.reset_link_sent, uiState.email),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    AdaptiveButton(onClick = onBack) {
+                        Text(stringResource(Res.string.back_to_sign_in))
                     }
-                }
-
-                if (uiState.error != null && uiState.offerDiagnosticLog) {
+                } else {
+                    Text(
+                        text = stringResource(Res.string.forgot_your_password),
+                        style = MaterialTheme.typography.headlineMedium,
+                        modifier = Modifier.semantics { heading() },
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
-                    DiagnosticLogLink()
+                    Text(
+                        text = stringResource(Res.string.enter_email_for_reset),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(32.dp))
+
+                    AdaptiveOutlinedTextField(
+                        value = uiState.email,
+                        onValueChange = viewModel::onEmailChanged,
+                        label = { Text(stringResource(Res.string.email_label)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email,
+                            autoCorrectEnabled = false,
+                        ),
+                        isError = uiState.error != null,
+                        supportingText = authErrorText(uiState.refusal, uiState.error)?.let { error ->
+                            { Text(text = error, color = MaterialTheme.colorScheme.error) }
+                        },
+                        enabled = !uiState.isLoading,
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    AdaptiveButton(
+                        onClick = viewModel::requestReset,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = uiState.email.isNotBlank(),
+                        loading = uiState.isLoading,
+                    ) {
+                        Text(stringResource(if (uiState.isLoading) Res.string.progress_sending else Res.string.send_reset_link))
+                    }
+
+                    if (uiState.error != null && uiState.offerDiagnosticLog) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        DiagnosticLogLink()
+                    }
+
+                    PolicyLinksFooter(uiState.policyLinks, modifier = Modifier.padding(top = 16.dp))
                 }
             }
         }

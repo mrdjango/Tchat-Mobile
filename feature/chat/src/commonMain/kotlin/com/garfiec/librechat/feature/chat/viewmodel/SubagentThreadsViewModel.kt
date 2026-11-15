@@ -70,29 +70,27 @@ class SubagentThreadsViewModel(
      */
     private var requestedFocus: String? = null
 
+    /** A thread a card named directly; see [focusChild]. Moves with every request, like [requestedFocus]. */
+    private var requestedThread: String? = null
+
     /**
-     * Loads the conversation's children, once per conversation.
+     * Reads the conversation's children on every open: each turn can spawn children and move
+     * their status, so an index read earlier would miss them.
      *
      * Skipped entirely on a server KNOWN to predate the routes; an unplaceable one is asked,
      * because it is the population most likely to have them.
      */
-    fun openFor(parentConversationId: String, focusParentToolCallId: String?) {
+    fun openFor(parentConversationId: String, focusParentToolCallId: String?, focusThreadId: String? = null) {
         if (subagentRepository.isRuledOutForServer()) {
             _uiState.value = SubagentThreadsUiState(hasNoChildView = true)
             return
         }
         requestedFocus = focusParentToolCallId
-        if (loadedFor == parentConversationId) {
-            // Still reading this conversation's index: there is nothing to focus against yet, and
-            // restarting would throw away a request already in flight. The read lands on
-            // `requestedFocus`, which the line above has just moved to this tap.
-            if (_uiState.value.isLoadingIndex) return
-            // Reopened on a conversation already read. Back to the list first, so dismissing while
-            // a child was open does not reopen onto a stale thread the user did not ask for.
-            backToList()
-            focusChild(parentConversationId, focusParentToolCallId)
-            return
-        }
+        requestedThread = focusThreadId
+        // Still reading this conversation's index: there is nothing to focus against yet, and
+        // restarting would throw away a request already in flight. The read lands on
+        // `requestedFocus`, which the line above has just moved to this tap.
+        if (loadedFor == parentConversationId && _uiState.value.isLoadingIndex) return
         loadedFor = parentConversationId
         _uiState.value = SubagentThreadsUiState(isLoadingIndex = true)
         viewModelScope.launch {
@@ -110,7 +108,7 @@ class SubagentThreadsViewModel(
                     )
                     // The latest request's focus, not this launch's: a reopen on another card
                     // while the read was out has already moved it.
-                    focusChild(parentConversationId, requestedFocus)
+                    focusChild(parentConversationId, requestedFocus, requestedThread)
                 }
                 is Result.Error -> {
                     // NOTHING here is remembered. A 404 is per-conversation — missing, not yours,
@@ -130,13 +128,18 @@ class SubagentThreadsViewModel(
         }
     }
 
-    /** Opens the child spawned by [parentToolCallId], when the index names one. */
-    private fun focusChild(parentConversationId: String, parentToolCallId: String?) {
-        val threadId = parentToolCallId
-            ?.let { id -> _uiState.value.children.firstOrNull { it.parentToolCallId == id } }
-            ?.threadId
+    /**
+     * Opens [threadId] when a card named one (a background subagent task's `subagent_thread_id`,
+     * v0.8.9-rc1), else the child spawned by [parentToolCallId] when the index names one. A named
+     * thread opens even when the bounded index left it out.
+     */
+    private fun focusChild(parentConversationId: String, parentToolCallId: String?, threadId: String? = null) {
+        val target = threadId
+            ?: parentToolCallId
+                ?.let { id -> _uiState.value.children.firstOrNull { it.parentToolCallId == id } }
+                ?.threadId
             ?: return
-        openThread(parentConversationId, threadId)
+        openThread(parentConversationId, target)
     }
 
     fun openThread(parentConversationId: String, threadId: String) {

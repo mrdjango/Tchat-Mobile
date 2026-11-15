@@ -3,7 +3,6 @@ package com.garfiec.librechat.feature.chat.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -32,7 +31,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -45,16 +43,14 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -67,17 +63,14 @@ import com.garfiec.librechat.core.model.FeedbackRating
 import com.garfiec.librechat.core.model.Message
 import com.garfiec.librechat.core.model.MinimalFeedback
 import com.garfiec.librechat.core.model.content.MessageContentPart
-import com.garfiec.librechat.core.model.media.resolveIconSource
+import com.garfiec.librechat.core.model.media.IconSource
 import com.garfiec.librechat.core.ui.components.AdaptiveDialog
 import com.garfiec.librechat.core.ui.components.AdaptiveDivider
 import com.garfiec.librechat.core.ui.components.AvatarImage
-import com.garfiec.librechat.core.ui.components.BubbleShape
+import com.garfiec.librechat.core.ui.components.EndpointAvatar
 import com.garfiec.librechat.core.ui.components.ProvideContentDirection
 import com.garfiec.librechat.core.ui.components.ProvideLtr
 import com.garfiec.librechat.core.ui.components.USER_BUBBLE_MAX_FRACTION
-import com.garfiec.librechat.core.ui.components.UserBubbleShape
-import com.garfiec.librechat.core.ui.components.endpointIconPainter
-import com.garfiec.librechat.core.ui.components.isMonochromeEndpointIcon
 import com.garfiec.librechat.core.ui.components.maxWidthFraction
 import com.garfiec.librechat.core.ui.components.topbar.AdaptiveTopBar
 import com.garfiec.librechat.core.ui.components.topbar.AdaptiveTopBarSpec
@@ -86,8 +79,12 @@ import com.garfiec.librechat.core.ui.components.topbar.BarNavigation
 import com.garfiec.librechat.core.ui.components.topbar.BarTitle
 import com.garfiec.librechat.core.ui.components.topbar.MaterialBarStyle
 import com.garfiec.librechat.core.ui.theme.UserBubbleTheme
-import com.garfiec.librechat.core.ui.theme.accentInkColor
+import com.garfiec.librechat.core.ui.theme.chatColors
+import com.garfiec.librechat.core.ui.theme.isSurfaceDark
+import com.garfiec.librechat.core.ui.theme.themeShapes
 import com.garfiec.librechat.core.ui.theme.userBubbleColors
+import com.garfiec.librechat.feature.chat.components.sendflight.sendFlightBubble
+import com.garfiec.librechat.feature.chat.components.sendflight.sendFlightHeader
 import com.garfiec.librechat.feature.chat.resources.Res
 import com.garfiec.librechat.feature.chat.resources.cd_close
 import com.garfiec.librechat.feature.chat.resources.cd_expand_table
@@ -96,10 +93,7 @@ import com.garfiec.librechat.feature.chat.resources.sender_assistant
 import com.garfiec.librechat.feature.chat.resources.sender_you
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
-import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.stringResource
-
-private const val ACTION_AUTO_HIDE_MILLIS = 30_000L
 
 // ─── MessageBubble ───────────────────────────────────────────────────
 
@@ -123,7 +117,6 @@ actual fun MessageBubble(
     editSession: MessageEditSession?,
     userAvatarUrl: String?,
     userName: String?,
-    selectedEndpoint: String?,
     showImageDescriptions: Boolean,
     showActionsInitially: Boolean,
     searchQuery: String?,
@@ -135,13 +128,8 @@ actual fun MessageBubble(
     chatLayoutStyle: String,
     showAvatars: Boolean,
     showBubbles: Boolean,
+    avatar: IconSource?,
 ) {
-    // A spec's `iconURL` names an endpoint's glyph or a server-relative image: resolve it as the picker does.
-    val assistantIcon = resolveIconSource(message.iconURL, message.endpoint ?: selectedEndpoint, baseUrl)
-    val resolvedEndpoint = assistantIcon.endpointName
-    val assistantIconUrl = assistantIcon.imageUrl
-    val tintEndpointIcon = isMonochromeEndpointIcon(resolvedEndpoint)
-
     if (chatLayoutStyle == ChatLayoutConstants.TWO_SIDED) {
         TwoSidedBubble(
             message = message,
@@ -163,9 +151,7 @@ actual fun MessageBubble(
             editSession = editSession,
             userAvatarUrl = userAvatarUrl,
             userName = userName,
-            resolvedEndpoint = resolvedEndpoint,
-            assistantIconUrl = assistantIconUrl,
-            tintEndpointIcon = tintEndpointIcon,
+            avatar = avatar,
             showImageDescriptions = showImageDescriptions,
             showActionsInitially = showActionsInitially,
             searchQuery = searchQuery,
@@ -197,9 +183,7 @@ actual fun MessageBubble(
             editSession = editSession,
             userAvatarUrl = userAvatarUrl,
             userName = userName,
-            resolvedEndpoint = resolvedEndpoint,
-            assistantIconUrl = assistantIconUrl,
-            tintEndpointIcon = tintEndpointIcon,
+            avatar = avatar,
             showImageDescriptions = showImageDescriptions,
             showActionsInitially = showActionsInitially,
             searchQuery = searchQuery,
@@ -234,9 +218,7 @@ private fun ThreadBubble(
     editSession: MessageEditSession?,
     userAvatarUrl: String?,
     userName: String?,
-    resolvedEndpoint: String?,
-    assistantIconUrl: String?,
-    tintEndpointIcon: Boolean,
+    avatar: IconSource?,
     showImageDescriptions: Boolean,
     showActionsInitially: Boolean,
     searchQuery: String?,
@@ -249,8 +231,9 @@ private fun ThreadBubble(
     modifier: Modifier = Modifier,
 ) {
     val isUser = message.isCreatedByUser
-    var showActions by remember(message.messageId) { mutableStateOf(showActionsInitially) }
-    LaunchedEffect(showActions) { if (showActions) { delay(ACTION_AUTO_HIDE_MILLIS); showActions = false } }
+    var showActions by rememberActionRowShown(message.messageId, showActionsInitially, isReading)
+    // The thread's tap handler leaves focus inside the list alone; a tap on a message ends an inline edit.
+    val focusManager = LocalFocusManager.current
 
     val searchBg = when {
         isCurrentSearchMatch -> SearchHighlightOrange.copy(alpha = 0.18f)
@@ -261,23 +244,30 @@ private fun ThreadBubble(
     Column(
         modifier = modifier.fillMaxWidth()
             .then(if (searchBg != null) Modifier.background(searchBg, RoundedCornerShape(8.dp)) else Modifier)
-            .clickable(interactionSource = null, indication = null) { showActions = !showActions }
+            .clickable(interactionSource = null, indication = null) {
+                focusManager.clearFocus()
+                showActions = !showActions
+            }
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = sendFlightHeader(message.messageId, isUser), verticalAlignment = Alignment.CenterVertically) {
             if (showAvatars) {
-                AvatarImage(
-                    imageUrl = if (isUser) userAvatarUrl else assistantIconUrl,
-                    fallbackText = if (isUser) {
-                        userName ?: stringResource(Res.string.sender_you)
-                    } else {
-                        message.sender ?: stringResource(Res.string.sender_assistant)
-                    },
-                    fallbackIconPainter = if (!isUser && assistantIconUrl == null) endpointIconPainter(resolvedEndpoint) else null,
-                    showPersonIcon = isUser && userAvatarUrl == null,
-                    tintIcon = if (!isUser && assistantIconUrl == null) tintEndpointIcon else false,
-                    size = 28.dp,
-                )
+                if (isUser) {
+                    AvatarImage(
+                        imageUrl = userAvatarUrl,
+                        fallbackText = userName ?: stringResource(Res.string.sender_you),
+                        showPersonIcon = userAvatarUrl == null,
+                        size = 28.dp,
+                    )
+                } else {
+                    EndpointAvatar(
+                        imageUrl = avatar?.imageUrl,
+                        endpointName = avatar?.endpointName,
+                        provider = avatar?.provider,
+                        fallbackText = message.sender ?: stringResource(Res.string.sender_assistant),
+                        size = 28.dp,
+                    )
+                }
                 Spacer(Modifier.width(8.dp))
             }
             Text(
@@ -303,7 +293,7 @@ private fun ThreadBubble(
         val bubbleBg = if (showBubbles) {
             when {
                 filledUserBubble -> userBubbleColors().container
-                isUser -> MaterialTheme.colorScheme.secondaryContainer
+                isUser -> chatColors().userMessage
                 else -> MaterialTheme.colorScheme.surfaceVariant
             }
         } else {
@@ -312,16 +302,20 @@ private fun ThreadBubble(
 
         UserBubbleTheme(active = filledUserBubble) { // TCHAT
         Column(
-            modifier = Modifier.padding(start = contentPad).then(
-                if (bubbleBg != null) {
-                    Modifier.background(bubbleBg, if (filledUserBubble) UserBubbleShape else BubbleShape).padding(12.dp)
-                } else {
-                    Modifier
-                },
-            ),
+            modifier = Modifier
+                .padding(start = contentPad)
+                .then(sendFlightBubble(message.messageId, isUser))
+                .then(
+                    if (bubbleBg != null) {
+                        Modifier.background(bubbleBg, if (isUser) themeShapes().userBubble else themeShapes().bubble).padding(12.dp)
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
             MessageContentAndActions(
                 message = message,
+                avatar = avatar,
                 isUser = isUser,
                 editSession = editSession,
                 baseUrl = baseUrl,
@@ -375,9 +369,7 @@ private fun TwoSidedBubble(
     editSession: MessageEditSession?,
     userAvatarUrl: String?,
     userName: String?,
-    resolvedEndpoint: String?,
-    assistantIconUrl: String?,
-    tintEndpointIcon: Boolean,
+    avatar: IconSource?,
     showImageDescriptions: Boolean,
     showActionsInitially: Boolean,
     searchQuery: String?,
@@ -390,8 +382,9 @@ private fun TwoSidedBubble(
     modifier: Modifier = Modifier,
 ) {
     val isUser = message.isCreatedByUser
-    var showActions by remember(message.messageId) { mutableStateOf(showActionsInitially) }
-    LaunchedEffect(showActions) { if (showActions) { delay(ACTION_AUTO_HIDE_MILLIS); showActions = false } }
+    var showActions by rememberActionRowShown(message.messageId, showActionsInitially, isReading)
+    // The thread's tap handler leaves focus inside the list alone; a tap on a message ends an inline edit.
+    val focusManager = LocalFocusManager.current
 
     val searchBg = when {
         isCurrentSearchMatch -> SearchHighlightOrange.copy(alpha = 0.18f)
@@ -403,7 +396,7 @@ private fun TwoSidedBubble(
     val bubbleBg = if (showBubbles) {
         when {
             filledUserBubble -> userBubbleColors().container
-            isUser -> MaterialTheme.colorScheme.secondaryContainer
+            isUser -> chatColors().userMessage
             // TCHAT: assistant replies have no bubble and run the full width (design README).
             else -> null
         }
@@ -418,17 +411,20 @@ private fun TwoSidedBubble(
 
     Row(
         modifier = modifier.fillMaxWidth()
-            .clickable(interactionSource = null, indication = null) { showActions = !showActions }
+            .clickable(interactionSource = null, indication = null) {
+                focusManager.clearFocus()
+                showActions = !showActions
+            }
             .padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Top,
     ) {
         if (!isUser && showAvatars) {
-            AvatarImage(
-                imageUrl = assistantIconUrl,
+            EndpointAvatar(
+                imageUrl = avatar?.imageUrl,
+                endpointName = avatar?.endpointName,
+                provider = avatar?.provider,
                 fallbackText = message.sender ?: stringResource(Res.string.sender_assistant),
-                fallbackIconPainter = if (assistantIconUrl == null) endpointIconPainter(resolvedEndpoint) else null,
-                tintIcon = if (assistantIconUrl == null) tintEndpointIcon else false,
                 size = 28.dp,
             )
             Spacer(Modifier.width(8.dp))
@@ -436,15 +432,18 @@ private fun TwoSidedBubble(
 
         UserBubbleTheme(active = filledUserBubble) { // TCHAT
         Column(
-            // TCHAT: the user's bubble hugs its text on the right, at most 80% of the row, with a tail.
-            modifier = Modifier.weight(1f, fill = !isUser)
-                .then(if (isUser) Modifier.maxWidthFraction(USER_BUBBLE_MAX_FRACTION) else Modifier).then(
-                if (effectiveBg != null) {
-                    Modifier.background(effectiveBg, if (filledUserBubble) UserBubbleShape else BubbleShape).padding(12.dp)
-                } else {
-                    Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
-                },
-            ),
+            modifier = Modifier
+                // TCHAT: the user's bubble hugs its text on the right, at most 80% of the row.
+                .weight(1f, fill = !isUser)
+                .then(if (isUser) Modifier.maxWidthFraction(USER_BUBBLE_MAX_FRACTION) else Modifier)
+                .then(sendFlightBubble(message.messageId, isUser))
+                .then(
+                    if (effectiveBg != null) {
+                        Modifier.background(effectiveBg, if (isUser) themeShapes().userBubble else themeShapes().bubble).padding(12.dp)
+                    } else {
+                        Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
+                    },
+                ),
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -474,6 +473,7 @@ private fun TwoSidedBubble(
 
             MessageContentAndActions(
                 message = message,
+                avatar = avatar,
                 isUser = isUser,
                 editSession = editSession,
                 baseUrl = baseUrl,
@@ -508,6 +508,7 @@ private fun TwoSidedBubble(
             Spacer(Modifier.width(8.dp))
             AvatarImage(
                 imageUrl = userAvatarUrl,
+                modifier = sendFlightHeader(message.messageId, isUser = true),
                 fallbackText = userName ?: stringResource(Res.string.sender_you),
                 showPersonIcon = userAvatarUrl == null,
                 size = 28.dp,
@@ -578,27 +579,28 @@ private fun MarkdownContentBody(
 ) {
     val segments = rememberCitedMarkdownSegments(text, streaming, withoutCitations = !searchQuery.isNullOrBlank())
 
+    val chat = chatColors()
     val colors = markdownColor(
-        text = MaterialTheme.colorScheme.onSurface,
-        codeBackground = MaterialTheme.colorScheme.surfaceContainerHigh,
-        inlineCodeBackground = MaterialTheme.colorScheme.surfaceContainerHigh, dividerColor = MaterialTheme.colorScheme.outlineVariant,
+        text = chat.messageText,
+        codeBackground = chat.codeBody,
+        inlineCodeBackground = chat.inlineCode,
+        dividerColor = chat.rule,
     )
     val bl = MaterialTheme.typography.bodyLarge
     val bm = MaterialTheme.typography.bodyMedium
     val typography = markdownTypography(
-        // TCHAT: links in `accent-ink` (design tokens), underlined so they never rely on colour.
-        textLink = TextLinkStyles(style = SpanStyle(color = accentInkColor, textDecoration = TextDecoration.Underline)),
-        h1 = MaterialTheme.typography.headlineLarge.scale(fontSizeMultiplier),
-        h2 = MaterialTheme.typography.headlineMedium.scale(fontSizeMultiplier),
-        h3 = MaterialTheme.typography.headlineSmall.scale(fontSizeMultiplier),
-        h4 = MaterialTheme.typography.titleLarge.scale(fontSizeMultiplier),
-        h5 = MaterialTheme.typography.titleMedium.scale(fontSizeMultiplier),
-        h6 = MaterialTheme.typography.titleSmall.scale(fontSizeMultiplier),
+        h1 = MaterialTheme.typography.headlineLarge.copy(color = chat.headingText).scale(fontSizeMultiplier),
+        h2 = MaterialTheme.typography.headlineMedium.copy(color = chat.headingText).scale(fontSizeMultiplier),
+        h3 = MaterialTheme.typography.headlineSmall.copy(color = chat.headingText).scale(fontSizeMultiplier),
+        h4 = MaterialTheme.typography.titleLarge.copy(color = chat.headingText).scale(fontSizeMultiplier),
+        h5 = MaterialTheme.typography.titleMedium.copy(color = chat.headingText).scale(fontSizeMultiplier),
+        h6 = MaterialTheme.typography.titleSmall.copy(color = chat.headingText).scale(fontSizeMultiplier),
         text = bl.scale(fontSizeMultiplier), paragraph = bl.scale(fontSizeMultiplier),
         quote = bl.copy(fontStyle = FontStyle.Italic).scale(fontSizeMultiplier),
         code = bm.copy(fontFamily = FontFamily.Monospace).scale(fontSizeMultiplier),
         inlineCode = bl.copy(fontFamily = FontFamily.Monospace).scale(fontSizeMultiplier),
         ordered = bl.scale(fontSizeMultiplier), bullet = bl.scale(fontSizeMultiplier), list = bl.scale(fontSizeMultiplier),
+        textLink = proseLinkStyles(chat.linkInline),
     )
 
     val isSearchActive = !searchQuery.isNullOrBlank()
@@ -636,7 +638,7 @@ private fun MarkdownContentBody(
                             modifier = Modifier.padding(vertical = 4.dp),
                         )
                     } else {
-                        ProvideLtr { // TCHAT: code stays left-to-right inside an RTL message
+ProvideLtr { // TCHAT: code stays left-to-right inside an RTL message
                             CodeBlock(
                                 code = segment.code,
                                 language = segment.language,
@@ -645,8 +647,9 @@ private fun MarkdownContentBody(
                                 searchFocusedOccurrence = focusedInSegment,
                                 onFocusedMatchPosition = onFocusedOccurrencePosition,
                                 streaming = streaming,
+                                run = rememberCodeRunTarget(segment, streaming),
                             )
-                        }
+}
                     }
                     if (index < segments.lastIndex) Spacer(modifier = Modifier.height(8.dp))
                 }
@@ -919,13 +922,15 @@ private fun IosMarkdownTableGrid(
     onFocusedMatchPosition: ((LayoutCoordinates, Rect) -> Unit)?,
 ) {
     val isSearchActive = !searchQuery.isNullOrBlank()
-    val textColor = MaterialTheme.colorScheme.onSurface
-    val headerBackground = MaterialTheme.colorScheme.surfaceContainerHigh
-    val dividerColor = MaterialTheme.colorScheme.outlineVariant
+    val chat = chatColors()
+    val textColor = chat.messageText
+    val headerTextColor = chat.onTableHeader
+    val headerBackground = chat.tableHeader
+    val dividerColor = chat.tableBorder
     val cellPaddingV = 8.dp
 
     Box(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).clip(MaterialTheme.shapes.small),
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).clip(themeShapes().table),
     ) {
         Column {
             // Per-cell occurrence base offsets, headers-first then rows row-major — the same order
@@ -952,7 +957,7 @@ private fun IosMarkdownTableGrid(
                 headers.forEachIndexed { colIndex, header ->
                     if (colIndex > 0) VerticalDivider(color = dividerColor, modifier = Modifier.fillMaxHeight())
                     TableCell(
-                        header, headerStyle, textColor, alignments.getOrElse(colIndex) { TableCellAlignment.LEFT },
+                        header, headerStyle, headerTextColor, alignments.getOrElse(colIndex) { TableCellAlignment.LEFT },
                         columnWidths[colIndex], cellPaddingH, cellPaddingV,
                         searchQuery = searchQuery,
                         searchFocusedOccurrence = if (isSearchActive) searchFocusedOccurrence - headerOffsets[colIndex] else -1,
@@ -988,7 +993,7 @@ private fun TableCell(
     searchFocusedOccurrence: Int = -1,
     onFocusedMatchPosition: ((LayoutCoordinates, Rect) -> Unit)? = null,
 ) {
-    val isDarkTheme = isSystemInDarkTheme()
+    val isDarkTheme = isSurfaceDark()
     val display = remember(text, searchQuery, searchFocusedOccurrence, isDarkTheme) {
         if (searchQuery.isNullOrBlank()) {
             text

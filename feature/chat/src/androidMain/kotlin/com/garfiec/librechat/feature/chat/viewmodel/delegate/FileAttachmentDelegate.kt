@@ -8,7 +8,9 @@ import com.garfiec.librechat.core.common.extensions.formatByteSize
 import com.garfiec.librechat.core.common.result.Result
 import com.garfiec.librechat.core.data.pdf.PdfPasswordProtectedException
 import com.garfiec.librechat.core.data.repository.FileRepository
+import com.garfiec.librechat.core.logging.redact.LogRedactor
 import com.garfiec.librechat.core.model.response.UploadRoute
+import com.garfiec.librechat.core.model.response.clientImageResize
 import com.garfiec.librechat.core.model.response.effectiveFileSizeLimit
 import com.garfiec.librechat.core.model.response.toolResource
 import com.garfiec.librechat.feature.chat.components.AttachedFile
@@ -34,6 +36,8 @@ class FileAttachmentDelegate(
     private val appContext: Context,
     private val fileRepository: FileRepository,
     private val ioDispatcher: CoroutineDispatcher,
+    /** Settings › Chat "Resize images before upload"; an admin's `clientImageResize.enabled` wins. */
+    private val clientImageResize: StateFlow<Boolean> = MutableStateFlow(true),
 ) {
 
     private val _attachedFiles = MutableStateFlow<List<AttachedFile>>(emptyList())
@@ -44,6 +48,9 @@ class FileAttachmentDelegate(
 
     /** Job that waits for pending uploads before sending a message. */
     var pendingUploadSendJob: Job? = null
+
+    /** Touched on Main only. A finished job stays until its entry goes; cancelling it is a no-op. */
+    private val uploadJobs = mutableMapOf<Any, Job>()
 
     /**
      * Resolves each picked URI's display name and MIME type from provider metadata alone.
@@ -75,16 +82,26 @@ class FileAttachmentDelegate(
     // debt — LongMethod: 173 lines
     // TooGenericExceptionCaught: upload boundary: any failure marks the attachment failed
     @Suppress("CyclomaticComplexMethod", "LongMethod", "TooGenericExceptionCaught")
-    private fun uploadFile(picked: PickedFile, route: UploadRoute, pdfPassword: String? = null) {
+    private fun uploadFile(
+        picked: PickedFile,
+        route: UploadRoute,
+        pdfPassword: String? = null,
+        /** A retry: the upload takes over this entry's place in the tray rather than appending. */
+        replacing: AttachedFile? = null,
+    ) {
+        // Each pick is its own entry, even one whose Uri is already in the tray: every write below
+        // names the entry, never the Uri, so a file attached twice is two files.
+        val entryId = if (replacing != null) replacing.entryId else UUID.randomUUID().toString()
         val context = appContext
         val contentResolver = context.contentResolver
         val uri = picked.ref as Uri
 
         val filename = picked.name
+        val logName = LogRedactor.redactFileName(filename)
         val preliminaryMimeType = picked.mimeType ?: guessMimeType(filename)
         val isImage = preliminaryMimeType.startsWith("image/")
 
-        Logger.d { "uploadFile: uri=$uri, filename=$filename, preliminaryMimeType=$preliminaryMimeType, isImage=$isImage" }
+        Logger.d { "uploadFile: $logName, preliminaryMimeType=$preliminaryMimeType, isImage=$isImage" }
 
         // Add to the pending list with "uploading" state
         val pendingFile = AttachedFile(
@@ -94,28 +111,32 @@ class FileAttachmentDelegate(
             uploadProgress = null,
             type = preliminaryMimeType,
             route = route,
+            entryId = entryId,
         )
+        val key = pendingFile.key
 
-        _attachedFiles.update { currentList -> currentList + pendingFile }
+        _attachedFiles.update { currentList ->
+            if (replacing != null) currentList.updateEntry(key) { pendingFile } else currentList + pendingFile
+        }
 
-        handle.scope.launch(ioDispatcher) {
+        uploadJobs[key] = handle.scope.launch(ioDispatcher) {
             try {
                 // Read file bytes
                 val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 if (bytes == null) {
-                    Logger.e { "uploadFile: could not read bytes from URI: $uri" }
-                    markUploadFailed(uri)
+                    Logger.e { "uploadFile: could not read bytes from $logName" }
+                    markUploadFailed(key)
                     handle.setError(ChatNotice.UPLOAD_UNREADABLE.marker(filename))
                     return@launch
                 }
 
-                Logger.d { "uploadFile: read ${bytes.size} bytes from $filename" }
+                Logger.d { "uploadFile: read ${bytes.size} bytes from $logName" }
 
                 // Detect actual MIME type from file content magic bytes.
                 val detectedMimeType = detectMimeTypeFromBytes(bytes)
                 var mimeType = if (detectedMimeType != null && detectedMimeType != preliminaryMimeType) {
                     Logger.w {
-                        "uploadFile: MIME type mismatch for $filename -- ContentResolver " +
+                        "uploadFile: MIME type mismatch for $logName -- ContentResolver " +
                             "reported '$preliminaryMimeType' but actual content is '$detectedMimeType'. Using detected type."
                     }
                     detectedMimeType
@@ -146,7 +167,8 @@ class FileAttachmentDelegate(
                 var imageHeight: Int? = null
                 val actualIsImage = mimeType.startsWith("image/")
                 if (actualIsImage) {
-                    val processed = processImageForUpload(bytes, mimeType, maxEncodedBytes = sizeLimit)
+                    val resize = state.fileUploadConfig.clientImageResize(clientImageResize.value).limits
+                    val processed = processImageForUpload(bytes, mimeType, maxEncodedBytes = sizeLimit, resize = resize)
                     if (processed != null) {
                         if (processed.reEncoded) {
                             Logger.d {
@@ -165,8 +187,8 @@ class FileAttachmentDelegate(
                 // with a clear message instead of after a long upload the server rejects. Fires for
                 // non-images and for images the re-encode couldn't shrink under the limit.
                 if (sizeLimit != null && uploadBytes.size > sizeLimit) {
-                    Logger.w { "uploadFile: $filename is ${uploadBytes.size} bytes, over server limit of $sizeLimit" }
-                    markUploadFailed(uri)
+                    Logger.w { "uploadFile: $logName is ${uploadBytes.size} bytes, over server limit of $sizeLimit" }
+                    markUploadFailed(key)
                     // State only the limit — not the file's own size. The limit is the actionable
                     // number, and rounding both to the same MB precision could otherwise print a
                     // self-contradictory "X MB is larger than the X MB limit".
@@ -176,38 +198,34 @@ class FileAttachmentDelegate(
 
                 // Rename the file extension to match the detected/re-encoded MIME type.
                 val uploadFilename = fixFilenameExtension(filename, mimeType)
+                val uploadLogName = LogRedactor.redactFileName(uploadFilename)
                 if (uploadFilename != filename) {
-                    Logger.d { "uploadFile: renamed file from '$filename' to '$uploadFilename' to match MIME type '$mimeType'" }
+                    Logger.d {
+                        "uploadFile: renamed file from $logName to $uploadLogName " +
+                            "to match MIME type '$mimeType'"
+                    }
                 }
 
                 // The route was chosen from the picker's provisional MIME type. If reading the
                 // bytes revealed an image, force the provider path: the text path stamps
                 // `source: text`, and the server's attachment pass short-circuits on that BEFORE
                 // its image branch, so the model would receive no image at all.
-                val effectiveRoute = if (actualIsImage) UploadRoute.PROVIDER else route
+                // The code environment takes an image as a file, as picked.
+                val effectiveRoute = if (actualIsImage && route != UploadRoute.CODE) UploadRoute.PROVIDER else route
 
                 val needsTypeUpdate = mimeType != preliminaryMimeType
                 val needsNameUpdate = uploadFilename != filename
                 if (needsTypeUpdate || needsNameUpdate || effectiveRoute != route) {
                     val isImageType = mimeType.startsWith("image/")
                     _attachedFiles.update { currentList ->
-                        currentList.map { f ->
-                            if (f.uri == uri) {
-                                f.copy(
-                                    type = mimeType,
-                                    isImage = isImageType,
-                                    name = uploadFilename,
-                                    route = effectiveRoute,
-                                )
-                            } else {
-                                f
-                            }
+                        currentList.updateEntry(key) { f ->
+                            f.copy(type = mimeType, isImage = isImageType, name = uploadFilename, route = effectiveRoute)
                         }
                     }
                 }
 
                 if (actualIsImage) {
-                    Logger.d { "uploadFile: image dimensions ${imageWidth}x$imageHeight for $uploadFilename" }
+                    Logger.d { "uploadFile: image dimensions ${imageWidth}x$imageHeight for $uploadLogName" }
                 }
 
                 // Generate a UUID for the file_id -- the backend requires this field
@@ -219,7 +237,7 @@ class FileAttachmentDelegate(
                 Logger.d {
                     "uploadFile: sending to server -- fileId=$fileId, endpoint=${state.selectedEndpoint}, " +
                         "model=${state.selectedModel}, isAgent=$isAgent, mimeType=$mimeType, " +
-                        "filename=$uploadFilename, route=$effectiveRoute (requested=$route), " +
+                        "filename=$uploadLogName, route=$effectiveRoute (requested=$route), " +
                         "agentProvider=${state.selectedAgentProvider}, " +
                         "endpointType=${state.endpointConfigs[state.selectedEndpoint]?.type}"
                 }
@@ -235,32 +253,31 @@ class FileAttachmentDelegate(
                     messageFile = true,
                     width = imageWidth,
                     height = imageHeight,
-                    onProgress = { pct -> updateFileProgress(uri, pct) },
+                    onProgress = { pct -> updateFileProgress(key, pct) },
                     pdfPassword = pdfPassword,
+                    conversationId = state.conversationId,
+                    isTemporary = state.isTemporaryChat,
                 )
 
                 when (result) {
                     is Result.Success -> {
                         val fileObject = result.data
                         Logger.d {
-                            "uploadFile: success -- serverFileId=${fileObject.fileId}, filepath=${fileObject.filepath}, " +
+                            "uploadFile: success -- serverFileId=${fileObject.fileId}, " +
+                                "filepath=${LogRedactor.redactFileName(fileObject.filepath)}, " +
                                 "type=${fileObject.type}, ${fileObject.width}x${fileObject.height}"
                         }
                         // Atomically update the attached file with server data
                         _attachedFiles.update { currentList ->
-                            currentList.map { f ->
-                                if (f.uri == uri) {
-                                    f.copy(
-                                        uploadProgress = 1f,
-                                        fileId = fileObject.fileId,
-                                        filepath = fileObject.filepath,
-                                        type = fileObject.type,
-                                        width = fileObject.width,
-                                        height = fileObject.height,
-                                    )
-                                } else {
-                                    f
-                                }
+                            currentList.updateEntry(key) { f ->
+                                f.copy(
+                                    uploadProgress = 1f,
+                                    fileId = fileObject.fileId,
+                                    filepath = fileObject.filepath,
+                                    type = fileObject.type,
+                                    width = fileObject.width,
+                                    height = fileObject.height,
+                                )
                             }
                         }
                     }
@@ -270,25 +287,16 @@ class FileAttachmentDelegate(
                             // Not an error to show: the chip waits while the UI asks for the password.
                             // It stays pending, not failed, so a send parked on the upload gate
                             // keeps waiting for the answer instead of going out without the PDF.
-                            updateFileProgress(uri, null)
-                            pdfPrompts.add(PdfPasswordPrompt(uri, picked, locked.incorrectPassword))
+                            updateFileProgress(key, null)
+                            pdfPrompts.add(PdfPasswordPrompt(key, picked, locked.incorrectPassword))
                             return@launch
                         }
                         Logger.e(result.exception) { "uploadFile: server error -- ${result.message}" }
-                        // Atomically mark failed and remove from list in one update
-                        _attachedFiles.update { currentList ->
-                            currentList.map { f ->
-                                if (f.uri == uri) {
-                                    f.copy(uploadFailed = true, uploadProgress = null)
-                                } else {
-                                    f
-                                }
-                            }
-                        }
+                        markUploadFailed(key)
                         handle.setError(ChatNotice.uploadFailed(filename, result.message))
                     }
                     is Result.Loading -> {
-                        Logger.w { "uploadFile: unexpected Result.Loading received for $filename" }
+                        Logger.w { "uploadFile: unexpected Result.Loading received for $logName" }
                     }
                 }
             } catch (e: CancellationException) {
@@ -296,44 +304,37 @@ class FileAttachmentDelegate(
                 // upload as failed (matches safeApiCall behavior in core/common).
                 throw e
             } catch (e: Exception) {
-                Logger.e(e) { "uploadFile: unexpected exception for $filename" }
-                markUploadFailed(uri)
+                Logger.e(e) { "uploadFile: unexpected exception for $logName" }
+                markUploadFailed(key)
                 handle.setError(ChatNotice.uploadFailed(filename, e.message))
             }
         }
     }
 
-    private fun updateFileProgress(uri: Uri, progress: Float?) {
-        _attachedFiles.update { currentList ->
-            currentList.map { f ->
-                if (f.uri == uri) f.copy(uploadProgress = progress) else f
-            }
-        }
+    private fun updateFileProgress(key: Any, progress: Float?) {
+        _attachedFiles.update { it.updateEntry(key) { f -> f.copy(uploadProgress = progress) } }
     }
 
-    private fun markUploadFailed(uri: Uri) {
-        _attachedFiles.update { currentList ->
-            currentList.map { f ->
-                if (f.uri == uri) f.copy(uploadFailed = true, uploadProgress = null) else f
-            }
-        }
+    private fun markUploadFailed(key: Any) {
+        _attachedFiles.update { it.updateEntry(key) { f -> f.copy(uploadFailed = true, uploadProgress = null) } }
     }
 
     fun removeFile(file: AttachedFile) {
-        pdfPrompts.remove(file.uri)
-        _attachedFiles.update { currentList -> currentList.filter { it.uri != file.uri } }
+        pdfPrompts.remove(file.key)
+        uploadJobs.remove(file.key)?.cancel()
+        _attachedFiles.update { currentList -> currentList.filter { it.key != file.key } }
     }
 
+    /** Keeps the file's route while the live selection still offers it (`ChatUiState.retryUploadRoute`). */
     fun retryUpload(file: AttachedFile) {
-        pdfPrompts.remove(file.uri)
-        _attachedFiles.update { currentList -> currentList.filter { it.uri != file.uri } }
-        // Re-resolve the route rather than replaying `file.route`: a retry is a fresh upload
-        // against whatever is selected NOW, and the user may well have switched models precisely
-        // because the first attempt failed. Replaying it would send a route decided under the old
-        // provider — e.g. a PDF chosen as native under Bedrock, retried against a provider that
-        // cannot read PDFs, silently ignored.
-        val route = handle.state.uploadRouteFor(file.type)
-        uploadFile(PickedFile(ref = file.uri, name = file.name, mimeType = file.type), route)
+        pdfPrompts.remove(file.key)
+        uploadJobs.remove(file.key)?.cancel()
+        val route = handle.state.retryUploadRoute(file.route, file.type)
+        uploadFile(PickedFile(ref = file.uri, name = file.name, mimeType = file.type), route, replacing = file)
+    }
+
+    fun insertAt(index: Int, file: AttachedFile) {
+        _attachedFiles.update { it.insertedAt(index, file) }
     }
 
     /**
@@ -344,10 +345,11 @@ class FileAttachmentDelegate(
         _attachedFiles.awaitUploadsThenSend(text, setError = handle::setError, doSend = doSend)
 
     fun hasPendingUploads(): Boolean =
-        _attachedFiles.value.any { it.fileId == null && !it.uploadFailed }
+        _attachedFiles.value.any { it.isUploading }
 
     fun clearAttachedFiles() {
         pdfPrompts.clear()
+        uploadJobs.clear()
         _attachedFiles.update { emptyList() }
     }
 
@@ -358,15 +360,15 @@ class FileAttachmentDelegate(
 
     fun submitPdfPassword(prompt: PdfPasswordPrompt, password: String) {
         if (!pdfPrompts.take(prompt)) return
-        val uri = prompt.chipKey as Uri
-        _attachedFiles.update { currentList -> currentList.filter { it.uri != uri } }
-        // Routed against the live selection, as a retry is (see retryUpload).
-        uploadFile(prompt.file, handle.state.uploadRouteFor(prompt.file.mimeType), pdfPassword = password)
+        val stored = _attachedFiles.value.firstOrNull { it.key == prompt.chipKey }?.route
+        _attachedFiles.update { currentList -> currentList.filter { it.key != prompt.chipKey } }
+        // Keeps the chip's route while the live selection still offers it, as a retry does.
+        uploadFile(prompt.file, handle.state.retryUploadRoute(stored, prompt.file.mimeType), pdfPassword = password)
     }
 
     fun dismissPdfPassword() {
         val prompt = pdfPrompts.takeHead() ?: return
-        _attachedFiles.update { currentList -> currentList.filter { it.uri != prompt.chipKey } }
+        _attachedFiles.update { currentList -> currentList.filter { it.key != prompt.chipKey } }
     }
 
     fun addPreUploadedFiles(files: List<AttachedFile>) {

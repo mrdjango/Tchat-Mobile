@@ -15,6 +15,7 @@ import com.garfiec.librechat.core.model.StreamEvent
 import com.garfiec.librechat.core.model.User
 import com.garfiec.librechat.core.model.content.AgentToolCall
 import com.garfiec.librechat.core.model.content.MessageContentPart
+import com.garfiec.librechat.core.model.mcp.McpDisplayStatus
 import com.garfiec.librechat.core.model.permissions.UserRolePermissions
 import com.garfiec.librechat.core.model.response.ChatStatusResponse
 import com.garfiec.librechat.core.model.response.SkillListResponse
@@ -22,7 +23,11 @@ import com.garfiec.librechat.feature.chat.components.SKILL_TOOL_NAME
 import com.garfiec.librechat.feature.chat.components.parsePickerQuery
 import com.garfiec.librechat.feature.chat.components.pendingSkillRows
 import com.garfiec.librechat.feature.chat.model.ComposerPickerItem
+import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
+import com.garfiec.librechat.feature.chat.model.PickerMcpServer
 import com.garfiec.librechat.feature.chat.model.PickerSkill
+import com.garfiec.librechat.feature.chat.util.ModelPick
+import com.garfiec.librechat.feature.chat.util.PickerModel
 import com.garfiec.librechat.feature.chat.viewmodel.delegate.PlatformFileHandler
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
@@ -47,7 +52,7 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * The composer's combined `/` + `$` picker on the skill side: the lazy catalog load, what a skill
+ * The composer's `/` and `$` picker on the skill side: the lazy catalog load, what a skill
  * pick does to the composer, and a streamed turn whose final message gains its skill cards at the
  * front. Driven through the real ViewModel.
  */
@@ -134,6 +139,18 @@ class ChatViewModelSkillPickerTest {
         // The override turns id-off off; the shared skill is off by default; the page-2 skill
         // is the user's own and on.
         assertThat(vm.uiState.value.pickerSkills.map { it.name }).containsExactly("pdf-tools", "brand-voice").inOrder()
+    }
+
+    @Test
+    fun `the prompt scope loads no skills, the skill scope does`() = pickerTest { vm ->
+        vm.onInputChanged("/prompt ")
+        vm.onInputChanged("/prompt summ arize")
+        runCurrent()
+        coVerify(exactly = 0) { fixture.skillsRepository.listSkills(any(), any(), any(), any()) }
+
+        vm.onInputChanged("/skill ")
+        runCurrent()
+        coVerify(exactly = 1) { fixture.skillsRepository.listSkills(any(), any(), any(), null) }
     }
 
     @Test
@@ -271,7 +288,7 @@ class ChatViewModelSkillPickerTest {
 
     @Test
     fun `a restored draft that opens the picker loads the catalog with no keystroke`() {
-        coEvery { fixture.draftRepository.awaitDraft(any()) } returns "\$pd"
+        coEvery { fixture.draftRepository.awaitDraft("conv-1") } returns "\$pd"
         pickerTest(conversationId = "conv-1") { vm ->
             assertThat(vm.uiState.value.inputText).isEqualTo("\$pd")
             coVerify(exactly = 1) { fixture.skillsRepository.listSkills(any(), any(), any(), null) }
@@ -455,13 +472,66 @@ class ChatViewModelSkillPickerTest {
     }
 
     @Test
-    fun `a prompt pick from either trigger does what slash always did`() = pickerTest { vm ->
-        vm.onInputChanged("\$fir")
+    fun `a skill pick from the skill scope clears the command and its spaced query`() = pickerTest { vm ->
+        vm.onInputChanged("/skill pdf to")
+        runCurrent()
+        vm.selectPickerItem(ComposerPickerItem.Skill(PickerSkill(name = "pdf-tools", title = "PDF tools", description = null)))
+        runCurrent()
+
+        assertThat(vm.uiState.value.inputText).isEmpty()
+        assertThat(vm.uiState.value.pendingManualSkills).containsExactly("pdf-tools")
+    }
+
+    @Test
+    fun `a prompt pick from the prompt scope does what slash always did`() = pickerTest { vm ->
+        vm.onInputChanged("/prompt fir")
         runCurrent()
         vm.selectPickerItem(ComposerPickerItem.Prompt(vm.uiState.value.availablePrompts.single()))
         runCurrent()
         assertThat(vm.uiState.value.inputText).isEqualTo("body of First")
         assertThat(vm.uiState.value.pendingManualSkills).isEmpty()
+    }
+
+    @Test
+    fun `an MCP pick clears the command and switches the server, a sign-in pick only clears`() = pickerTest { vm ->
+        fun pick(status: McpDisplayStatus, on: Boolean) = ComposerPickerItem.Mcp(
+            PickerMcpServer(McpServerDisplayData("github", "GitHub", null, status), on = on, locked = false),
+        )
+        vm.onInputChanged("/mcp git hub")
+        runCurrent()
+        vm.selectPickerItem(pick(McpDisplayStatus.CONNECTED, on = false))
+        runCurrent()
+        assertThat(vm.uiState.value.inputText).isEmpty()
+        assertThat(vm.uiState.value.effectiveMcpServerNames).containsExactly("github")
+
+        vm.onInputChanged("/mcp git")
+        vm.selectPickerItem(pick(McpDisplayStatus.CONNECTED, on = true))
+        runCurrent()
+        assertThat(vm.uiState.value.effectiveMcpServerNames).isEmpty()
+
+        vm.onInputChanged("/mcp git")
+        vm.selectPickerItem(pick(McpDisplayStatus.NEEDS_SIGN_IN, on = false))
+        runCurrent()
+        assertThat(vm.uiState.value.inputText).isEmpty()
+        assertThat(vm.uiState.value.effectiveMcpServerNames).isEmpty()
+    }
+
+    @Test
+    fun `a model pick clears the command and switches the model, a key pick only clears`() = pickerTest { vm ->
+        fun pick(pick: ModelPick) = ComposerPickerItem.Model(
+            PickerModel("k", "m", null, null, null, selected = false, starred = false, keyHint = null, pick = pick),
+        )
+        vm.onInputChanged("/model mini")
+        vm.selectPickerItem(pick(ModelPick.Raw("openAI", "gpt-4o-mini")))
+        runCurrent()
+        assertThat(vm.uiState.value.inputText).isEmpty()
+        assertThat(vm.uiState.value.selectedModel).isEqualTo("gpt-4o-mini")
+
+        vm.onInputChanged("/model fast")
+        vm.selectPickerItem(pick(ModelPick.AddKey("anthropic")))
+        runCurrent()
+        assertThat(vm.uiState.value.inputText).isEmpty()
+        assertThat(vm.uiState.value.selectedModel).isEqualTo("gpt-4o-mini")
     }
 
     // ─── the streamed turn ───────────────────────────────────────────

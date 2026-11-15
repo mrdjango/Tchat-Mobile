@@ -1,6 +1,7 @@
 package com.garfiec.librechat.feature.chat.viewmodel.delegate
 
 import co.touchlab.kermit.Logger
+import com.garfiec.librechat.core.common.ToolConstants
 import com.garfiec.librechat.core.data.datastore.SettingsDataStore
 import com.garfiec.librechat.core.data.datastore.UploadRoutingMode
 import com.garfiec.librechat.core.model.FileObject
@@ -41,17 +42,27 @@ class UploadIntakeDelegate(
     private val awaitAgentProvider: suspend () -> Unit,
     /** The exposed `uiState`'s server URL; the source state never carries it (see `ChatViewModel.uiState`). */
     private val serverUrl: () -> String,
+    /** Turns a tool on for a file routed to it: `ChatViewModel.turnOnToolForUpload`. */
+    private val turnOnToolForUpload: (String) -> Unit = {},
 ) {
 
     /**
      * Runs [action] once any pending file uploads have finished, guarding against a double-send
      * while a previous wait is still in flight. Shared by the live-send and queue paths so the
      * upload-wait semantics live in one place.
+     *
+     * A failed upload holds it, checked before the wait and again after it, since the wait treats a
+     * failure as settled. The steer re-home and an MCP App's message must not pass here: neither
+     * sends the composer's files.
      */
     fun withUploadGate(text: String, action: (String) -> Unit) {
         if (fileHandler.pendingUploadSendJob?.isActive == true) return
         if (hasUnsettledPicks()) {
             Logger.d { "withUploadGate: refusing send — picked files are not settled yet" }
+            return
+        }
+        if (fileHandler.hasFailedUploads()) {
+            Logger.d { "withUploadGate: holding send — an attachment failed to upload" }
             return
         }
         if (fileHandler.hasPendingUploads()) {
@@ -65,6 +76,10 @@ class UploadIntakeDelegate(
                         // Clear before handing off so the button never shows a spinner over an
                         // already-started send (the success path may set streaming synchronously).
                         setAwaitingUploadSend(false)
+                        if (fileHandler.hasFailedUploads()) {
+                            Logger.d { "withUploadGate: holding send — an upload failed while it waited" }
+                            return@waitForUploadsAndSend
+                        }
                         action(ready)
                     }
                 } finally {
@@ -140,6 +155,15 @@ class UploadIntakeDelegate(
         }
     }
 
+    /**
+     * "Upload to Code Environment" (legacy upload UX): every pick goes to the code environment as
+     * picked, with no routing and no sheet; the user chose the destination.
+     */
+    fun intakeCodeFiles(platformRefs: List<Any>) {
+        val routed = fileHandler.describe(platformRefs).map { RoutedFile(it, UploadRoute.CODE) }
+        if (routed.isNotEmpty()) fileHandler.onFilesSelected(routed)
+    }
+
     private fun changeResolvingPicks(delta: Int) {
         handle.update { resolvingPickCount = (resolvingPickCount + delta).coerceAtLeast(0) }
     }
@@ -161,7 +185,7 @@ class UploadIntakeDelegate(
             PendingUploadFile(
                 file = file,
                 route = state.uploadRouteFor(file.mimeType),
-                choosable = state.uploadRouteIsAmbiguous(file.mimeType),
+                routes = state.uploadRoutesFor(file.mimeType),
             )
         }
         if (staged.none { it.choosable }) {
@@ -193,16 +217,16 @@ class UploadIntakeDelegate(
         updatePendingRouting { pending ->
             pending.copy(
                 files = pending.files.mapIndexed { i, staged ->
-                    if (i == index && staged.choosable) staged.copy(route = route) else staged
+                    if (i == index && route in staged.routes) staged.copy(route = route) else staged
                 },
             )
         }
     }
 
-    /** Applies [route] to every staged file that has a choice — the sheet's "apply to all". */
+    /** Applies [route] to every staged file that may take it — the sheet's "apply to all". */
     fun setAllPendingUploadRoutes(route: UploadRoute) {
         updatePendingRouting { pending ->
-            pending.copy(files = pending.files.map { if (it.choosable) it.copy(route = route) else it })
+            pending.copy(files = pending.files.map { if (route in it.routes) it.copy(route = route) else it })
         }
     }
 
@@ -212,24 +236,22 @@ class UploadIntakeDelegate(
         clearPendingUploadRouting()
         val state = handle.state
         val now = state.uploadRoutingContext()
-        val routed = if (now == pending.context) {
-            pending.files.map { RoutedFile(it.file, it.route) }
-        } else {
-            // The sheet is a window in which the selection can move under the user — a models/
-            // config refresh corrects an invalidated selection, a conversation load re-seeds it,
-            // and the scrim blocks neither. Honour each choice only where it is still one of two
-            // real options; otherwise take what auto would pick against the selection that will
-            // actually receive the upload.
-            Logger.d { "confirmPendingUploadRouting: selection moved from ${pending.context} to $now" }
-            pending.files.map { staged ->
-                val route = if (state.uploadRouteIsAmbiguous(staged.file.mimeType)) {
-                    staged.route
-                } else {
-                    state.uploadRouteFor(staged.file.mimeType)
-                }
-                RoutedFile(staged.file, route)
+        // The sheet is a window in which the selection can move under the user — a models/config
+        // refresh corrects an invalidated selection, a conversation load re-seeds it, and the scrim
+        // blocks neither. Honour each choice only where it is still a real option; otherwise take
+        // what auto would pick against the selection that will actually receive the upload. The
+        // context doesn't capture whether file search is still offered, so that is checked apart.
+        val moved = now != pending.context
+        if (moved) Logger.d { "confirmPendingUploadRouting: selection moved from ${pending.context} to $now" }
+        val routed = pending.files.map { staged ->
+            val kept = if (moved) {
+                staged.route in state.uploadRoutesFor(staged.file.mimeType)
+            } else {
+                staged.route != UploadRoute.FILE_SEARCH || state.fileSearchUploadOffered
             }
+            RoutedFile(staged.file, if (kept) staged.route else state.uploadRouteFor(staged.file.mimeType))
         }
+        if (routed.any { it.route == UploadRoute.FILE_SEARCH }) turnOnToolForUpload(ToolConstants.FILE_SEARCH)
         fileHandler.onFilesSelected(routed)
     }
 
@@ -260,21 +282,41 @@ class UploadIntakeDelegate(
         if (routed.isNotEmpty()) fileHandler.onFilesSelected(routed)
     }
 
-    fun removeFile(file: AttachedFile) = fileHandler.removeFile(file)
+    /** Entries ([AttachedFile.key]) whose [retryUpload] is waiting on the agent's provider. Touched on the main dispatcher only. */
+    private val pendingRetries = mutableSetOf<Any>()
 
     /**
-     * Re-uploads a failed attachment. Resolves the agent's provider first, exactly as the intake
-     * path does: the handler re-derives the route from the live selection, and a retry is the one
-     * action a user takes *after* a failure — the same outage that failed the upload will often
-     * have failed the provider fetch, and routing against an unresolved provider silently sends
-     * every document down the provider path.
+     * Resolves the agent's provider first, as the intake path does. After that wait it goes ahead only
+     * while the same composer still holds the file as failed: a removed file's Undo would otherwise put
+     * back a second copy, and a tray swapped to a queued edit must not gain it.
      */
     fun retryUpload(file: AttachedFile) {
+        if (!isFailedInTray(file) || !pendingRetries.add(file.key)) return
+        val retryFor = handle.state.composer.editingQueuedItem
         handle.scope.launch {
-            awaitAgentProvider()
-            fileHandler.retryUpload(file)
+            try {
+                awaitAgentProvider()
+                if (handle.state.composer.editingQueuedItem != retryFor || !isFailedInTray(file)) {
+                    Logger.d { "retryUpload: dropped — the failed file left the tray while the provider resolved" }
+                    return@launch
+                }
+                turnOnFileSearchForRetry(file.route, file.type)
+                fileHandler.retryUpload(file)
+            } finally {
+                pendingRetries.remove(file.key)
+            }
         }
     }
+
+    /** A retry or password resubmit that keeps a file search route turns the tool back on, as the first upload did. */
+    private fun turnOnFileSearchForRetry(stored: UploadRoute?, mimeType: String?) {
+        if (handle.state.retryUploadRoute(stored, mimeType) == UploadRoute.FILE_SEARCH) {
+            turnOnToolForUpload(ToolConstants.FILE_SEARCH)
+        }
+    }
+
+    private fun isFailedInTray(file: AttachedFile): Boolean =
+        fileHandler.attachedFiles.value.any { it.key == file.key && it.uploadFailed }
 
     /** Re-uploads the prompted PDF with its password; routed like [retryUpload], for the same reason. */
     fun submitPdfPassword(password: String) {
@@ -283,6 +325,10 @@ class UploadIntakeDelegate(
         val prompt = fileHandler.pdfPasswordPrompts.value.firstOrNull() ?: return
         handle.scope.launch {
             awaitAgentProvider()
+            if (prompt in fileHandler.pdfPasswordPrompts.value) {
+                val stored = fileHandler.attachedFiles.value.firstOrNull { it.key == prompt.chipKey }?.route
+                turnOnFileSearchForRetry(stored, prompt.file.mimeType)
+            }
             fileHandler.submitPdfPassword(prompt, password)
         }
     }

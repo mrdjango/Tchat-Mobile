@@ -16,6 +16,7 @@ actual val chatPlatformModule: Module = module {
             fileRepository = get(),
             speechRepository = get(),
             settingsDataStore = get(),
+            preferenceStore = get(),
             ioDispatcher = get(KoinQualifiers.IO),
         )
     }
@@ -47,7 +48,9 @@ actual val chatPlatformModule: Module = module {
             configRepository = get(),
             conversationRepository = get(),
             endpointTokenRepository = get(),
+            reasoningCapabilitiesRepository = get(),
             draftRepository = get(),
+            localQueueStash = get(),
             favoritesRepository = get(),
             keyRepository = get(),
             presetRepository = get(),
@@ -64,6 +67,10 @@ actual val chatPlatformModule: Module = module {
             memoryRepository = get(),
             webSearchReadiness = get(),
             conversationWebSearchStore = get(),
+            codeEnvironmentRepository = get(),
+            codeWorkspacePreferenceStore = get(),
+            pullRequestRepository = get(),
+            codeRunRepository = get(),
             permissionGate = get(),
             connectivityObserver = get(),
             activeAccountProvider = get(),
@@ -80,6 +87,7 @@ actual val chatPlatformModule: Module = module {
             tchatSettingsStore = get(), // TCHAT
             preferenceStore = get(),
             resumePinStore = get(),
+            replyWatchScheduler = get(),
         )
     }
 }

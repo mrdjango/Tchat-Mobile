@@ -6,7 +6,9 @@ import kotlinx.serialization.Serializable
 /**
  * Compare's second model (`addedConvo`). The sampling fields carry lane B's spec preset, flat, as
  * the server reads them (`packages/api/src/agents/added.ts`). v0.8.8 applies them only when the
- * primary is a saved agent. Unset fields are left off the wire.
+ * primary is a saved agent. [promptPrefix] becomes the lane's instructions whatever the primary
+ * is. Each spelling is copied as the preset holds it (`added.ts` reads all of them). Unset fields are
+ * left off the wire.
  */
 @Serializable
 data class AddedConversation(
@@ -20,11 +22,14 @@ data class AddedConversation(
     val model: String? = null,
     val modelLabel: String? = null,
     val spec: String? = null,
+    val promptPrefix: String? = null,
     val temperature: Double? = null,
-    @SerialName("top_p") val topP: Double? = null,
+    @SerialName("top_p") val topPSnake: Double? = null,
+    @SerialName("topP") val topPCamel: Double? = null,
     val topK: Int? = null,
     @SerialName("presence_penalty") val presencePenalty: Double? = null,
     @SerialName("frequency_penalty") val frequencyPenalty: Double? = null,
     val maxOutputTokens: Int? = null,
-    @SerialName("max_tokens") val maxTokens: Int? = null,
+    @SerialName("max_tokens") val maxTokensSnake: Int? = null,
+    @SerialName("maxTokens") val maxTokensCamel: Int? = null,
 )

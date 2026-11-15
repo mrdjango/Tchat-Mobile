@@ -8,8 +8,9 @@ import com.garfiec.librechat.core.common.result.safeApiCall
 import com.garfiec.librechat.core.common.result.suspendRunCatching
 import com.garfiec.librechat.core.data.datastore.AccountRoster
 import com.garfiec.librechat.core.model.User
+import com.garfiec.librechat.core.model.auth.RequestEmailChangeRequest
 import com.garfiec.librechat.core.model.request.ResendVerificationRequest
-import com.garfiec.librechat.core.model.request.VerifyEmailRequest
+import com.garfiec.librechat.core.model.request.UserPreferencesRequest
 import com.garfiec.librechat.core.model.response.TermsAcceptResponse
 import com.garfiec.librechat.core.model.response.TermsResponse
 import com.garfiec.librechat.core.network.api.UserApi
@@ -40,8 +41,9 @@ class UserRepositoryImpl(
         return result
     }
 
-    override suspend fun verifyEmail(token: String): Result<Unit> = safeApiCall {
-        userApi.verifyEmail(VerifyEmailRequest(token = token))
+    override suspend fun requestEmailChange(newEmail: String, currentPassword: String): Result<Unit> = safeApiCall {
+        userApi.requestEmailChange(RequestEmailChangeRequest(currentPassword = currentPassword, newEmail = newEmail))
+        Unit
     }
 
     override suspend fun resendVerification(email: String): Result<Unit> = safeApiCall {
@@ -50,6 +52,10 @@ class UserRepositoryImpl(
 
     override suspend fun getTerms(): Result<TermsResponse> = safeApiCall {
         userApi.getTerms()
+    }
+
+    override suspend fun setStatefulCodeEnvironment(scope: String): Result<Unit> = safeApiCall {
+        userApi.updatePreferences(UserPreferencesRequest(statefulCodeEnvironment = scope))
     }
 
     override suspend fun acceptTerms(): Result<TermsAcceptResponse> = safeApiCall {

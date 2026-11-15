@@ -220,14 +220,12 @@ class SpecSeedTest {
     }
 
     @Test
-    fun a_stored_spec_is_offered_only_on_its_own_pair() {
-        val specs = ModelSpecs(list = listOf(model("fast", "openAI", "gpt-4.1"), agent("agent_w")))
-        assertEquals("fast", "fast".offeredOn("openAI", "gpt-4.1", specs))
-        assertNull("fast".offeredOn("openAI", "gpt-4o", specs))
-        assertNull("fast".offeredOn("azureOpenAI", "gpt-4.1", specs))
-        assertEquals("agent_w", "agent_w".offeredOn(EndpointConstants.AGENTS, "agent_w", specs))
-        assertNull("gone".offeredOn("openAI", "gpt-4.1", specs))
-        assertNull(null.offeredOn("openAI", "gpt-4.1", specs))
+    fun only_the_spec_refusals_open_the_picker() {
+        assertEquals(true, isSpecRefusal("Invalid model spec"))
+        assertEquals(true, isSpecRefusal("Model spec mismatch"))
+        assertEquals(true, isSpecRefusal("No model spec selected"))
+        assertEquals(false, isSpecRefusal("Illegal model request"))
+        assertEquals(false, isSpecRefusal(null))
     }
 
     @Test
@@ -257,6 +255,16 @@ class SpecSeedTest {
     }
 
     @Test
+    fun a_reopened_lane_b_finds_a_spec_moved_to_another_model_on_its_endpoint() {
+        val careful = model("careful", "openAI", "gpt-5").copy(label = "Careful")
+        val specs = ModelSpecs(list = listOf(careful, model("other", "anthropic", "claude").copy(label = "Careful")))
+
+        assertEquals("careful", specs.laneBSpecFor("openAI", "gpt-4.1", "Careful"))
+        // On another endpoint the label names nothing the server would apply there.
+        assertNull(specs.laneBSpecFor("azureOpenAI", "gpt-4.1", "Careful"))
+    }
+
+    @Test
     fun under_enforce_an_unmatched_lane_b_takes_the_one_spec_on_its_pair() {
         val careful = model("careful-4o", "openAI", "gpt-4o").copy(label = "Careful")
         val enforced = ModelSpecs(
@@ -274,6 +282,28 @@ class SpecSeedTest {
             enforce = true,
         )
         assertNull(twins.laneBSpecFor("openAI", "gpt-4.1", "Same"))
+    }
+
+    @Test
+    fun a_lane_b_sender_equal_to_its_endpoint_display_label_reopens_raw() {
+        // A raw lane on `Acme` saves the endpoint's modelDisplayLabel as its sender, which a spec
+        // labelled "Acme" on the same pair would also save: the sender names no spec.
+        val acme = model("acme-spec", "Acme", "acme-1").copy(label = "Acme")
+        val specs = ModelSpecs(list = listOf(acme))
+
+        assertNull(specs.laneBSpecFor("Acme", "acme-1", "Acme", displayLabel = "Acme"))
+        // A label the endpoint does not display is still the spec's own.
+        assertEquals("acme-spec", specs.laneBSpecFor("Acme", "acme-1", "Acme", displayLabel = "Acme Corp"))
+        assertEquals("acme-spec", specs.laneBSpecFor("Acme", "acme-1", "Acme", displayLabel = null))
+        // Under enforce only a spec lane can have been sent, so the label match stands.
+        val enforced = specs.copy(enforce = true)
+        assertEquals("acme-spec", enforced.laneBSpecFor("Acme", "acme-1", "Acme", displayLabel = "Acme"))
+        // Before the endpoint's config has loaded its label is unknown, so any sender may be it.
+        assertNull(specs.laneBSpecFor("Acme", "acme-1", "Acme", displayLabel = null, displayLabelKnown = false))
+        assertEquals(
+            "acme-spec",
+            enforced.laneBSpecFor("Acme", "acme-1", "Acme", displayLabel = null, displayLabelKnown = false),
+        )
     }
 
     @Test
@@ -314,10 +344,10 @@ class SpecSeedTest {
     }
 
     @Test
-    fun a_full_page_of_agents_hides_no_agent_spec() {
+    fun a_loaded_list_of_100_agents_hides_an_agent_spec_missing_from_it() {
         val specs = ModelSpecs(list = listOf(agent("agent_past_the_page")))
-        val fullPage = List(100) { Agent(id = "agent_$it") }
+        val loaded = List(100) { Agent(id = "agent_$it") }
 
-        assertEquals(listOf("agent_past_the_page"), specs.visibleSpecs(fullPage, agentsLoaded = true).map { it.name })
+        assertEquals(emptyList<String?>(), specs.visibleSpecs(loaded, agentsLoaded = true).map { it.name })
     }
 }

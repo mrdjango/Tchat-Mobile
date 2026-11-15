@@ -4,10 +4,12 @@ import androidx.compose.runtime.Immutable
 import com.garfiec.librechat.core.common.EndpointConstants
 import com.garfiec.librechat.core.common.ToolConstants
 import com.garfiec.librechat.core.model.Agent
+import com.garfiec.librechat.core.model.ArtifactsMode
 import com.garfiec.librechat.core.model.EndpointConfig
 import com.garfiec.librechat.core.model.config.ModelSpec
 import com.garfiec.librechat.core.model.config.ModelSpecs
 import com.garfiec.librechat.core.model.endpoint.KeyState
+import com.garfiec.librechat.core.model.reasoning.ModelReasoning
 import com.garfiec.librechat.core.ui.components.ModelParameters
 import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
 import com.garfiec.librechat.feature.chat.tchat.TchatModelState
@@ -16,6 +18,7 @@ import com.garfiec.librechat.feature.chat.util.forcedMcpServers
 import com.garfiec.librechat.feature.chat.util.forcedTools
 import com.garfiec.librechat.feature.chat.util.presetTools
 import com.garfiec.librechat.feature.chat.util.requiresSpec
+import com.garfiec.librechat.feature.chat.util.specArtifacts
 
 /**
  * Endpoint/model selection, per-request tool + MCP config, model parameters, and the
@@ -65,7 +68,22 @@ data class ModelSelectionState(
      * when the agent has none or the fetch failed.
      */
     val selectedAgentStarters: List<String>? = null,
+    /** The selected agent's model, fetched with [selectedAgentProvider]; null while unresolved. */
+    val selectedAgentModel: String? = null,
+    /** The selected agent's saved reasoning values by key (`reasoning_effort`, `effort`, …). */
+    val selectedAgentReasoning: Map<String, String> = emptyMap(),
+    /**
+     * The OpenRouter reasoning catalog for the endpoint the selection runs on (v0.8.9-rc1), or null
+     * when that endpoint takes none. Its `models` is null while unknown (loading, failed, expired):
+     * no effort is offered then. Written by `ReasoningCatalogDelegate`.
+     */
+    val reasoningCatalog: ReasoningCatalogState? = null,
     val modelParameters: ModelParameters = ModelParameters.DEFAULT,
+    /**
+     * The reopened chat's stored `web_search` is on (web's parameters switch), so the route keeps the
+     * built-in search: a send without it makes the server unset it. Cleared when the control is turned off.
+     */
+    val keepsBuiltInSearch: Boolean = false,
     /** Single source of truth for whether the *standalone* model-selector sheet is open — the
      *  top-bar chip, the comparison dual-pane, and send-block auto-opens. Preflight failures and
      *  readiness timeouts flip this to true so the user sees the sheet with a send-block banner.
@@ -87,6 +105,8 @@ data class ModelSelectionState(
      * conversation maps to. Only sent while `ChatUiState.isSkillsToolAvailable` holds.
      */
     val skillsToggle: Boolean = false,
+    /** The mode the Artifacts toggle sends (Settings, or a long-press on its tile); app-wide. */
+    val artifactsMode: ArtifactsMode = ArtifactsMode.DEFAULT,
     /**
      * Whether the detected backend is v0.8.5+ and therefore accepts the `xhigh`
      * and `max` values in the reasoning-effort and effort dropdowns. False on
@@ -110,17 +130,32 @@ data class ModelSelectionState(
     val toolsHiddenBySpec: Boolean get() = activeSpec?.hideBadgeRow == true
 
     /**
-     * The tools the spec turns on, which can't be turned off here: its tool flags, and under
+     * The tools the spec turns on, which can't be turned off here: its tool flags and artifacts, and under
      * `enforce` its preset's too ([presetTools]). Empty off a spec.
      */
     val lockedTools: Set<String>
         get() {
             val spec = activeSpec ?: return emptySet()
-            return if (modelSpecs.requiresSpec) spec.forcedTools + spec.presetTools else spec.forcedTools
+            val forced = spec.forcedTools + spec.specArtifacts
+            return if (modelSpecs.requiresSpec) forced + spec.presetTools else forced
         }
 
     /** The MCP servers the spec adds, likewise. */
     val lockedMcpServers: Set<String> get() = activeSpec?.forcedMcpServers.orEmpty()
+
+    /**
+     * The [mcpServers] the chat's pickers and chips offer (the server drops the rest from a chat's
+     * selection). Servers the spec pins stay, so their locked chip still draws.
+     */
+    val offeredMcpServers: List<McpServerDisplayData> =
+        if (mcpServers.all { it.chatSelectable }) {
+            mcpServers
+        } else {
+            mcpServers.filter { it.chatSelectable || it.name in lockedMcpServers }
+        }
+
+    /** Listed servers the chat doesn't offer; a stored pick of one stays out of use, as no control can clear it. */
+    private val hiddenMcpServerNames: Set<String> = mcpServers.filterNot { it.chatSelectable }.mapTo(HashSet()) { it.name }
 
     /** What a spec chat starts with on top of the spec's tools: its preset's ([presetTools]). */
     private val initialSpecTools: SpecTools?
@@ -155,7 +190,7 @@ data class ModelSelectionState(
     /** The MCP servers in use, by the same rule as [effectiveTools]. */
     val effectiveMcpServerNames: Set<String>
         get() = if (selectedSpec == null) {
-            selectedMcpServerNames
+            if (hiddenMcpServerNames.isEmpty()) selectedMcpServerNames else selectedMcpServerNames - hiddenMcpServerNames
         } else {
             lockedMcpServers + activeSpecTools?.addedMcp.orEmpty()
         }
@@ -221,3 +256,10 @@ data class ModelSelectionState(
         return current.copy(addedMcp = added)
     }
 }
+
+/** One endpoint's reasoning catalog; [models] is null while it is not known. */
+@Immutable
+data class ReasoningCatalogState(
+    val endpoint: String,
+    val models: Map<String, ModelReasoning>?,
+)

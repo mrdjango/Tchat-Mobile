@@ -1,16 +1,24 @@
 package com.garfiec.librechat.feature.auth.viewmodel
 
+import androidx.lifecycle.SavedStateHandle
 import com.garfiec.librechat.core.common.result.ApiException
 import com.garfiec.librechat.core.common.result.Result
+import com.garfiec.librechat.core.data.datastore.AccountEntry
 import com.garfiec.librechat.core.data.datastore.ServerDataStore
 import com.garfiec.librechat.core.data.datastore.SsoRiskDataStore
 import com.garfiec.librechat.core.data.repository.AccountSwitcher
 import com.garfiec.librechat.core.data.repository.AuthRepository
+import com.garfiec.librechat.core.data.repository.BannerRepository
 import com.garfiec.librechat.core.data.repository.ConfigRepository
 import com.garfiec.librechat.core.data.repository.PendingAddSession
+import com.garfiec.librechat.core.model.Banner
 import com.garfiec.librechat.core.model.LoginOutcome
 import com.garfiec.librechat.core.model.User
+import com.garfiec.librechat.core.model.config.InterfaceConfig
+import com.garfiec.librechat.core.model.config.LdapConfig
+import com.garfiec.librechat.core.model.config.PrivacyPolicyConfig
 import com.garfiec.librechat.core.model.config.StartupConfig
+import com.garfiec.librechat.core.model.config.TermsOfServiceConfig
 import com.garfiec.librechat.core.network.client.CertificateAuthority
 import com.garfiec.librechat.core.network.client.CertificateTrustRegistry
 import com.google.common.truth.Truth.assertThat
@@ -24,6 +32,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -33,6 +42,7 @@ import org.junit.Before
 import org.junit.Test
 import java.io.IOException
 
+@Suppress("LargeClass")
 @OptIn(ExperimentalCoroutinesApi::class)
 class LoginViewModelTest {
 
@@ -46,6 +56,7 @@ class LoginViewModelTest {
         every { currentUrlFlow } returns MutableStateFlow("https://chat.example.com")
     }
     private val certificateTrust = CertificateTrustRegistry()
+    private val bannerRepository = mockk<BannerRepository>()
 
     private val configFlow = MutableStateFlow<StartupConfig?>(null)
 
@@ -58,6 +69,8 @@ class LoginViewModelTest {
         // No add-account flow pending: the VM reads the global config + live server URL.
         every { accountSwitcher.pendingAdd } returns null
         every { ssoRiskDataStore.acknowledged } returns flowOf(false)
+        coEvery { bannerRepository.getBanner() } returns Result.Success(null)
+        coEvery { accountSwitcher.withPendingIdentity<Any?>(any()) } coAnswers { firstArg<suspend () -> Any?>().invoke() }
     }
 
     @After
@@ -65,14 +78,69 @@ class LoginViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createViewModel() = LoginViewModel(
+    private fun createViewModel(savedStateHandle: SavedStateHandle = SavedStateHandle()) = LoginViewModel(
         authRepository = authRepository,
         configRepository = configRepository,
         accountSwitcher = accountSwitcher,
         ssoRiskDataStore = ssoRiskDataStore,
         serverDataStore = serverDataStore,
         certificateTrust = certificateTrust,
+        bannerRepository = bannerRepository,
+        savedStateHandle = savedStateHandle,
     )
+
+    @Test
+    fun `the typed email survives process death and the password does not`() = runTest {
+        val handle = SavedStateHandle()
+        viewModel = createViewModel(handle)
+        viewModel.onEmailChanged("user@example.com")
+        viewModel.onPasswordChanged("password123")
+
+        val restored = createViewModel(handle.restoredAfterProcessDeath())
+        advanceUntilIdle()
+
+        assertThat(restored.uiState.value.email).isEqualTo("user@example.com")
+        assertThat(restored.uiState.value.password).isEmpty()
+        assertThat(handle.keys().map { handle.get<Any>(it) }).doesNotContain("password123")
+    }
+
+    @Test
+    fun `published policy links reach the footer only when safe, resolved against the server`() = runTest {
+        configFlow.value = StartupConfig(
+            interfaceConfig = InterfaceConfig(
+                privacyPolicy = PrivacyPolicyConfig(externalUrl = "javascript:alert(1)"),
+                termsOfService = TermsOfServiceConfig(externalUrl = "/terms"),
+            ),
+        )
+        viewModel = createViewModel()
+        advanceUntilIdle()
+
+        val links = viewModel.uiState.value.policyLinks
+        assertThat(links.privacyPolicyUrl).isNull()
+        assertThat(links.termsOfServiceUrl).isEqualTo("https://chat.example.com/terms")
+
+        configFlow.value = StartupConfig(
+            interfaceConfig = InterfaceConfig(privacyPolicy = PrivacyPolicyConfig(externalUrl = "https://x.example/p")),
+        )
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.policyLinks)
+            .isEqualTo(PolicyLinks(privacyPolicyUrl = "https://x.example/p"))
+    }
+
+    @Test
+    fun `fetches the server config when nothing has loaded it`() = runTest {
+        viewModel = createViewModel()
+        advanceUntilIdle()
+        coVerify(exactly = 1) { configRepository.fetchStartupConfig() }
+    }
+
+    @Test
+    fun `leaves an already-loaded config alone`() = runTest {
+        configFlow.value = StartupConfig()
+        viewModel = createViewModel()
+        advanceUntilIdle()
+        coVerify(exactly = 0) { configRepository.fetchStartupConfig() }
+    }
 
     @Test
     fun `a server trusted through a user-installed CA is noted`() = runTest {
@@ -86,19 +154,44 @@ class LoginViewModelTest {
     }
 
     @Test
-    fun `the add-account flow reads trust for the pending server, not the live one`() = runTest {
+    fun `the add-account flow reads title, address, banner and trust for the pending server, not the live one`() = runTest {
         val pending = mockk<PendingAddSession>(relaxed = true)
         every { pending.serverUrl } returns "https://pending.example.com:8443"
-        every { pending.startupConfig } returns MutableStateFlow(null)
+        every { pending.startupConfig } returns MutableStateFlow(StartupConfig(appTitle = "Pending Chat"))
         every { accountSwitcher.pendingAdd } returns pending
+        configFlow.value = StartupConfig(appTitle = "Live Chat")
+        coEvery { bannerRepository.getBanner() } returns Result.Success(Banner(bannerId = "b1", isPublic = true))
         viewModel = createViewModel()
         certificateTrust.record("chat.example.com", 443, CertificateAuthority.UserInstalled)
         advanceUntilIdle()
+        val state = viewModel.uiState.value
+        assertThat(Triple(state.appTitle, state.serverLabel, state.banner?.bannerId))
+            .isEqualTo(Triple("Pending Chat", "pending.example.com:8443", "b1"))
         assertThat(viewModel.uiState.value.trustedViaUserCa).isFalse()
 
         certificateTrust.record("pending.example.com", 8443, CertificateAuthority.UserInstalled)
         advanceUntilIdle()
         assertThat(viewModel.uiState.value.trustedViaUserCa).isTrue()
+    }
+
+    @Test
+    fun `an account on this server that owes 2FA setup is named on sign-in`() = runTest {
+        coEvery { accountSwitcher.awaitingTwoFactorSetupOn("https://chat.example.com") } returns listOf(
+            AccountEntry(accountId = "a1", serverUrl = "https://chat.example.com", displayLabel = "me@chat", lastActiveAt = 0L),
+        )
+        viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.twoFactorSetupAccounts).isEqualTo("me@chat")
+    }
+
+    @Test
+    fun `no notice when no account on this server owes setup`() = runTest {
+        coEvery { accountSwitcher.awaitingTwoFactorSetupOn(any()) } returns emptyList()
+        viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.twoFactorSetupAccounts).isNull()
     }
 
     @Test
@@ -145,7 +238,7 @@ class LoginViewModelTest {
         viewModel.login()
         advanceUntilIdle()
 
-        assertThat(viewModel.uiState.value.error).isEqualTo("Please enter email and password")
+        assertThat(viewModel.uiState.value.inputError).isEqualTo(LoginInputError.MissingFields)
         assertThat(viewModel.uiState.value.isLoading).isFalse()
     }
 
@@ -158,7 +251,7 @@ class LoginViewModelTest {
         viewModel.login()
         advanceUntilIdle()
 
-        assertThat(viewModel.uiState.value.error).isEqualTo("Please enter email and password")
+        assertThat(viewModel.uiState.value.inputError).isEqualTo(LoginInputError.MissingFields)
     }
 
     @Test
@@ -220,14 +313,14 @@ class LoginViewModelTest {
 
     @Test
     fun `login failure shows error message`() = runTest {
-        coEvery { authRepository.login("user@example.com", "wrong") } returns
+        coEvery { authRepository.login("user@example.com", "wrong-password") } returns
             Result.Error(message = "Invalid credentials")
 
         viewModel = createViewModel()
         advanceUntilIdle()
 
         viewModel.onEmailChanged("user@example.com")
-        viewModel.onPasswordChanged("wrong")
+        viewModel.onPasswordChanged("wrong-password")
         viewModel.login()
         advanceUntilIdle()
 
@@ -237,6 +330,27 @@ class LoginViewModelTest {
         assertThat(state.isLoggedIn).isFalse()
     }
 
+    @Test
+    fun `an unverified-email 422 is its own refusal until the email is edited`() = runTest {
+        coEvery { authRepository.login(any(), any()) } returns Result.Error(
+            exception = ApiException(422, "Email not verified.", serverAuthored = true),
+            message = "Email not verified.",
+        )
+        viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.onEmailChanged("user@example.com")
+        viewModel.onPasswordChanged("password123")
+        viewModel.login()
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.refusal).isEqualTo(AuthRefusal.EmailNotVerified)
+        assertThat(viewModel.uiState.value.emailLoginEnabled).isTrue()
+
+        viewModel.onEmailChanged("other@example.com")
+        assertThat(viewModel.uiState.value.refusal).isNull()
+    }
+
     /**
      * Upstream's `validateEmailLogin` answers `403 {"message": "Email login is not allowed."}` — a
      * LibreChat JSON envelope, so the client flags it server-authored. That is the one 403 that may
@@ -244,7 +358,7 @@ class LoginViewModelTest {
      */
     @Test
     fun `a server-authored 403 hides the email form`() = runTest {
-        coEvery { authRepository.login("user@example.com", "pw") } returns Result.Error(
+        coEvery { authRepository.login("user@example.com", "pass-word") } returns Result.Error(
             exception = ApiException(403, "Email login is not allowed.", serverAuthored = true),
             message = "Email login is not allowed.",
         )
@@ -253,13 +367,13 @@ class LoginViewModelTest {
         advanceUntilIdle()
 
         viewModel.onEmailChanged("user@example.com")
-        viewModel.onPasswordChanged("pw")
+        viewModel.onPasswordChanged("pass-word")
         viewModel.login()
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertThat(state.emailLoginEnabled).isFalse()
-        assertThat(state.error).isEqualTo("Email and password sign-in is disabled on this server.")
+        assertThat(state.refusal).isEqualTo(AuthRefusal.EmailLoginDisabled)
         assertThat(state.offerDiagnosticLog).isFalse()
     }
 
@@ -269,7 +383,7 @@ class LoginViewModelTest {
      */
     @Test
     fun `a 403 that is not LibreChat's keeps the email form`() = runTest {
-        coEvery { authRepository.login("user@example.com", "pw") } returns Result.Error(
+        coEvery { authRepository.login("user@example.com", "pass-word") } returns Result.Error(
             exception = ApiException(403, "Access denied", serverAuthored = false),
             message = "Access denied",
         )
@@ -278,7 +392,7 @@ class LoginViewModelTest {
         advanceUntilIdle()
 
         viewModel.onEmailChanged("user@example.com")
-        viewModel.onPasswordChanged("pw")
+        viewModel.onPasswordChanged("pass-word")
         viewModel.login()
         advanceUntilIdle()
 
@@ -288,10 +402,58 @@ class LoginViewModelTest {
         assertThat(state.offerDiagnosticLog).isTrue()
     }
 
+    @Test
+    fun `login requiring 2FA setup navigates to setup, not the code challenge`() = runTest {
+        coEvery { authRepository.login("user@example.com", "pass-word") } returns
+            Result.Success(LoginOutcome.TwoFactorSetupRequired("setup-token"))
+
+        viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.onEmailChanged("user@example.com")
+        viewModel.onPasswordChanged("pass-word")
+        viewModel.login()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertThat(state.twoFactorSetupTempToken).isEqualTo("setup-token")
+        assertThat(state.twoFactorTempToken).isNull()
+        viewModel.consumeTwoFactorSetupNavigation()
+        assertThat(viewModel.uiState.value.twoFactorSetupTempToken).isNull()
+    }
+
+    /** v0.8.9-rc1: coded, server-authored 403s that are not "email login disabled". */
+    @Test
+    fun `the federated-blocked and tenant 403s keep the form and get their own wording`() = runTest {
+        val bodies = mapOf(
+            """{"code":"TWO_FACTOR_FEDERATED_LOGIN_BLOCKED","message":"Sign in with your identity provider to continue."}""" to
+                AuthRefusal.FederatedBlocked,
+            """{"message":"Tenant context required in strict isolation mode","code":"TENANT_CONTEXT_REQUIRED"}""" to
+                AuthRefusal.TenantRequired,
+        )
+        bodies.forEach { (body, refusal) ->
+            coEvery { authRepository.login("user@example.com", "pass-word") } returns Result.Error(
+                exception = ApiException(403, "server message", body = body, serverAuthored = true),
+                message = "server message",
+            )
+            viewModel = createViewModel()
+            advanceUntilIdle()
+            viewModel.onEmailChanged("user@example.com")
+            viewModel.onPasswordChanged("pass-word")
+            viewModel.login()
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertThat(state.emailLoginEnabled).isTrue()
+            assertThat(state.refusal).isEqualTo(refusal)
+            viewModel.onPasswordChanged("pw2")
+            assertThat(viewModel.uiState.value.refusal).isNull()
+        }
+    }
+
     /** A ban is also a server-authored 403 and must keep the form; `isBanned` is that discriminator. */
     @Test
-    fun `a ban keeps the email form and the server's own message`() = runTest {
-        coEvery { authRepository.login("user@example.com", "pw") } returns Result.Error(
+    fun `a ban keeps the email form and gets its own wording`() = runTest {
+        coEvery { authRepository.login("user@example.com", "pass-word") } returns Result.Error(
             exception = ApiException(403, "Your account has been temporarily banned", isBanned = true, serverAuthored = true),
             message = "Your account has been temporarily banned",
         )
@@ -300,76 +462,170 @@ class LoginViewModelTest {
         advanceUntilIdle()
 
         viewModel.onEmailChanged("user@example.com")
-        viewModel.onPasswordChanged("pw")
+        viewModel.onPasswordChanged("pass-word")
         viewModel.login()
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertThat(state.emailLoginEnabled).isTrue()
-        assertThat(state.error).isEqualTo("Your account has been temporarily banned")
+        assertThat(state.refusal).isEqualTo(AuthRefusal.Banned)
         assertThat(state.offerDiagnosticLog).isFalse()
     }
 
-    @Test
-    fun `login failure with null message uses default`() = runTest {
-        coEvery { authRepository.login("user@example.com", "wrong") } returns
-            Result.Error(message = null)
+    private val defaultSocialLogins = listOf("google", "facebook", "openid", "github", "discord", "saml")
 
+    private fun TestScope.stateFor(config: StartupConfig): LoginUiState {
+        configFlow.value = config
         viewModel = createViewModel()
         advanceUntilIdle()
-
-        viewModel.onEmailChanged("user@example.com")
-        viewModel.onPasswordChanged("wrong")
-        viewModel.login()
-        advanceUntilIdle()
-
-        assertThat(viewModel.uiState.value.error).isEqualTo("Login failed")
+        return viewModel.uiState.value
     }
 
     @Test
-    fun `startup config updates registration and social login settings`() = runTest {
-        viewModel = createViewModel()
-        advanceUntilIdle()
+    fun `startup config updates registration`() = runTest {
+        assertThat(stateFor(StartupConfig(registrationEnabled = true)).registrationEnabled).isTrue()
+    }
 
-        configFlow.value = StartupConfig(
-            registrationEnabled = true,
-            socialLoginEnabled = true,
-            socialLogins = listOf("google", "github"),
+    @Test
+    fun `the server's default provider list shows only the providers it configured`() = runTest {
+        val state = stateFor(
+            StartupConfig(socialLoginEnabled = true, socialLogins = defaultSocialLogins, googleLoginEnabled = true),
         )
-        advanceUntilIdle()
 
-        val state = viewModel.uiState.value
-        assertThat(state.registrationEnabled).isTrue()
-        assertThat(state.socialLoginEnabled).isTrue()
-        assertThat(state.socialLogins).containsExactly("google", "github")
+        assertThat(state.socialProviders).containsExactly(SocialProvider("google"))
+    }
+
+    @Test
+    fun `providers keep the server's order and drop unknown names`() = runTest {
+        val state = stateFor(
+            StartupConfig(
+                socialLoginEnabled = true,
+                socialLogins = listOf("github", "ldap", "google"),
+                googleLoginEnabled = true,
+                githubLoginEnabled = true,
+            ),
+        )
+
+        assertThat(state.socialProviders.map { it.id }).containsExactly("github", "google").inOrder()
+    }
+
+    @Test
+    fun `with OpenID and SAML both set up the server hides SAML, and so do we`() = runTest {
+        val state = stateFor(
+            StartupConfig(
+                socialLoginEnabled = true,
+                socialLogins = defaultSocialLogins,
+                openidLoginEnabled = true,
+                openidLabel = "Continue with OpenID",
+                samlLoginEnabled = false,
+            ),
+        )
+
+        assertThat(state.socialProviders).containsExactly(SocialProvider("openid", label = "Continue with OpenID"))
+    }
+
+    @Test
+    fun `social login on with no provider configured shows no social section`() = runTest {
+        val state = stateFor(StartupConfig(socialLoginEnabled = true, socialLogins = defaultSocialLogins))
+
+        assertThat(state.socialProviders).isEmpty()
+    }
+
+    @Test
+    fun `social login off hides configured providers`() = runTest {
+        val state = stateFor(
+            StartupConfig(socialLoginEnabled = false, socialLogins = defaultSocialLogins, googleLoginEnabled = true),
+        )
+
+        assertThat(state.socialProviders).isEmpty()
+    }
+
+    @Test
+    fun `a custom OpenID label is used as given, and a blank SAML label falls back to ours`() = runTest {
+        val state = stateFor(
+            StartupConfig(
+                socialLoginEnabled = true,
+                socialLogins = listOf("openid", "saml"),
+                openidLoginEnabled = true,
+                openidLabel = "Sign in with Acme SSO",
+                samlLoginEnabled = true,
+                samlLabel = "",
+            ),
+        )
+
+        assertThat(state.socialProviders).containsExactly(
+            SocialProvider("openid", label = "Sign in with Acme SSO"),
+            SocialProvider("saml", label = null),
+        ).inOrder()
     }
 
     @Test
     fun `startup config with null socialLogins defaults to empty`() = runTest {
-        viewModel = createViewModel()
-        advanceUntilIdle()
-
-        configFlow.value = StartupConfig(socialLogins = null)
-        advanceUntilIdle()
-
-        assertThat(viewModel.uiState.value.socialLogins).isEmpty()
+        assertThat(stateFor(StartupConfig(socialLoginEnabled = true, socialLogins = null)).socialProviders).isEmpty()
     }
 
-    // TCHAT: the server's OPENID_BUTTON_LABEL / OPENID_AUTO_REDIRECT reach the screen.
     @Test
-    fun `startup config surfaces the openid label and auto-redirect`() = runTest {
-        viewModel = createViewModel()
+    fun `forgot password shows only when the server allows password reset`() = runTest {
+        assertThat(stateFor(StartupConfig(passwordResetEnabled = false)).passwordResetEnabled).isFalse()
+        assertThat(stateFor(StartupConfig(passwordResetEnabled = true)).passwordResetEnabled).isTrue()
+    }
+
+    @Test
+    fun `forgot password stays hidden with email login off`() = runTest {
+        val state = stateFor(StartupConfig(emailLoginEnabled = false, passwordResetEnabled = true))
+
+        assertThat(state.passwordResetEnabled).isFalse()
+    }
+
+    @Test
+    fun `LDAP username mode asks for a username`() = runTest {
+        assertThat(stateFor(StartupConfig()).usernameLogin).isFalse()
+        assertThat(stateFor(StartupConfig(ldap = LdapConfig(enabled = true, username = true))).usernameLogin).isTrue()
+
+        viewModel.onPasswordChanged("pass-word")
+        viewModel.login()
         advanceUntilIdle()
 
-        configFlow.value = StartupConfig(
-            openidLabel = "Continue with TensorGrid",
-            openidAutoRedirect = true,
-        )
+        assertThat(viewModel.uiState.value.inputError).isEqualTo(LoginInputError.MissingFields)
+    }
+
+    private val autoRedirectConfig = StartupConfig(openidLoginEnabled = true, openidAutoRedirect = true)
+
+    @Test
+    fun `OpenID auto-redirect opens the provider without a tap, even with social login off`() = runTest {
+        every { ssoRiskDataStore.acknowledged } returns flowOf(true)
+
+        val state = stateFor(autoRedirectConfig.copy(socialLoginEnabled = false))
+
+        assertThat(state.ssoProvider).isEqualTo("openid")
+    }
+
+    @Test
+    fun `OpenID auto-redirect goes through the in-app-browser warning first`() = runTest {
+        val state = stateFor(autoRedirectConfig)
+
+        assertThat(state.pendingSsoProvider).isEqualTo("openid")
+        assertThat(state.ssoProvider).isNull()
+    }
+
+    @Test
+    fun `OpenID auto-redirect fires once, so backing out of SSO stays on the form`() = runTest {
+        every { ssoRiskDataStore.acknowledged } returns flowOf(true)
+        stateFor(autoRedirectConfig)
+        viewModel.consumeSsoNavigation()
+
+        configFlow.value = autoRedirectConfig.copy(registrationEnabled = true)
         advanceUntilIdle()
 
-        val state = viewModel.uiState.value
-        assertThat(state.openidLabel).isEqualTo("Continue with TensorGrid")
-        assertThat(state.openidAutoRedirect).isTrue()
+        assertThat(viewModel.uiState.value.ssoProvider).isNull()
+        assertThat(viewModel.uiState.value.pendingSsoProvider).isNull()
+    }
+
+    @Test
+    fun `auto-redirect needs OpenID itself enabled`() = runTest {
+        every { ssoRiskDataStore.acknowledged } returns flowOf(true)
+
+        assertThat(stateFor(StartupConfig(openidAutoRedirect = true)).ssoProvider).isNull()
     }
 
     @Test
@@ -531,7 +787,7 @@ class LoginViewModelTest {
 
     @Test
     fun `a wrong password does not offer the diagnostic log`() = runTest {
-        coEvery { authRepository.login("user@example.com", "wrong") } returns Result.Error(
+        coEvery { authRepository.login("user@example.com", "wrong-password") } returns Result.Error(
             exception = ApiException(401, "Incorrect password.", serverAuthored = true),
             message = "Incorrect password.",
         )
@@ -539,7 +795,7 @@ class LoginViewModelTest {
         advanceUntilIdle()
 
         viewModel.onEmailChanged("user@example.com")
-        viewModel.onPasswordChanged("wrong")
+        viewModel.onPasswordChanged("wrong-password")
         viewModel.login()
         advanceUntilIdle()
 
@@ -548,13 +804,13 @@ class LoginViewModelTest {
 
     @Test
     fun `a connection failure offers the log, and a later input error withdraws it`() = runTest {
-        coEvery { authRepository.login("user@example.com", "pw") } returns
+        coEvery { authRepository.login("user@example.com", "pass-word") } returns
             Result.Error(exception = IOException("unreachable"), message = "Network unavailable.")
         viewModel = createViewModel()
         advanceUntilIdle()
 
         viewModel.onEmailChanged("user@example.com")
-        viewModel.onPasswordChanged("pw")
+        viewModel.onPasswordChanged("pass-word")
         viewModel.login()
         advanceUntilIdle()
         assertThat(viewModel.uiState.value.offerDiagnosticLog).isTrue()
@@ -563,7 +819,103 @@ class LoginViewModelTest {
         viewModel.login()
         advanceUntilIdle()
 
-        assertThat(viewModel.uiState.value.error).isEqualTo("Please enter email and password")
+        assertThat(viewModel.uiState.value.inputError).isEqualTo(LoginInputError.MissingFields)
         assertThat(viewModel.uiState.value.offerDiagnosticLog).isFalse()
     }
+
+    private fun TestScope.loginWith(email: String, password: String, error: Result.Error? = null): LoginUiState {
+        if (error != null) coEvery { authRepository.login(any(), any()) } returns error
+        viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.onEmailChanged(email)
+        viewModel.onPasswordChanged(password)
+        viewModel.login()
+        advanceUntilIdle()
+        return viewModel.uiState.value
+    }
+
+    private fun apiError(status: Int, message: String, body: String? = null, serverAuthored: Boolean = true) =
+        Result.Error(ApiException(status, message, body = body, serverAuthored = serverAuthored), message)
+
+    @Test
+    fun `an unknown email and a wrong password read the same`() = runTest {
+        listOf("Email does not exist.", "Incorrect password.", "Invalid username/password").forEach { text ->
+            val state = loginWith("user@example.com", "pass-word", apiError(404, text, """{"message":"$text"}"""))
+            assertThat(state.refusal).isEqualTo(AuthRefusal.WrongCredentials)
+            assertThat(state.error).isNotNull()
+            assertThat(state.emailLoginEnabled).isTrue()
+        }
+    }
+
+    @Test
+    fun `an LDAP account made with another provider gets its own wording`() = runTest {
+        val error = apiError(404, "auth_failed", """{"message":"auth_failed"}""")
+        val state = loginWith("user@example.com", "pass-word", error)
+        assertThat(state.refusal).isEqualTo(AuthRefusal.OtherSignInMethod)
+    }
+
+    @Test
+    fun `a 404 that is not LibreChat's is not wrong credentials`() = runTest {
+        val state = loginWith("user@example.com", "pass-word", apiError(404, "Not found", serverAuthored = false))
+        assertThat(state.refusal).isNull()
+        assertThat(state.error).isEqualTo("Not found")
+    }
+
+    @Test
+    fun `a cross-site 403 keeps the form and says so`() = runTest {
+        val body = """{"message":"Cross-site request rejected","code":"auth_cross_origin"}"""
+        val state = loginWith("user@example.com", "pass-word", apiError(403, "Cross-site request rejected", body))
+        assertThat(state.refusal).isEqualTo(AuthRefusal.CrossOrigin)
+        assertThat(state.emailLoginEnabled).isTrue()
+    }
+
+    @Test
+    fun `too many attempts gets its own wording`() = runTest {
+        val text = "Too many login attempts, please try again after 5 minutes."
+        val state = loginWith("user@example.com", "pass-word", apiError(429, text, """{"message":"$text"}"""))
+        assertThat(state.refusal).isEqualTo(AuthRefusal.RateLimited)
+    }
+
+    @Test
+    fun `the email is trimmed before it is checked and sent`() = runTest {
+        coEvery { authRepository.login(any(), any()) } returns Result.Success(LoginOutcome.Success(User(email = "user@example.com")))
+        val state = loginWith(" user@example.com ", "pass-word")
+        coVerify { authRepository.login("user@example.com", "pass-word") }
+        assertThat(state.isLoggedIn).isTrue()
+    }
+
+    @Test
+    fun `a malformed email is caught before sending`() = runTest {
+        val state = loginWith("user@example", "pass-word")
+        assertThat(state.inputError).isEqualTo(LoginInputError.InvalidEmail)
+        coVerify(exactly = 0) { authRepository.login(any(), any()) }
+        viewModel.onEmailChanged("user@example.com")
+        assertThat(viewModel.uiState.value.inputError).isNull()
+    }
+
+    @Test
+    fun `the password must fit the server's bounds`() = runTest {
+        configFlow.value = StartupConfig(minPasswordLength = 10)
+        assertThat(loginWith("user@example.com", "123456789").inputError).isEqualTo(LoginInputError.PasswordTooShort)
+        assertThat(viewModel.uiState.value.minPasswordLength).isEqualTo(10)
+        assertThat(loginWith("user@example.com", "x".repeat(129)).inputError).isEqualTo(LoginInputError.PasswordTooLong)
+        coVerify(exactly = 0) { authRepository.login(any(), any()) }
+    }
+
+    @Test
+    fun `the password bounds default to eight when the server names none`() = runTest {
+        assertThat(loginWith("user@example.com", "1234567").inputError).isEqualTo(LoginInputError.PasswordTooShort)
+        assertThat(viewModel.uiState.value.minPasswordLength).isEqualTo(8)
+    }
+
+    @Test
+    fun `LDAP skips the password bounds, and username mode the email format`() = runTest {
+        configFlow.value = StartupConfig(ldap = LdapConfig(enabled = true, username = true))
+        val state = loginWith("jdoe", "short")
+        assertThat(state.inputError).isNull()
+        coVerify { authRepository.login("jdoe", "short") }
+    }
+
+    private fun SavedStateHandle.restoredAfterProcessDeath(): SavedStateHandle =
+        SavedStateHandle(keys().associateWith<String, Any?> { this[it] })
 }

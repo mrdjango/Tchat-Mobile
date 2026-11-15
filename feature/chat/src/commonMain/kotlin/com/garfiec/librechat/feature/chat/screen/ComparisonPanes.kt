@@ -16,9 +16,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.garfiec.librechat.core.common.EndpointConstants
-import com.garfiec.librechat.core.model.media.IconSource
-import com.garfiec.librechat.core.model.media.resolveAvatarUrl
 import com.garfiec.librechat.feature.chat.components.ComparisonDualPane
 import com.garfiec.librechat.feature.chat.components.ComparisonLane
 import com.garfiec.librechat.feature.chat.components.ComparisonPane
@@ -34,9 +31,9 @@ import com.garfiec.librechat.feature.chat.components.rememberComparisonScrollSyn
 import com.garfiec.librechat.feature.chat.resources.Res
 import com.garfiec.librechat.feature.chat.resources.action_keep_and_continue
 import com.garfiec.librechat.feature.chat.util.buildComparisonDisplayMessages
-import com.garfiec.librechat.feature.chat.util.iconSource
 import com.garfiec.librechat.feature.chat.viewmodel.ChatUiState
 import com.garfiec.librechat.feature.chat.viewmodel.ChatViewModel
+import com.garfiec.librechat.feature.chat.viewmodel.StreamingText
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -52,6 +49,8 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 internal fun ComparisonPanes(
     uiState: ChatUiState,
+    /** The live text of both lanes, read only by their streaming items (see ChatContent). */
+    streamingText: () -> StreamingText,
     viewModel: ChatViewModel,
     senderName: String,
     fontSizeMultiplier: Float,
@@ -63,6 +62,8 @@ internal fun ComparisonPanes(
     bottomContentPadding: Dp,
     /** Where the side-by-side cards end; see ChatScreen. */
     paneBottomInset: Dp,
+    /** Where the jump-to-bottom button floats over the composer; see ChatScreen. */
+    scrollToBottomPadding: Dp?,
     onCopyMessage: (String) -> Unit,
     onShowSecondaryModelSheet: () -> Unit,
     onComparisonTabChange: (Int) -> Unit,
@@ -119,38 +120,15 @@ internal fun ComparisonPanes(
         uiState.laneBSpec,
         uiState.modelSpecs,
     )
-    val secondaryEndpoint = comparisonState.secondaryEndpoint ?: EndpointConstants.AGENTS
-    // Re-point the secondary bubble avatar at its own lane: the persisted parallel message only
-    // carries the primary's endpoint/iconURL. A spec lane shows the spec's icon, an agents lane its
-    // agent's avatar; otherwise the endpoint's icon.
-    val secondaryIcon = remember(
-        secondaryEndpoint,
-        comparisonState.secondaryModel,
-        uiState.laneBSpec,
-        uiState.modelSpecs,
-        uiState.agents,
-        uiState.serverUrl,
-    ) {
-        val model = comparisonState.secondaryModel
-        val spec = uiState.modelSpecs?.list?.find { it.name == uiState.laneBSpec }
-        when {
-            spec != null -> spec.iconSource(uiState.agents, uiState.serverUrl)
-            secondaryEndpoint == EndpointConstants.AGENTS && model != null -> IconSource(
-                secondaryEndpoint,
-                resolveAvatarUrl(uiState.agents.find { it.id == model }?.avatarUrl, uiState.serverUrl),
-            )
-            else -> IconSource(secondaryEndpoint, null)
-        }
-    }
-    val secondaryIconEndpoint = secondaryIcon.endpointName ?: secondaryEndpoint
-    val secondaryIconUrl = secondaryIcon.imageUrl
+    // The persisted parallel message carries only the primary's endpoint/iconURL: pane B's bubbles
+    // take its own lane's avatar instead.
+    val laneBAvatar = uiState.avatars.laneB
     val secondaryDisplayMessages = remember(
         uiState.displayMessages,
         comparisonState.parallelMessageId,
         comparisonState.secondaryFinalContent,
         secondaryModelName,
-        secondaryIconEndpoint,
-        secondaryIconUrl,
+        laneBAvatar,
     ) {
         buildComparisonDisplayMessages(
             uiState.displayMessages,
@@ -158,14 +136,14 @@ internal fun ComparisonPanes(
             comparisonState.parallelMessageId,
             comparisonState.secondaryFinalContent,
             secondaryModelName,
-            secondaryEndpoint = secondaryIconEndpoint,
-            secondaryIconUrl = secondaryIconUrl,
+            secondaryAvatar = laneBAvatar,
         )
     }
 
     // Side by side, the cards themselves end above the composer, so a list inside one needs only
     // a little room at its foot; the tab pager's lists run under the composer and need all of it.
     val listBottomPadding = if (wide) PaneListBottomPadding else bottomContentPadding
+    val paneScrollToBottomPadding = if (wide) null else scrollToBottomPadding
 
     // Reading room past the last line, so a reply's end can be scrolled up clear of the composer.
     // The same in both panes, so their ends still meet. Measured from pane A's list; both panes are
@@ -206,9 +184,9 @@ internal fun ComparisonPanes(
                 isStreaming = comparisonState.primaryIsStreaming || uiState.isStreaming,
                 justSettledMessageId = uiState.justSettledMessageId,
                 streamingContent = if (comparisonState.primaryIsStreaming) {
-                    comparisonState.primaryStreamingContent
+                    { streamingText().primary }
                 } else {
-                    uiState.streamingContent
+                    { streamingText().content }
                 },
                 activeToolCalls = if (comparisonState.primaryIsStreaming) {
                     comparisonState.primaryActiveToolCalls
@@ -240,7 +218,7 @@ internal fun ComparisonPanes(
                 onRefresh = viewModel::refreshMessages,
                 userAvatarUrl = uiState.userAvatarUrl,
                 userName = uiState.userName,
-                selectedEndpoint = uiState.selectedEndpoint,
+                streamingAvatar = uiState.avatars.streaming,
                 streamingSenderName = senderName,
                 showImageDescriptions = showImageDescriptions,
                 chatLayoutStyle = chatLayoutStyle,
@@ -255,6 +233,7 @@ internal fun ComparisonPanes(
                 jumpPending = uiState.jumpPending,
                 onSearchScrollHandle = viewModel::onSearchScrollHandled,
                 bottomContentPadding = listBottomPadding,
+                scrollToBottomPadding = paneScrollToBottomPadding,
                 // The comparison container is already padded clear of the floating bar.
                 topContentPadding = 0.dp,
                 syncHold = syncHold,
@@ -281,14 +260,14 @@ internal fun ComparisonPanes(
                 displayMessages = secondaryDisplayMessages,
                 isStreaming = comparisonState.secondaryIsStreaming,
                 justSettledMessageId = uiState.justSettledMessageId,
-                streamingContent = comparisonState.secondaryStreamingContent,
+                streamingContent = { streamingText().secondary },
                 activeToolCalls = comparisonState.secondaryActiveToolCalls,
                 sandboxStartingToolCallIds = uiState.sandboxStartingToolCallIds,
                 streamingAttachments = uiState.streamingAttachments,
                 error = null,
                 baseUrl = uiState.serverUrl,
                 fontSizeMultiplier = fontSizeMultiplier,
-                selectedEndpoint = secondaryEndpoint,
+                streamingAvatar = uiState.avatars.laneB,
                 streamingSenderName = secondaryModelName,
                 showImageDescriptions = showImageDescriptions,
                 chatLayoutStyle = chatLayoutStyle,
@@ -296,6 +275,7 @@ internal fun ComparisonPanes(
                 showBubbles = showBubbles,
                 useKatex = useKatex,
                 bottomContentPadding = listBottomPadding,
+                scrollToBottomPadding = paneScrollToBottomPadding,
                 userAvatarUrl = uiState.userAvatarUrl,
                 userName = uiState.userName,
                 listState = secondaryListState,

@@ -129,6 +129,35 @@ POST /api/auth/2fa/verify
 POST /api/auth/2fa/confirm  → { confirmed, backupCodes }
 POST /api/auth/2fa/disable
 POST /api/auth/2fa/verify-temp → { token, user }
+
+# Required 2FA enrollment (v0.8.9-rc1, ENFORCE_TWO_FACTOR_AUTHENTICATION). No bearer: each step is
+# authorised by the body credential the previous one returned. All four are in AUTH_SKIP_PATHS.
+POST /api/auth/2fa/setup             { tempToken }                 → { otpauthUrl, backupCodes }
+POST /api/auth/2fa/setup/confirm     { tempToken, token }          → { backupCodes, acknowledgementToken }
+POST /api/auth/2fa/setup/acknowledge { acknowledgementToken }      → { finalizationToken }
+POST /api/auth/2fa/setup/finalize    { finalizationToken }         → { token, user } + refreshToken cookie
+  401/403 = setup credential dead (restart at sign-in); 400 on confirm = wrong code;
+  400 on acknowledge/finalize = single-use credential already spent.
+# The setup tempToken arrives as:
+#   login 200   { code: TWO_FACTOR_ENROLLMENT_REQUIRED, twoFAPending, twoFASetupRequired, tempToken }
+#   refresh 200 { same, NO token } after deleting the session and clearing the refreshToken cookie
+#   403 on every authenticated route { same }
+# Other new codes: 403 TWO_FACTOR_FEDERATED_LOGIN_BLOCKED (login, verify-temp);
+#   403 terms_not_accepted on writes when interface.termsOfService.modalAcceptance (flat {code} or
+#   nested {error:{code}}); 403 TENANT_CONTEXT_REQUIRED on pre-auth routes under strict tenancy
+#   (OAuth callback: redirect to /login?...&code=TENANT_CONTEXT_REQUIRED).
+
+# Passkey management (v0.8.9-rc1). Bearer required; every route 404s
+# { message: "Passkey authentication is not enabled" } while startup.passkeyLoginEnabled is false.
+# No arg wrapper. Errors carry { message } only, no code.
+GET    /api/auth/passkey               → { passkeys: [{ id, name, deviceType, backedUp, transports, createdAt, lastUsedAt|null }] }
+                                          (newest first)
+PATCH  /api/auth/passkey/:passkeyId   { name }       → { passkey }  (trimmed, cut at 60; 400 blank, 404 not found)
+DELETE /api/auth/passkey/:passkeyId   { password? }  → { message }  (JSON body on a DELETE)
+  403 "Incorrect password" = step-up refused (deliberately 403, never 401); waived for an account
+  with no password hash. 404 = already gone. 429 = passkeyStepUpLimiter.
+# Not used by the app (native WebAuthn origins are rejected by rc1's normalizeOrigin):
+#   POST /api/auth/passkey/register/options|verify, POST /api/auth/passkey/login/options|verify.
 ```
 
 ### Configuration
@@ -138,7 +167,26 @@ GET /api/endpoints          → available AI providers and models  (JWT required
 POST /api/user/settings/favorites → update user favorites (agent/model pins, v0.8.5+)
 GET  /api/user/settings/favorites → list user favorites (v0.8.5+)
 POST /api/prompts/groups/:id/use  → record prompt-group usage for analytics (v0.8.5+)
+GET  /api/prompts/groups/:id/resolve[?version=N] → a group's live text (v0.8.9-rc1):
+     { source, groupId, prompt, type, version?, labels?, sourceUrl? (admins only) }.
+     Needed for an external (Langfuse, source != "native") group, which stores no text; errors are
+     {code}: 400 invalid_request, 404 not_found / not_available, 409 not_configured / source_changed,
+     422 unsupported_type. External groups refuse edits, deletes, new versions and promotion with
+     403 { code: "read_only", error }.
 ```
+
+**v0.8.9-rc1 response codes the client reads**
+- `PUT /api/permissions/:resourceType/:resourceId`: a failed audited update carries `code`
+  `RESOURCE_PERMISSIONS_BUSY` (409), `RESOURCE_PERMISSIONS_UNAVAILABLE` (503) or
+  `PERMISSION_AUDIT_UNAVAILABLE`; all retryable.
+- `POST /api/convos/update` (rename): 409 `{ error: "conversation_title_ownership_not_ready" }` while
+  `interface.runningChatRename` is false and the title is unset or a run is active; 404
+  `{ error: "conversation_not_found" }`. Conversations carry `titleSetByUser` / `titleRevision`;
+  `/api/config` carries `conversationTitleOwnershipVersion: 1`.
+- Skill file upload / edit / delete: 409 `{ error: "SKILL_DELETING" }` while the skill is being deleted.
+- Agent create/update: 400 `{ error: "Invalid request data", details: [{ path: ["model_parameters", key], message }] }`
+  for a model parameter the provider family does not declare.
+- `GET /api/agents/chat/status/:conversationId` adds `isTemporary`.
 
 **v0.8.5 notes**
 - `GET /api/config` response payload is now split into a pre-auth and post-auth variant.
@@ -150,6 +198,12 @@ POST /api/prompts/groups/:id/use  → record prompt-group usage for analytics (v
   the Delete Account button when `false`. Defaults to `true` for older servers that omit the field.
 - `GET /api/endpoints` now requires JWT (was public in v0.8.4). Mobile already called it
   post-auth, so this is non-breaking.
+- `GET /api/endpoints` entries carry `providerId` (v0.8.8-rc2+) for a custom endpoint: the brand the
+  server derives from its `iconURL`, `baseURL` host, `provider` and name (`EndpointConfig.providerId`).
+  Mobile loads that brand's art at runtime from the server's static `{server}/assets/<file>`
+  (`feature/chat/CLAUDE.md` "Brand art"). Since v0.8.9-rc1 web draws every provider as an inline
+  mark and no longer references `/assets/`; the files still ship, each watched by a
+  `provider-asset-*` mirror.
 - Favorites schema: each entry has exactly one of `{ agentId }`, `{ model, endpoint }`,
   or `{ spec }` — three mutually exclusive variants enforced by the server
   (`FavoritesController.js`: "Each favorite must have either agentId, model+endpoint, or spec";
@@ -174,11 +228,28 @@ GET    /api/convos/:conversationId          → single conversation
 POST   /api/convos/update                   → update title
 POST   /api/convos/archive                  → archive/unarchive
 DELETE /api/convos                           → delete conversation(s)
-POST   /api/convos/fork                     → fork from message
+POST   /api/convos/fork                     → fork from message (v0.8.9-rc1: `excludeFiles: true` copies
+                                               without attached/generated files; older servers ignore it)
 POST   /api/convos/duplicate                → duplicate conversation
 POST   /api/convos/import                   → import (multipart)
 GET    /api/convos/gen_title/:conversationId → generated title
+POST   /api/convos/seen   { arg: { conversationId, lastResponseAt } } → { modified }        (v0.8.9-rc1)
+POST   /api/convos/unread { arg: { conversationId } } → { modified, lastResponseAt, lastResponseMessageId,
+                                                          lastResponseIsManual, isMarkedUnread } (v0.8.9-rc1)
 ```
+
+- **Read state (v0.8.9-rc1).** List rows (and the single GET, and the SSE final event's conversation)
+  carry `lastResponseAt`, `lastResponseMessageId`, `lastResponseIsManual`, `isMarkedUnread` and
+  `lastSeenAt`. A chat is unread when `lastResponseAt` is newer than `lastSeenAt` (or `lastSeenAt` is
+  missing). A real reply is stamped with `isMarkedUnread: false` and `lastSeenAt` =
+  `1970-01-01T00:00:00.000Z` (`UNSEEN_REPLY_WATERMARK`); "Mark as unread" sets `isMarkedUnread: true`
+  (plus a synthetic `lastResponseAt` and `lastResponseIsManual: true` on a chat with no reply). `/seen`
+  matches only while the stored reply is no newer than `lastResponseAt`, so `modified: false` means a
+  newer reply landed. Both writes use `timestamps: false`: `updatedAt` does not move.
+- **List facets (v0.8.9-rc1)** on `GET /api/convos`: `updatedAfter`, `createdAfter` (ISO 8601; a
+  timestamp without an offset is UTC), repeated `endpoints`, `hasFiles=true`, `sharedOnly=true`.
+  Malformed values answer 400. `endpoints` is bounded by `/api/config` `conversationListLimits`
+  `{ maxEndpointFilters (50), maxEndpointNameLength (128) }`.
 
 ### Messages
 ```
@@ -237,16 +308,16 @@ POST   /api/skills/:id/files/*relPath    → v0.8.8: conditional replace — mul
 GET    /api/skills/:id/files/:relPath    → read file (JSON mode; v0.8.8 adds `fileId`, the revision to edit against)
 DELETE /api/skills/:id/files/:relPath    → delete file
 POST   /api/skills/import                → import skill (atomic from rc4 — see v0.8.8-rc4 sync)
-GET    /api/user/settings/skills/active  → per-user active-skill states (DEFERRED)
-POST   /api/user/settings/skills/active  → set active-skill states (DEFERRED)
+GET    /api/user/settings/skills/active  → per-user active-skill states (BUILT: SkillsApi)
+POST   /api/user/settings/skills/active  → set active-skill states (BUILT: SkillsApi)
 PUT    /api/roles/:roleName/skills       → admin skill-permission grant (BUILT; admin, Settings → Account → Skill permissions)
 
-# Deferred-preview poll for inline office-doc rendering (DEFERRED — pairs with TFile.status/text)
+# Deferred-preview poll for inline office-doc rendering (BUILT: FilesApi — pairs with TFile.status/text)
 GET    /api/files/:file_id/preview       → { file_id, status: pending|ready|failed,
                                             text?, textFormat?: html|text, previewError? }
                                             (status defaults to 'ready' for legacy/non-office files)
 
-# CloudFront signed-URL download (DEFERRED — only when server is CloudFront-configured;
+# CloudFront signed-URL download (BUILT: FilesApi.getDownloadUrl — only when server is CloudFront-configured;
 # the existing /api/files/download/:userId/:file_id bytes path still works on v0.8.6)
 GET    /api/files/download-url/:userId/:file_id → { url, filename, type, metadata }
 ```
@@ -274,11 +345,49 @@ DELETE /api/projects/:projectId          → { deletedCount, modifiedCount }
 PUT    /api/projects/conversations/:conversationId → { projectId|null } → { conversation, previousProjectId, projectId }
 GET    /api/convos?projectId=<id|unassigned>       → conversations filtered by project (added projectId query param)
 
+# Project context: instructions and reference files (v0.8.9-rc1; BUILT — ProjectChats cards +
+# ProjectInstructions editor route; gated featureSupport(0.8.9-rc1, landed 2026-10-02) == PRESENT,
+# Files card also startup.ragEnabled). None is arg-wrapped. Limits: startup.projects
+# { maxFiles 50, maxInstructionsLength 16000, maxDescriptionLength 1000 } (defaults when absent;
+# ceilings 500 / 200000 / 10000). Name silently cut at 100.
+# ChatProject gains: instructions, contextRevision, file_ids (detail only); hasInstructions, fileCount (list only).
+PATCH  /api/projects/:projectId          { instructions, contextRevision } → ChatProject
+  409 { message, code: "CHAT_PROJECT_CONFLICT" } = stale contextRevision (also on a no-change save);
+  400 { error } over maxInstructionsLength / maxDescriptionLength (description no longer trimmed).
+  A name/description PATCH without contextRevision never conflicts.
+GET    /api/projects/:projectId/files    → [{ file_id, filename?, type?, bytes?, availability: "ready"|"unavailable" }]  (not paged)
+GET    /api/projects/:projectId/files/available?limit(1..50)&cursor&search
+                                         → { files: [TFile], nextCursor }   (attached files excluded; empty cursor= → 400)
+POST   /api/projects/:projectId/files    { file_id } → ChatProject
+  409 { error: "Project file limit reached" } (uncoded); 400 { error: "Project file unavailable" }.
+  Upload first via POST /api/files (endpoint=agents, message_file=true, tool_resource=file_search);
+  the upload must come back embedded:true. The attach clears the upload's temporary hold.
+DELETE /api/projects/:projectId/files/:fileId → ChatProject
+  Every add/remove/instructions change bumps contextRevision; the response is the updated project.
+# Send-time (POST /api/agents/chat in a project), before the ack:
+#   409 { code: "PROJECT_RESOURCES_CHANGED", retryable: true, error } — files moved while starting; retry.
+#   404 { error: "Conversation context unavailable" } — the project context could not be resolved.
+
 # Context-usage gauge (BUILT — gauge + SSE; context-projection seeds the gauge on chat
 # open / model switch; gated on interface.contextUsage && >= 0.8.7)
 GET    /api/endpoints/token-config       → { [endpoint]: { [model]: { context, prompt?, completion?, cacheWrite?, cacheRead? } } }
 POST   /api/endpoints/context-projection → { conversationId, messageId, endpoint, model?, agentId?, spec?,
                                             maxContextTokens?, calibrationRatio? } → ContextUsage | null
+
+# Per-turn thinking (v0.8.9-rc1; gated isCompatibleOrNewer "0.8.9-rc1")
+GET    /api/endpoints/reasoning-capabilities?endpoint=<name>
+                                         → { capabilities: { [endpoint]: { [model]: { efforts: string[], mandatory? } } },
+                                             expiresInMs }
+                                            400 { error: endpoint_required } · 503 { error: reasoning_catalog_unavailable }
+                                            (retry, never cache) · 500 { error: reasoning_capabilities_failed }
+                                            Asked only for an OpenRouter-catalog endpoint (customParams.defaultParamsEndpoint
+                                            "openrouter", reasoningFormat not "disabled", no declared reasoning_effort).
+                                            Empty efforts = the model takes no effort; an unlisted model = unknown.
+POST   /api/agents/chat/:endpoint  { …, reasoningOverride: { key, value } }   one turn only; key is
+                                            reasoning_effort | effort | thinkingLevel | thinkingBudget (number). The server
+                                            applies it without saving it on the conversation, stores it on the user message
+                                            (`message.reasoningOverride`), and 400s one the target does not resolve to.
+                                            Also on POST /api/agents/chat/queued-turns (revalidated at admission).
 
 # Shared links: getSharedLinks dropped the isPublic query param (visibility now ACL-governed).
 GET    /api/share?cursor&pageSize&sortBy&sortDirection&search   (NO isPublic — removed in v0.8.7)
@@ -303,8 +412,9 @@ GET    /api/share?cursor&pageSize&sortBy&sortDirection&search   (NO isPublic —
   resolves agent `{{current_date}}`/`{{current_datetime}}` to the user's wall clock. Always sent,
   ungated; set in `ChatPayloadBuilder` from `TimeZone.currentSystemDefault()`.
 
-### v0.8.7 known-deferred parity gaps (NOT built; tracked in proposal-v0.8.7.md)
-- `url_context` conversation toggle (Google URL Context) — no mobile param-sheet control yet.
+### v0.8.7 known-deferred parity gaps (tracked in proposal-v0.8.7.md)
+- `url_context` conversation toggle (Google URL Context) — since BUILT: a parameter-sheet control
+  (`EndpointParameterRegistry`), shown where `supportsUrlContext` passes.
 - per-message `quotes[]` round-trip (selected-text quote-reply context) — since BUILT (v0.8.8-rc1 sync);
   Android-only capture, iOS deferred — see the Quotes block below.
 
@@ -329,6 +439,22 @@ DELETE /api/files                         reworked (#14149): agent-attached unli
                                             ocr}; the non-owner via-agent fallback was dropped. Mobile already
                                             complies (owner manager sends neither agent_id nor tool_resource;
                                             AgentFilesDelegate always routes a valid resource). (NO CHANGE — documented)
+POST   /api/files  tool_resource=execute_code  "Upload to Code Environment" (legacy upload UX,
+                                            `fileConfig.legacyFileUploadUX`): the file goes to the code
+                                            environment. The server checks the execute_code capability and
+                                            RUN_CODE.USE ("Code execution is not enabled for Agents"). Mobile
+                                            sends it only from the Code attach card. (BUILT)
+POST   /api/agents/tools/execute_code/call  Run Code on a reply's fenced block (web `RunCode.tsx`). Body
+                                            `{ messageId, conversationId, partIndex?, blockIndex, lang, code,
+                                            isTemporary }`, not `arg`-wrapped; the server reads the message by
+                                            id (404 not the caller's / expired), checks RUN_CODE.USE (403), runs
+                                            the tool and answers `{ result, attachments? }` (null entries =
+                                            files that failed). Rate-limited (`toolCallLimiter`, 429). (BUILT)
+GET    /api/agents/tools/calls?conversationId=  The conversation's stored runs, oldest first, each with
+                                            `toolId, messageId, partIndex, blockIndex, result, attachments`.
+                                            Keyed client-side by `${messageId}_${partIndex ?? 0}_${blockIndex ?? 0}_${toolId}`.
+                                            Mobile reads it once per conversation, when a runnable block is
+                                            first shown. (BUILT)
 DELETE /api/files                         (v0.8.8-rc2) response is now
                                             `{ message, deletedFileIds[], failedFileIds[] }` — additive, so it
                                             decodes on any client, but the SEMANTICS changed: **a partial
@@ -416,6 +542,37 @@ GET    /api/mcp/connection/status         (v0.8.8-rc2) `MCPServerStatus` gained 
                                             between requests is not a fault), `configurationState?:
                                             'configured'|'needs_configuration'`, and `authorizationGeneration?`.
                                             All decode surface; only the generation is read, by the fold above.
+POST   /api/mcp/:serverName/oauth/bind    JWT. No body → `{ success: true }` + two `Set-Cookie`s: `oauth_csrf`
+                                            (HMAC of this user's flow id for the server, HttpOnly, SameSite=Lax,
+                                            10 min, Path `/api/mcp`) and `oauth_session` (HMAC of the user id,
+                                            24 h, Path `/api`; reissued when it no longer matches the user). Old
+                                            route; from **v0.8.9-rc1** (d349120ec #16634) the callback below
+                                            requires one of the two, so it is the only way a client without the
+                                            web app's jar can finish an MCP OAuth. Mobile captures the cookies
+                                            (`CookieHelper.setCookieValues`) and seeds them into the sign-in
+                                            WebView before loading the provider URL. `reinitialize` sets the same
+                                            pair when it answers `oauthRequired`, but mobile binds again at the
+                                            tap: the CSRF cookie may have lapsed while the consent was up. (BUILT)
+GET    /api/mcp/:serverName/oauth/callback (v0.8.9-rc1) no longer falls back to "a PENDING flow exists":
+                                            without a valid `oauth_csrf` or `oauth_session` cookie it redirects
+                                            to `{basePath}/oauth/error?error=csrf_validation_failed`. Success
+                                            redirects to `{basePath}/oauth/success?serverName=`; every failure
+                                            to `{basePath}/oauth/error?error=<code>`. The in-app WebView stops
+                                            on those two paths (`McpOAuthNavigationGate`). (BUILT)
+SSE    on_run_step_delta + delta.auth     MCP sign-in mid-run (upstream `buildMCPAuthRunStepDeltaEvent`):
+                                            `{ id: "step_oauth_login_<server>", delta: { type: "tool_calls",
+                                            tool_calls: [{ id, name: "oauth_mcp_<normalized server>", args: "" }],
+                                            auth: <provider URL>, expires_at: <epoch ms> } }`, after an
+                                            `on_run_step` announcing the same call. Pre-existing at turn start;
+                                            from v0.8.9-rc1 (f7b053789 #17225) a server with
+                                            `oauthPrompt: on_use` sends it on the first tool call instead. The
+                                            run waits for the callback and completes the step itself
+                                            (`on_run_step_completed`, output "OAuth authentication completed").
+                                            Mobile maps it to `StreamEvent.ToolCallAuthRequired` and shows a
+                                            Sign in action on the live tool call, which binds and opens the
+                                            same WebView. The server name comes from the URL's `redirect_uri`
+                                            (`/api/mcp/<name>/oauth/callback`, the stored name) before the
+                                            tool name (normalized). (BUILT)
 PATCH  /api/memories/id/:id               (v0.8.8-rc2) `{ value, key? }` + optional `?agentId=` →
 DELETE /api/memories/id/:id                 `{updated, memory}` / `{deleted}`. Addresses a row by its stable
                                             `_id` instead of by key. **There is no GET by id** — only these
@@ -490,6 +647,36 @@ POST   /api/agents/chat/steer             { conversationId, text, files? } → 2
                                             `files` — steering here is text-only and a during-run send carrying
                                             attachments is routed to the follow-up queue instead.
                                             (#14220, landedDate 2026-07-14) (BUILT)
+                                            `preempt: true` in the body (2026-07-31, e7f183851, before the
+                                            v0.8.8-rc1 tag) asks the run to INTERRUPT: cancel the active tools
+                                            and reasoning, keep what is written, continue the same reply with the
+                                            steer. The 202 echoes `preempt` from the durable item, so it is
+                                            `true` only when the run can be interrupted — a run with a
+                                            provider-hosted tool or OpenRouter's `web` plugin
+                                            (`supportsRunInterruption`) keeps it as a plain steer and echoes
+                                            `false`. Never a rejection. Mobile's "Interrupt and steer" sends it,
+                                            reads the echo for the chip's look, and announces a `false` echo.
+                                            `preemptRevision` is echoed on protocol v2 only (mobile is v1). The
+                                            reports that hand steers back (`resumeState.pendingSteers`, final /
+                                            abort `pendingSteers`, `unrecoveredSteers`) carry `preempt` /
+                                            `preemptRevision` too; mobile decodes them so a re-seeded chip keeps
+                                            its interrupting look. A cancelled tool's result is the server's
+                                            `INTERRUPTED` sentence (`steering/tools.ts`), wrapped by the SDK as
+                                            `Error: <sentence>\n Please fix your mistakes.`; mobile draws it as
+                                            "Interrupted by your message" (mirror `steer-interrupted-tool-result`).
+                                            (BUILT, v0.8.9-rc1 sync)
+POST   /api/agents/chat/steer/arm         { conversationId, steerId, generationCreatedAt? } → 200 { armed,
+                                            code?, preemptRevision? }. Upgrades a still-queued steer to an
+                                            interrupt IN PLACE (keeps its FIFO position). Same limiters as cancel,
+                                            no PII/moderation pass. `armed: false` is a 200, not an error: the
+                                            steer was injected, cancelled, or the run is gone;
+                                            `code: PREEMPT_UNSUPPORTED` = this run can't be interrupted. Errors:
+                                            400 INVALID_CONVERSATION / INVALID_GENERATION_IDENTITY /
+                                            INVALID_STEER_ID, 403 UNAUTHORIZED, 409 RUN_REPLACED, 500
+                                            STEER_ARM_FAILED. Mobile sends `{conversationId, steerId}` from a
+                                            waiting chip's "Interrupt now", one attempt (web retries only on v2),
+                                            bounded by `interface.steerArmConfirmationTimeoutMs` (default 10 000).
+                                            (e7f183851, 2026-07-31; covered by the steer gate) (BUILT)
 POST   /api/agents/chat/steer/cancel      { conversationId, steerId } → { removed }. Withdraws a still-queued
                                             steer before injection. No moderation pass (nothing model-bound
                                             yet). `removed: false` is a 200, not a failure: the cancel lost its
@@ -801,7 +988,7 @@ NOT ported, and deliberately:
 - **The zoomable timeline, the collapsible record tree and the text filter.** Each trades screen for
   navigation, which is the wrong trade on a phone for a surface opened to answer one question. The
   records still nest — depth is computed and indented — they simply cannot be folded.
-- **The Langfuse session link** (`GET /api/admin/langfuse/session/:conversationId`, gated on
+- **The Langfuse session link** (`GET /api/admin/langfuse/connection/session/:conversationId`, gated on
   `startupConfig.langfuseConnectionAccess`). An admin route that opens a web console this app has
   no session for; it is also outside the provider-neutral contract the rest of this is built on.
 - **`interface.currency`.** Not modelled on `InterfaceConfig` at all — a pre-existing gap, not one
@@ -861,7 +1048,11 @@ Additive response fields (parse-layer only unless a row says BUILT):
 - Conversation + preset — add `reasoning_mode` / `reasoning_context` (Responses-API siblings of
   `reasoning_effort`); agents add `stateful_code_sessions` (persistent code-interpreter sandbox across a run's
   tool calls) and `memory_scope` (`"agent"` isolates memories per user+agent, `"user"`/null = shared pool).
-  Round-tripped so a mobile edit doesn't drop what was set on web; no mobile editor controls.
+  Mobile sends `reasoning_mode` / `reasoning_context` on the OpenAI-like parameter sets (openAI, azure, custom,
+  OpenRouter), where the parameters sheet offers them, and restores them on a reopened chat or a preset. That is
+  what keeps them: a chat turn unsets every stored conversation field the request leaves out
+  (`getUnsetFields`, `packages/api/src/conversations/save.ts`), so a key the client merely decodes is erased on
+  the next send. The agent fields have no mobile editor controls.
 - Model spec — adds `showInMenu`. The server already drops `showInMenu: false` specs from `/api/config`, so
   mobile never receives one; a hidden spec stays resolvable by name on a conversation.
 - `GET /api/config` — adds `fileUploadSseEnabled` (`FILE_UPLOAD_SSE_ENABLED`, off by default). Detection-only:
@@ -875,6 +1066,12 @@ attach and the files manager. The agent editor's code / knowledge / context pick
 purpose: upstream sources their accept sets from the per-`tool_resource` lists
 (`codeInterpreterMimeTypesList`, `retrievalMimeTypesList`), not from `supportedMimeTypes`, so filtering them
 on this allowlist would be the wrong restriction.
+
+`fileConfig.clientImageResize` (`{enabled?, maxWidth?, maxHeight?, quality?}`, v0.8.9-rc1) rides the same
+`GET /api/files/config` (served as the admin wrote it). BUILT on Android (`FileUploadConfig.clientImageResize`,
+`FileUtils.processImageForUpload`): an admin `enabled` decides, otherwise the user's Settings › Chat switch (on
+by default, as web); a JPEG/PNG/WebP over the box (default 1900 x 1900) is scaled to fit. `quality` is ignored:
+the upload pipeline always writes PNG (server media-type workaround). iOS uploads full size (not wired).
 
 ### v0.8.8-line partial sync (untagged dev commit 91adcf3f, 2026-07-29) — SSE / shape changes
 Continues the range above; `package.json` still reports 0.8.7 and the commit is still untagged.
@@ -1097,8 +1294,10 @@ Three parts of the rc2 steer surface are deliberately NOT ported:
   not already have. `clientSteerId` IS sent — it costs nothing (the placeholder already exists) and
   is what correlates an event that beats its own POST.
 - **`on_steer_updated` / `TSteerUpdatedEvent`** — a preempt-label change on a still-queued steer.
-  Mobile never asks to `preempt`, so every steer it sends is `preempt: false` and the event could
-  only ever relabel a chip to what it already reads. Lands in `SseEventMapper`'s `else -> null`.
+  Emitted on generation protocol v2 only; mobile speaks v1 and never receives it, so it lands in
+  `SseEventMapper`'s `else -> null`. Since the v0.8.9-rc1 sync mobile does send `preempt` and arm
+  steers; the cost of not having this event is that a chip whose interrupt the server withdraws (a
+  pause taking over) keeps its "Interrupt requested" label. The words still land.
 - **Rendering steer quotes as reference blocks.** The persisted `steer` part carries them and web
   draws them with the same component normal message quotes use. Mobile renders the part's text as a
   user turn and ignores the excerpts — a display gap on a persisted part, separable from the
@@ -1413,8 +1612,11 @@ POST   /api/agents/chat/queued-turns/v2   (v0.8.8, 163c1ad9 #16326) accepts `cod
                                             it and the capability gains `protocolVersion: 2`. v1 answers **409**
                                             `QUEUED_TURN_PROTOCOL_REQUIRED` only when `codeApprovalMode` is sent.
                                             The enqueue 500 code is renamed `QUEUED_TURN_FAILED` →
-                                            `QUEUED_TURN_ENQUEUE_FAILED`. Mobile stays on v1, sends no
-                                            `codeApprovalMode` and matches neither 500 code. (NOT BUILT — inert)
+                                            `QUEUED_TURN_ENQUEUE_FAILED`. Mobile posts a turn carrying a mode,
+                                            `ask` included, to v2 with `codeApprovalMode`; a turn with no mode
+                                            goes to v1. A queued turn without a mode runs under the machine's
+                                            own permissions. Below v0.8.8 a turn with a mode stays in the local
+                                            queue (see VERSION_GATES.md). (BUILT)
 POST   /api/skills/:id/files/*relativePath
                                           (v0.8.8, 7caa98ff #16362) conditional per-file replace. See the Skills
                                             family block above for the contract; offered only when the read
@@ -1474,7 +1676,9 @@ tool output    check_background_task      The host-shaped output (a single task,
                                             a `{ status, message }` notice) renders as a native card, with raw
                                             output as the fallback. (BUILT)
 HITL           edit_file approval input   (210086aa #16543) normalized to `edits: [{ old_text, new_text,
-                                            replace_all? }]`. Mobile renders generic args. (NO CHANGE)
+                                            replace_all? }]`. Since the v0.8.9-rc1 sync a server code tool's
+                                            request (`source: librechat_code`) reviews as "Edit <file>" with
+                                            those edits as the proposed replacements. (BUILT, see rc1 section)
 ```
 
 Code investigations for this sync. The file:line evidence is in the local, gitignored sync artifact
@@ -1494,6 +1698,408 @@ Code investigations for this sync. The file:line evidence is in the local, gitig
 - **Running group**: search DOES promote running matches upstream (`includePinned: isArchivedView`
   at the call site), as mobile does. The drawer has no non-default sort, so the sort guard has
   nothing to read.
+
+### v0.8.9-rc1 sync (tag v0.8.9-rc1, commit 8d3da9bb, 2026-11-01) — endpoint / shape changes
+
+Range `e8f3be08..8d3da9bb`. Wave 1 (breaking, security and wire-correctness) is built; waves 2 and 3
+(new features) are not yet. Routes already documented in place are not repeated: required 2FA
+enrollment and the new auth codes (Authentication block), `GET /api/prompts/groups/:id/resolve` and
+the rc1 response codes (Configuration block), MCP `oauth/bind` / callback / `delta.auth` (v0.8.8-line
+MCP table), and the chat and speech route changes (SSE section).
+
+**Removed endpoints: none.** Every `-router.*` line in the range is a reformat or a handler moved
+into `packages/api` under the same path (`prompts.js` lost ~560 lines that way; its route list is
+unchanged). The `oauth/apple|openid|saml` and `verify` hits are pre-existing admin routes.
+
+**New endpoints**
+```
+POST   /api/auth/2fa/setup{,/confirm,/acknowledge,/finalize}   required 2FA enrollment (BUILT, see Authentication)
+GET    /api/prompts/groups/:groupId/resolve                    external prompt text (BUILT, see Configuration)
+POST   /api/auth/passkey/login/options, /login/verify           passkey sign-in (NOT built: waits on upstream, see PasskeyApi)
+GET    /api/auth/passkey; POST /passkey/register/options, /register/verify;
+PATCH|DELETE /api/auth/passkey/:passkeyId                       passkey management (BUILT: PasskeyApi list/rename/
+                                                               delete; registration waits on upstream, see PasskeyApi)
+POST   /api/user/email/change {currentPassword,newEmail}       (BUILT: UserApi, gated on allowEmailChange)
+POST   /api/user/email/verify {email,token,userId}  (no JWT)   (not called: the emailed link opens the web app)
+POST   /api/convos/seen {arg:{conversationId,lastResponseAt?}}, /api/convos/unread {arg:{conversationId}}
+                                                               unread replies (BUILT: ConversationsApi.markSeen/markUnread)
+GET    /api/projects/:projectId/files, /files/available; POST /:projectId/files;
+DELETE /api/projects/:projectId/files/:fileId                  project context (BUILT, see Chat Projects)
+GET    /api/endpoints/reasoning-capabilities?endpoint=          {capabilities, expiresInMs} (BUILT: EndpointTokenApi,
+                                                               ReasoningCapabilitiesRepository)
+GET|POST|DELETE /api/schedules/:id/mcp-consent                 scheduled MCP authorization (BUILT, see below)
+POST   /api/messages/:conversationId/owner-text {messageIds:[1..50]} (bare, NOT under `arg`; strict)
+                                                               → {messages:[{messageId,revision,canonicalText,text?}]};
+                                                               503 when unavailable; `Cache-Control: private, no-store`.
+                                                               PII owner text (BUILT: MessagesApi.getOwnerTexts, held in
+                                                               memory only; `privacyRevision` on messages and the
+                                                               `created` frame's message)
+POST   /api/agents/tools/approvals/reset {agentId, toolName?}  → {reset:true}; forget the caller's
+                                                               remembered approvals (BUILT; see below)
+GET    /api/messages/:c/:m/parts/:partIndex?toolCallId=&stepId=&agentId=
+                                                               → {conversationId,messageId,partIndex,tool_call} (BUILT:
+                                                               MessagesApi.getToolCallPart; see "Tool-call previews" below)
+GET    /api/messages/:c/:m/subagent-calls?files=[{toolCallId,agentId?,stepId?}] (JSON, ≤32)
+                                                               → {parts:[{toolCallId,stepId?,agentId?,calls:[{id,agentId?,stepId?}]}]};
+                                                               400 Invalid files, 404 Message not found (BUILT:
+                                                               MessagesApi.getSubagentAttachmentCalls, SubagentHintsDelegate;
+                                                               slice 1 still places what it leaves)
+POST   /api/mcp/app/validate, /resources/read, /resources/list, /resources/templates/list,
+       /app-tool-call                                          MCP Apps (BUILT; see "MCP Apps" below).
+GET    /api/mcp/sandbox                                        web's sandbox proxy: NOT used (see below)
+GET    /api/convos/:conversationId/pull-request             {pullRequest|null} (BUILT; see "Conversation pull requests")
+POST   /api/convos/pull-requests {conversationIds}             {results:[…]} (BUILT; bare body, max 50)
+GET    /api/pull-requests/oauth/status                         {configured, provider?, connected, flowId?} (BUILT)
+GET    /api/pull-requests/oauth/connect                        {url, expiresInSeconds?, flowId?} + binding cookies (BUILT)
+DELETE /api/pull-requests/oauth                                204, removes every grant (BUILT)
+```
+
+**Conversation pull requests** (BUILT slice 1, v0.8.9-rc1; abed1a29e3e5 #16794)
+- Gate: `isCompatibleOrNewer(version, "0.8.9-rc1") && pullRequestsEnabled == true`
+  (`pullRequestsAvailable`); the drawer's batch also needs `pullRequestsBatchVersion == 1`
+  (`pullRequestBatchAvailable`). `pullRequestsMaxConcurrentLookups` (default 4) bounds batch chunks in
+  flight; `pullRequestsConnect` (the provider users may connect) gates the Settings account row.
+- `GET /api/convos/:id/pull-request` → `{ pullRequest: TConversationPullRequest | null }`. `null` is not
+  an error (no lane, repo not allowed, feature off, another user's chat, an unconnected OAuth-only
+  user). 404 `{error}` bad id; 503 `{code: NOT_CONFIGURED|RATE_LIMITED|UPSTREAM_ERROR}`; 500. Codes are
+  logged, never shown; all read the same.
+- `POST /api/convos/pull-requests` takes a **bare** `{conversationIds: string[]}` (not `arg`-wrapped),
+  at most 50 (`PULL_REQUEST_BATCH_MAX`), and answers `{results: [{conversationId, pullRequest} |
+  {conversationId, error:{code}}]}` by the server's own deadline (≤120 s, so the client lifts its 30 s
+  cap). A 404 (a replica without the route) falls back to single GETs with the same bound.
+- `TConversationPullRequest`: `number, title, url, provider?` (absent = github), `additions, deletions,
+  state (open|closed|merged), isDraft, mergeable (clean|conflicting|unknown), checks
+  (passing|failing|running|none)`. Enumerated fields stay strings on the client.
+- Only code chats are asked (`isCodeConversation`: `codeEnvironmentMode == "attached"` or a non-empty
+  `codeWorkspaces`). List rows (rc1) carry `codeDecisionListed: true` when the replica projected the
+  code fields; Room keeps a derived nullable `isCodeConversation` column (DB 14): a full single GET
+  settles it, a stamped list row says false, anything else keeps what the cache knew; null = ask.
+- Results are in memory only (`PullRequestRepository`, per account), never Room. The chat polls on
+  upstream's interval (20 s while checks run or mergeability is unknown, 60 s otherwise, stop once
+  closed/merged with checks done) only while the chat screen is in front; the drawer never polls.
+- `/api/pull-requests/oauth/{status,connect,callback}` and `DELETE /oauth` exist only when the operator
+  configured `pullRequests.oauth`. `/oauth/connect` sets its own binding cookies (`oauth_csrf`,
+  `oauth_session`); there is no separate bind call, unlike MCP. **Built** (Settings › Account ›
+  Connected accounts, `PullRequestConnectionRepository`): `/oauth/connect` is a **GET** (not POST); its
+  `Set-Cookie` values are seeded into the in-app sign-in WebView (`McpOAuthSignInDialog`), since the
+  unauthenticated callback refuses a browser without them (`invalid_state`). A connect response with no
+  binding cookie is a failure, never the system browser. The callback ends on
+  `{basePath}/oauth/success?serverName=GitHub&flow=…` or `/oauth/error?error=…`, which the WebView gate
+  stops at. 404 `NOT_CONFIGURED` from connect hides the row for the session. `status.connected` can be
+  true while `configured` is false (a grant whose app is gone, "Not in use", still removable).
+- A status that shows a different credential than the active account's lookups were last made under
+  (upstream `syncPullRequestConnection`: `user:<provider>:<flowId>` vs `server`), or a disconnect,
+  marks every cached lookup stale and bumps `PullRequestRepository.revision`; the open chat and the
+  open drawer ask again at once. A lookup that answers after an account switch is dropped.
+- Surfaces: ⋮ item on a chat pane < 600dp plus a composer row there (mobile-only, no web reference);
+  a bar chip on a pane ≥ 600dp (web's desktop header chip, which upstream switches at 768px of
+  viewport). The drawer marks refresh on open (> 60 s), on pull-to-refresh (> 15 s, mobile-only) and on
+  a change of credential; never on a timer.
+
+**MCP Apps** (BUILT, v0.8.9-rc1; 7b27e7941e11 #13831)
+- Gate: `GET /api/config` (authenticated) → `mcpApps` (`TMCPAppsPolicy`), read as web's
+  `getPublishedPolicy` does: Apps only when `enabled === true`, and a policy whose `enabled` or
+  `legacyHtmlEnabled` is not a Boolean is no policy. Pre-rc1 servers send none, so there is no
+  version check (`McpAppsPolicy.resolve`, `StartupConfig.mcpAppsPolicy`).
+- An App is a `ui_resources` attachment entry (SSE `attachment` and persisted
+  `message.attachments[]`) with `toolName`, `serverName` and the App media type
+  `text/html;profile=mcp-app`; its payload must be an array (`selectToolCallUiResources`). Each
+  carries `resourceId, uri, mimeType, text | blob (base64), serverBinding ("v1.<hmac>"),
+  structuredContent, content, toolArgs, isError, resultMeta, csp, permissions`. Over the server's
+  `maxPersistedAppBytes` it arrives URI-only (no `text`/`blob`/`csp`). rc1 also stamps `stepId` on
+  the attachment (now kept on live attachments too).
+- Routes (`api/server/routes/mcp.js`), all `POST`, bare JSON (NOT `arg`), JWT, MCP use permission,
+  then a 240/min per-user admission limiter and 120/min resource / 60/min tool-call limiters
+  (`McpAppsApi`; failures read by `McpAppFailure`):
+
+  | Route | Body | 200 |
+  |---|---|---|
+  | `/api/mcp/app/validate` | `{serverName, serverBinding}` | `{valid:true}` |
+  | `/api/mcp/resources/read` | `{serverName, serverBinding, uri}` | raw `ReadResourceResult` |
+  | `/api/mcp/resources/list` | `{serverName, serverBinding, cursor?}` | raw `ListResourcesResult` |
+  | `/api/mcp/resources/templates/list` | same | raw `ListResourceTemplatesResult` |
+  | `/api/mcp/app-tool-call` | `{serverName, serverBinding, toolName, arguments}` | raw `CallToolResult` |
+
+- Errors (`packages/api/src/mcp/apps.ts`): 400 `{error:<message>}` for a bad body, a stale binding or a
+  tool whose `_meta.ui.visibility` excludes `app` (never matched on its text: any 400 from validate or
+  read is "the server changed, run the tool again"; from a tool call it is just `isError` to the
+  App); 401 `{error:"invalid_token"}` is the MCP server's own OpenID reauth, not the LibreChat
+  session (the auth plugin's refresh succeeds, the retry 401s again, and nothing signs out;
+  `AuthInterceptorTest` pins it); 403 `{error:"MCP Apps are disabled"}` vs any other 403 (no MCP
+  permission), told apart by body; 413/502/503/504 `{error:<code>, message}` operation budget; 429
+  limiter; 500 `{error:"Failed to execute tool"}`. The binding is invalidated by a change of server
+  owner, endpoint, command, custom vars or config generation, not by token refresh.
+- **Deliberate divergence: no `sandboxUrl` requirement.** Web refuses to load an App unless
+  `mcpApps.sandboxUrl` names a dedicated origin other than the chat's (`client/src/utils/mcpApps.ts`),
+  a browser same-origin problem. The app cannot use that proxy anyway: `mcp-sandbox.html` talks only
+  to `window.parent` and its `frame-ancestors` would not list us. It ships its own relay page
+  (`McpAppRelayPage`, a port of the proxy's inner-frame half) loaded at the synthetic origin
+  `https://mcp-app.switchboard.invalid`, with native code as the parent. So a server whose web client
+  shows a load error for lack of a sandbox URL still runs Apps on mobile.
+- Tokens never enter the WebView: every route above is called natively by `McpAppHost`. The App runs in
+  an opaque `srcdoc` frame (`sandbox="allow-scripts allow-forms"`); the bridge is an origin-scoped
+  `WebMessageListener` on Android (a token-gated single-method JavaScript interface on WebViews
+  without `WEB_MESSAGE_LISTENER`) and an isolated `WKContentWorld` on iOS.
+- **Permissions** (`permissions` on the resource, or `_meta.ui.permissions` on a read): only
+  `geolocation` and `clipboardWrite` are delegated (port of `getSupportedMCPAppPermissions`), sent
+  in sandbox-resource-ready `permissions` and turned into the App frame's `allow` by the relay, as
+  `mcp-sandbox.html` does. Camera and microphone never.
+  - Feasibility, measured 2026-11-04 on Android WebView 145 (API 37 emulator), a page loaded as the
+    relay is (`loadDataWithBaseURL("https://mcp-app.switchboard.invalid/")`, inner `srcdoc` frame,
+    `sandbox="allow-scripts allow-forms"`): the inner frame reports `origin=null`,
+    `isSecureContext=true`. With `allow="geolocation; clipboard-write"`,
+    `getCurrentPosition` reaches `WebChromeClient.onGeolocationPermissionsShowPrompt` with origin
+    `""`; granting delivers a coarse fix (accuracy 2000 m), refusing gives `code=1 User denied
+    Geolocation`; `navigator.clipboard.writeText` from a tap resolves. Without `allow`: geolocation
+    fails at once `code=1 ...disabled in this document by permissions policy` and `writeText` rejects
+    `NotAllowedError ...blocked because of a permissions policy`.
+  - iOS: not run (no simulator UI here). WebKit's `Geolocation::shouldBlockGeolocationRequests` refuses
+    any document whose security origin is opaque, which every App frame is (never `allow-same-origin`),
+    so iOS never offers geolocation (`mcpAppLocationSupported = false`) and declares no location usage
+    string. Clipboard-write is passed through `allow` there too; unverified on device.
+  - Location is approximate only (`ACCESS_COARSE_LOCATION`), asked per MCP server the first time one of
+    its Apps requests it ("Allow weather to use your approximate location?"), then the OS prompt. The
+    answer is stored per account and server (`McpAppLocationConsentStore`); a refused server's Apps get
+    no `geolocation` in `allow`. Settings › MCP servers › server sheet › "Location for apps" switch
+    changes it. Never retained at WebView level (`callback.invoke(origin, allowed, retain = false)`),
+    since every App shares the one synthetic origin. Clipboard-write has no prompt (browser parity).
+- Protocol: spec `2026-01-26` (`@modelcontextprotocol/ext-apps` 1.7.5), spoken by a Kotlin host, not
+  the vendored SDK (it has no browser build). Method names pinned in `McpAppHostTest`.
+- Placement and count: inline in the thread like web (`MCPAppViews.tsx`), at the App's reported height
+  clamped as `clampAppViewHeight` (80..4000) and further to 60% of the window, frozen at the first
+  report; web resizes on every report and has no Expand. Mobile adds a full-screen panel and reports
+  `displayMode` `inline`/`fullscreen` with `availableDisplayModes` both (web: `inline` only, and
+  `client/src` has no `ui/request-display-mode` handler; mobile answers it). Open Apps are capped at
+  `min(maxActiveViews, 3)` (1 on a low-RAM Android device) where web caps at `maxActiveViews`; over it
+  both refuse with `com_ui_mcp_app_at_capacity` ("Close another app before opening this one.").
+
+**Legacy MCP-UI resources and `\ui{…}` markers** (BUILT, v0.8.9-rc1 behaviour)
+- A tool's plain `text/html` resource (or one with no `mimeType`, which means HTML) with an inline body
+  is sent as a `ui_resources` attachment entry with a `resourceId` (10 hex chars, sha256 of the
+  snapshot), and the tool result tells the model to place it with `\ui{id}` (one) or `\ui{a,b,c}`
+  (carousel) in its reply (`packages/api/src/mcp/parsers.ts`). Legacy is ON by default:
+  `mcpApps.legacyHtmlEnabled = mcpSettings.apps !== false` (`config.ts`).
+- Web (`mcpUIResourcePlugin`) parses markers in markdown text nodes only, always, whatever the policy;
+  `UIResourceRenderer` draws only while `legacyHtmlEnabled`, in an `allow-scripts`-only srcdoc frame,
+  sized by the resource's `ui-size-change`. Resources resolve conversation-wide by id
+  (`useConversationUIResources`). A resource with no marker is not drawn anywhere ("Legacy HTML
+  remains marker-owned"); a carousel drops ids it can't find.
+- Mobile: `splitUiResourceMarkers` (code-aware, escape-aware) strips every marker; `LegacyUiResourceBlock`
+  draws found legacy resources inline (fixed 240dp until the resource reports, clamped 80dp..70% of
+  the window; a carousel of 230x360dp cards), from `conversationUiResources` (shown messages + the live
+  reply). Its actions (`tool`/`intent`/`prompt`) become upstream's `handleUIAction` text.
+- A single unknown id shows web's `com_ui_ui_resource_not_found` chip ("UI Resource not found (index:
+  …)"), whatever `legacyHtmlEnabled` says, as `MCPUIResource.tsx` checks it before the renderer's
+  gate; not while the reply streams (its attachment can still arrive). A carousel drops unknown ids.
+- **Deliberate divergences:** a resource's action is confirmed with "Send message from app?" before it is sent
+  (web sends at once, and a resource can fire one without a tap); while the reply streams a resource
+  shows a placeholder and goes live when the reply is saved (web renders it live); the shared viewer
+  strips markers and draws nothing (its config carries no policy; web's share view resolves to the
+  same off policy). Unverified on a device: WebKit delivering the frame's `message` events to the
+  isolated content world (same open question as MCP Apps).
+
+**Tool approval: Always allow and agent approval modes** (BUILT)
+- `POST /api/agents/tools/approvals/reset` (`api/server/routes/agents/tools.js`,
+  `packages/api/src/agents/hitl/controller.ts`). Body `{ agentId, toolName? }`, NOT `arg`-wrapped, and
+  the schema is `.strict()`: an extra key, or `toolName: null`, is 400. `toolName` is the full MCP id
+  (`<tool>_mcp_<normalizedServer>`); without it every remembered approval the caller has for the agent
+  goes. Reply 200 `{ reset: true }`. Errors: 401 `UNAUTHORIZED`; 400 `INVALID_APPROVAL_RESET`; 403
+  `APPROVAL_RESET_FORBIDDEN` (no such agent, no VIEW access, or a per-tool reset whose SAVED
+  `approval_mode` is not `chat`/`always`); 503 `APPROVAL_RESET_FAILED`. Rate-limited by
+  `toolCallLimiter` (429). Resets only the caller's own grants; VIEW access is enough. It does not
+  touch a chat's "Always allow" list (`conversation.toolApprovalAllows`), which has no route at all.
+  Mobile: agent page ⋮ (whole agent) and the editor's per-tool mode menu.
+- `review_configs[]` gains `allow_always` (offer "Always allow" = `approve` + `scope: "session"`; a
+  scope on a call not offered it 403s the batch, `"always"` is always rejected), `remember_scope`
+  (`chat`|`always`: a plain approve teaches a grant) and `remember_unavailable`
+  (`connection`|`disabled`|`storage`|`background`). Resume 403 "Decision not permitted for one or more
+  tools" carries `disallowed: [tool_call_id]`; the fingerprint 403s carry none.
+- `agent.tool_options[<toolId>]` gains `approval_mode` (`ask`|`allow`|`chat`|`always`) and
+  `approval_revision` (UUID, rewritten on every change). Keys are the full MCP id; the update route
+  stores the sent map as is. `GET /api/endpoints` `agents.toolApproval` = `{enabled, agentModes, mode,
+  allow, deny, ask}`, with `agentModes` already ANDed with `enabled`; it gates the picker.
+
+**Revised request / response shapes**
+- `GET /api/convos` takes `updatedAfter`, `createdAfter` (ISO 8601), repeatable `endpoints`, `hasFiles`,
+  `sharedOnly`; a malformed facet is 400 `{ error }`. (BUILT: `ConversationListFilters`, drawer filter sheet)
+- `GET /api/agents` takes `?sort=newest|oldest|popular|author` (unknown → ignored) and `?mine=1`
+  (agents the caller authored, ANDed with the ACL set); a cursor from another ordering is 409
+  `{ error: "cursor_ordering_mismatch" }`. With no `sort`, rc1 orders by `createdAt` desc (was
+  `updatedAt`). (BUILT: `AgentsApi.getAgentsPaginated(sort, mine)`, gated on rc1; the marketplace
+  always sends a sort there, and restarts from page one once per query on the 409. Page size stays
+  20, not web's 32. `interface.marketplace.retryDelaysMs` not read: retry is tap-only.)
+- `POST /api/convos/fork` accepts `excludeFiles`. (BUILT: `ForkConversationRequest`)
+- `GET /api/files ?limit=` is bounded by the server's `fileListLimit`. Mobile does not page it.
+- `POST /api/auth/refresh` 200 may be the enrollment body with **no token** (see Authentication);
+  `RefreshResponse.token` is nullable and the store branches on `code` before the cookie update. (BUILT)
+- Every authenticated route: 403 `TWO_FACTOR_ENROLLMENT_REQUIRED`; writes 403 `terms_not_accepted` under
+  `interface.termsOfService.modalAcceptance`; pre-auth routes 403 `TENANT_CONTEXT_REQUIRED` under strict
+  tenancy. Each is told apart from the UA soft-ban 403. (BUILT)
+- `POST /api/auth/2fa/disable` 403s while `twoFactorAuthenticationRequired`; the setting is hidden then. (BUILT)
+- Register and reset-request errors are now a generic `Something went wrong`; reset also deletes
+  passkeys. Validation 400 messages are Zod v4's wording; mobile matches no validation text, so
+  nothing changed.
+- `GET /api/config`: fails closed (authed config resolution error is a generic 500, no partial config)
+  (BUILT). New top-level keys, decoded: `twoFactorAuthenticationRequired`, `conversationTitleOwnershipVersion`.
+  New `interface` keys, decoded: `landingHeading` (`entity`|`greeting`) / `landingFooter`,
+  `runningChatRename`, `queuedTurnReconciliationTimeoutMs`, `queuedSendLockTimeoutMs`,
+  `steerArmConfirmationTimeoutMs`, `retentionMode: "ephemeral"` (temporary chat forced on);
+  policy links pass through `isSafeLinkUrl`. `balance` gains `refillMode` (`add`|`reset`) and
+  `display` (`credits`|`currency`|`percent`). Also decoded (`StartupConfig`): `passkeyLoginEnabled` and
+  `allowEmailChange` (`AccountGates`), `maxPasskeysPerUser`, `conversationListLimits` (drawer),
+  `ragEnabled` (`ProjectContextGate`), `projects{…}`, `codeWorkspaceInheritanceVersion`
+  (`CodeWorkspaceDelegate`), `mcpApps{…}` and `pullRequests*` (see "MCP Apps", "Conversation pull
+  requests"). `interface.replyNotifications`: only `desktop` and `sound` are decoded (each off only
+  when `false`, as web reads them); `tabBadge` and the poll fields are web-only.
+- `interface.theme` (decoded raw): a bundled name (`librechat`, `clickhouse`) or an inline
+  `{ version: 1, name, modes: { light, dark: { colors: { "rgb-accent-primary": "R G B", … } } } }`,
+  served pre-login too. BUILT for inline definitions only: the light accent (dark when the light one
+  is grey) seeds the app's scheme while Settings → Appearance → Use server accent is on (per server,
+  default on); cached in `ThemeDataStore` by `DeploymentThemeSync` for cold start and sign-in.
+  Bundled names give no accent.
+- `endpoints.<ep>.models` is authoritative: a chat or agent on a model the config dropped is refused,
+  and an enforced spec is restored for continuations. Mobile already shows the server's refusal;
+  no change.
+- Conversations: `titleSetByUser`, `titleRevision` (BUILT); `lastResponseAt`, `lastResponseMessageId`,
+  `isMarkedUnread`, `lastSeenAt` (BUILT: `Conversation`, Room). `gen_title` may answer
+  `{ title, titleSetByUser: true, titleRevision }` or 500 `title_read_failed`.
+- Messages: `isUserSubmitted` (a host wake-up row is not user text; Room 13 → 14) (BUILT);
+  `privacyRevision`, `reasoningOverride`, `subagentContent` (BUILT: `Message`, `StreamEvent`).
+- Agents: `instructionsPrompt` (link to a prompt group; read-only in the editor) (BUILT);
+  `tool_options.approval_mode` / `approval_revision` (BUILT: agent editor, `ToolApprovalModes`). Create/update 400 on an
+  undeclared `model_parameters` key (BUILT, see Configuration).
+- Prompt groups: `source` (`native` or an external store such as `langfuse`); external groups are
+  read-only (403 `read_only`). (BUILT)
+- Abort result: `settled`, `terminalStatus`, `persistenceFailed` decoded; on protocol v1 a 409
+  `ABORT_PERSISTENCE_FAILED` is retried. (BUILT, see SSE section)
+- Subagent events: activity item type `steer`, phase `steer_applied`, `activityDroppedCount`;
+  background tasks carry `subagent_thread_id` and a folded `activity` progress tree. (BUILT)
+- Schedules: MCP receipts on `lastRun` explain a blocked MCP call. (BUILT)
+- Schedules MCP consent (`api/server/routes/schedules.js:91-93`, `packages/api/src/schedules/authorization/handlers.ts`):
+  `GET` (no SCHEDULES permission check; anyone who can see the schedule) and `POST` (USE + CREATE)
+  answer `ScheduleMCPConsentView { state: missing|active|expired|revoked|changed|unsupported,
+  revision|null, expiresAtMs|null (epoch MS), targets[{resource{serverName,url,credentialMode,issuer,
+  audience,scopes}, permittedTools[{agentId,tools}]}], offer{digest,maxLifetimeHours}|null }`. `POST`
+  body is strict `{ offerDigest, expectedRevision (nullable, REQUIRED), lifetimeHours 1..8760 }`;
+  `DELETE` body `{ expectedRevision }` → 204. 400 `{code:"consent_invalid"}`, 404
+  `{code:"consent_not_found"}`. Offered when `limits.mcpConsent` or `schedule.hasMCPConsent`. (BUILT:
+  `SchedulesApi.getMcpConsent/confirmMcpConsent/revokeMcpConsent`; the confirm body is a JsonObject so
+  the null revision survives `explicitNulls = false`.)
+- Tool approval: `ToolReviewConfig.allow_always` / `remember_scope`, resolution `scope: "session"`
+  (BUILT: `PendingAction`, `ChatResumeRequest`). `ToolApprovalRequest.source` (`librechat_code`,
+  server-authored, absent for user/MCP/action tools) marks the server's own `bash_tool` /
+  `create_file` / `edit_file`: the review reads "Run command" / "Create <file>" / "Edit <file>" with
+  the proposed command, contents or edits, hidden controls spelled out, capped at 200 lines / 16K chars
+  per call and 64K per batch (BUILT: `core/model` `approval/ApprovalPreview.kt`, a port of web
+  `approval/preview.ts`). A `bash_tool` with an `environmentAction` key stays generic. Token usage `input_token_details.cache_creation_1h` (not decoded; cost
+  display does not split cache tiers).
+- The DALL-E 3 tool is retired server-side; marketplace previews use its replacement. (BUILT)
+
+**Attached code machines (code workspace controls).** None of this is new in rc1 except the
+`code_environment_ids` agent field and subagent inheritance; the routes and send fields were already
+on the 0.8.8 line. Gated on config fields and exact capability versions, never on the server version.
+```
+GET    /api/code-environments/:id/status          machine state + registered workspaces (BUILT, CodeEnvironmentsApi.status)
+PATCH  /api/code-environments/conversations/:id/decision   move/attach/detach/recover a saved chat (BUILT)
+GET    /api/code-environments                     the user's machines + pairable control planes (BUILT, Settings)
+POST   /api/code-environments/pairings            pair a personal machine; one-time worker command (BUILT, Settings)
+PATCH  /api/code-environments/:id/settings        File changes / Commands and code permissions (BUILT, Settings)
+DELETE /api/code-environments/:id                 revoke and remove a machine (BUILT, Settings)
+GET    /api/code-environments/setup/:attemptId    a worker's setup request (BUILT, CodeSetupScreen)
+POST   /api/code-environments/setup/:attemptId/approve|deny   (BUILT; requireSameOrigin passes: no Origin sent)
+PATCH  /api/user/preferences                      `{statefulCodeEnvironment}` default scope (BUILT, Settings)
+POST   /api/code-environments                     admin register (MANAGE_CODE_ENVIRONMENTS): not built, web has no UI for it
+```
+- `status` → 200 `{ environmentId, status: offline|starting|ready, workspaces?: [{ id, name?,
+  workspaceInstances?: ["git_worktree"], workspaceScopes?: ["git_linked_worktree"], environment?:
+  { fingerprint, repo?, ref?, actions[] } }], operations?, runtimes? }`. `workspaces` absent = the
+  worker predates workspaces. 404 unknown, 503 not configured/busy, 504 timeout, 502 other; IP and
+  per-user rate limited. Polled every 10 s only while the composer shows the control and the app is
+  in front (web's `refetchInterval`), 30 s after a 503/504, stopped on a 404.
+- `PATCH …/decision` body `{ from: Selection[], to: Selection[] }` (NOT `arg`-wrapped; `from` must
+  equal the saved decision, empty `to` = detach) → 200 `{ conversationId, codeEnvironmentMode,
+  codeWorkspaces? }`; 403 moves/transitions disabled, 404, 409 busy (no `code`), 409 `{code, reason}`,
+  503. BUILT (`CodeEnvironmentRepository.moveDecision`): the composer offers web's transitions (attach a
+  chat sealed "No workspace", move to the agent's new machine, recover a missing workspace, continue
+  without a workspace), gated on the move/transition/recovery versions; the answer becomes the saved
+  decision. `locked` or an unknown outcome (no status, 5xx) re-reads the decision with Send held.
+- After a failed turn that carried a decision, the chat re-reads its decision before the next send
+  ("Confirming this chat's workspace decision…", with Retry when the read fails), as web's
+  `reconcileFailedCodeDecision`. A single-conversation GET that 404s means the server never saved the
+  chat: it counts as undecided.
+- Config: `GET /api/endpoints` → `agents.statefulCodeSessions { environments[{id, name, type:
+  managed|attached, default?, configSchema?.workspaces{allowCheckoutSelection, linkedWorktrees},
+  settings?}], allowEnvironmentSelection?, maxEnvironmentChoices?, approvalsEnabled, approvalModes }`
+  plus `capabilities` containing `execute_code` and `stateful_code_sessions`. `GET /api/config` →
+  `codeEnvironmentDecisionVersion` (1), `codeEnvironmentMoveVersion` (1),
+  `codeEnvironmentTransitionVersion` (2), `codeWorkspaceRecoveryVersion` (1),
+  `codeWorkspaceInheritanceVersion` (1, rc1), each matched with `==`.
+- Agent fields (`GET /api/agents` LIST route only; the VIEW route returns none of them):
+  `stateful_code_sessions`, `tools` (cut to `["execute_code"]` or `[]`), `code_environment_id`,
+  `code_environment_ids` (rc1), `code_workspace_id`, `agent_ids`, `edges.from/to`, `subagents` ids.
+  Mobile's agents cache is the in-memory list response, so all of them are kept.
+- Send: chat POST `codeEnvironmentMode: attached|without_attached` and `codeWorkspaces:
+  [{environmentId, workspaceId, checkout?: source|isolated, agentIds?}]`, beside `manualSkills`. A
+  NEW chat that sends neither is sealed "No workspace" for good (`decision.ts`); a chat that already
+  decided keeps its decision when neither is sent, and a different one is `locked`. Mobile sends them
+  only when a reachable agent runs code on an attached machine, and sends nothing on a chat that
+  already holds a decision. Saved conversations carry both fields; mobile reads them off the
+  single-conversation GET (not cached in Room).
+- Rejection: 409 / in-band `{ code: "code_workspace_unavailable", reason: required|invalid|
+  worker_unavailable|unsupported|missing|locked }`; each reason has its own message. A first-turn
+  rejection does not save the new chat (`shouldPersistCodeWorkspaceInitializationError`).
+- Code approval mode (BUILT): chat POST `codeApprovalMode: ask|acceptEdits|fullAccess`, sent on every
+  agents turn while `statefulCodeSessions.approvalsEnabled` is true (web sends it then too; `ask` for a
+  turn without a workspace). The picker shows when `approvalModes` has `ask` and an attached machine is
+  in reach; `acceptEdits` / `fullAccess` also need each machine's `configSchema.permissions` to offer
+  `allow` (`CodeApproval`). Saved conversations carry `codeApprovalMode`; a chat without one opens on
+  the device's last pick.
+- Settings › Data › Code execution (BUILT): gated on `agents.capabilities` containing
+  `stateful_code_sessions`, as web's Settings is. Pairing 409 has no `code`: only the message
+  "Personal code environment limit reached" tells the limit apart (mirror `code-pairing-limit-message`).
+  The setup link is `<DOMAIN_CLIENT>/code/setup/<43-char base64url id>`; the app takes it pasted, or as
+  `librechat://code-setup/<id>`. `requireSameOrigin` passes a request with no `Origin` or
+  `Sec-Fetch-Site`, and the app sends neither: keep it that way.
+- Agent editor Code section (BUILT): `stateful_code_sessions`, `stateful_code_environment`,
+  `code_environment_id` (an explicit `null` returns to the deployment default), `code_environment_ids`,
+  `code_workspace_id` (`""` = last used), `repositoryInstructions`, `git_identity` (`null` clears).
+  Read from `GET /api/agents/:id/expanded` (it carries them; the VIEW route does not) and sent only
+  when changed.
+
+**Tool-call previews (`?toolPreviews=1`, BUILT).** Opt-in query parameter, exact value `1`
+(`packages/data-provider/src/previews.ts`, mirrored as `tool-call-previews-param`/`-version`). No
+header and no config flag reaches clients; a server before rc1, or rc1 with
+`toolCallPreviews.enabled: false`, ignores it and sends everything in full with no markers. No
+version gate: the code path is the same either way.
+- Honoured by `GET /api/messages/:c` (chat load, pull-to-refresh, media gallery, search preview and
+  prefetch send it), `POST /api/convos/fork`, `/api/convos/duplicate`, `/api/share/:id/fork` and
+  `/api/messages/branch` (these shape the response only; mobile caches none of their messages).
+  NOT honoured by search, share reads, `GET /:c/:m` or export; export sends no param
+  (`MessageRepository.fetchMessagesFull`, which never writes Room).
+- A settled agent tool call with an id, unique identity (`id + stepId + part.agentId`) and not
+  `ask_user_question`/image-gen is shortened: `output` over 512 chars (JSON keeps every key; text keeps
+  head + `"\n…\n"` + tail; the attached-workspace exit trailer is kept) → `outputTruncated`,
+  `outputLength` (UTF-16); `args` over 512 → `argsTruncated`, `argsLength` (an object that can't fit
+  becomes a string head); `subagent_content` → removed, `subagentContentOmitted`,
+  `subagentContentParts`, `subagentAttachmentCalls: [{id, agentId?, stepId?}]`. Every shortened call
+  carries `previewRevision` (the message's `updatedAt`). `stepId` is now decoded on every call: the
+  part route matches it exactly.
+- Mobile caches previewed rows in Room WITH their markers (`AgentToolCall.isPreview`), so nothing reads
+  one as complete. Fetched parts live in memory only (`ToolPartHydrationDelegate`), overlaid on the
+  built display path. The context estimate counts `argsLength`/`outputLength`.
+- `GET /api/messages/:c/:m/parts/:partIndex?toolCallId=&stepId=&agentId=` (`stepId`/`agentId` only
+  when non-empty, every id encoded): 200 `{conversationId, messageId, partIndex, tool_call}`, the stored
+  call in full (`subagent_content` included). `partIndex` must be a non-negative safe integer but is only
+  echoed; the call is found by identity. 400 `Invalid tool call part` (bad index, missing
+  `toolCallId`); 404 `Tool call not found` (message gone, identity absent or repeated, subagent
+  thread) plus the message-validation 403/404; 500 on a read failure. Owner-scoped; a live job's
+  owner can read it. Not rate limited. Mobile shows any failure as "Couldn't load the full tool
+  call." with Retry; no automatic retry.
+- Write guard: only `POST /api/messages/:c` refuses marker-bearing content (400 "Tool call previews
+  cannot be saved as message content"); mobile never calls it. **`POST /api/convos/import` has no
+  guard**: a file with previews would be stored shortened for good, so the importer and
+  `ConversationRepository.importConversation` refuse such a file client-side
+  (`ToolCallPreviewImportException`).
 
 ### Other
 ```
@@ -1515,6 +2121,20 @@ GET /api/banner
 - id, name, email, username, avatar, role, provider
 - emailVerified, twoFactorEnabled
 - favorites, termsAccepted
+
+### Change account email (v0.8.9-rc1)
+```
+POST /api/user/email/change   { currentPassword, newEmail }  → { message, code? }   (no arg wrapper)
+  Mails a link to newEmail (${DOMAIN_CLIENT}/verify?type=email-change&…, 15 min default); the change
+  lands when it is opened on the web (POST /api/user/email/verify, not called by the app). Sessions
+  survive. Gate: provider == "local" && emailEnabled && allowEmailChange (startup config).
+  Codes: 400 invalid_request | same_email; 403 email_change_disabled | local_account_required |
+  current_password_invalid | email_domain_not_allowed; 409 email_in_use | account_modified |
+  request_in_progress; 500 email_delivery_failed; 503 email_service_unavailable;
+  429 (no code, emailChangeLimiter: 3 per 2 min per user, logs a VERIFY_EMAIL_LIMIT violation).
+  The "change requested" notice goes to the OLD address before the password is checked, so every
+  attempt mails it. Never retried.
+```
 
 ### Conversation
 - conversationId (UUID), title, user, endpoint, model
@@ -1607,11 +2227,9 @@ Mobile only renders the compacted summary once it is persisted to the final mess
 a SUMMARY content part; the delta/lifecycle events are surfaced as status only.
 
 v0.8.6 adds `on_subagent_update` (envelope `{ event, data:{ phase, parentToolCallId, data } }`)
-for the web subagent live-trace dialog. Mobile drops it via `SseEventMapper`'s forward-compat
-`else -> null` branch with no crash; the subagent's actual reasoning/tool-calls/text still
-arrive folded into the parent run's normal `on_run_step`/`on_message_delta` events, so
-subagent activity renders today as ordinary parent-agent tool calls. A dedicated trace UI is
-deferred.
+for the web subagent live-trace dialog. BUILT: `SseEventMapper.mapSubagentUpdate` maps it to
+`StreamEvent.SubagentUpdate`, `SubagentTraceDelegate` folds it per parent tool call, and
+`SubagentTraceCard` renders the trace.
 
 ### SSE Event Format
 ```
@@ -1629,6 +2247,50 @@ data: {"sync":true,"resumeState":{"runSteps":[...],"aggregatedContent":[...]}}
 - Exponential backoff: 1s, 2s, 4s, 8s... max 30s
 - Max 5 retries
 - Resume preserves state via sync event
+- `resumeState.pendingOAuthPrompts` (6122d210d #15471, v0.8.8-rc2+): `[{ stepId, runId?, index,
+  toolCallId?, toolName, authURL, expiresAt? }]`, the MCP sign-ins the run still waits on (server
+  drops expired ones and finished steps, and keeps only `oauth_mcp_*` calls, so an `on_use` prompt
+  inside a real tool call is not in it). Mapped to `ToolCallAuthRequired`, with a `ToolCallStart`
+  first when `aggregatedContent` lacks the call. Absent on older servers. (BUILT)
+
+### v0.8.9-rc1 changes on the chat and speech routes (no new endpoints)
+- **Keepalive** (4afd5e17f): the stream route writes an SSE comment `:\n\n` after
+  `endpoints.agents.streamKeepaliveIntervalMs` of quiet (default 25 s, `0` disables). Skipped by
+  `SseLineParser`; each one restarts its 120 s stall timeout. Not an event, so it never resets
+  `SseClient`'s attempt counter. (BUILT)
+- **Turn-id validation** (f18b16bae): every `/api/agents/chat` route 400s
+  `{ code: "INVALID_MESSAGE_ID" }` for a `messageId` / `responseMessageId` / `parentMessageId` /
+  `overrideUserMessageId` / `overrideParentMessageId` that is present but not 1-256 chars of
+  `[A-Za-z0-9_:.-]` (257 for response/parent ids). An empty string is present. `ChatPayloadBuilder`
+  sends blank ids as absent. (BUILT)
+- **Content filter** (73d704656): a filtered chat POST answers 400
+  `{ error: "content_filter_block", message, source, field }` before anything is saved. The chat
+  shows `message` (or a localized notice when it has none) and un-sends the turn. (BUILT)
+- **Abort persistence**: on generation protocol v1 (mobile's), a stop whose partial failed to save
+  is 409 `ABORT_PERSISTENCE_FAILED` + `Retry-After: 1` and the run is kept; `abortChat` retries it.
+  v2 reports it as `persistenceFailed: true` and an already-ended run as
+  `{ success: false, settled: true, code: "RUN_ALREADY_SETTLED", terminalStatus }`; decoded, unused
+  on v1. (BUILT)
+- **TTS input cap** (698ee25fe): `POST /api/files/speech/tts/manual` synthesizes only the first
+  `speech.tts.maxInputChars` (default 20,000, not in startup config) characters and drops the rest
+  silently. Android's server read-aloud sends sentence-cut segments of at most 4,000 characters and
+  plays them in turn. iOS's server path only probes the route and speaks on-device. (BUILT)
+- **Encrypted reasoning** (50324a0ba): THINK text may be a provider's base64 payload; it is filtered
+  at render (`reasoningDisplay`), not in the SSE mapper, so persisted parts are covered too. (BUILT)
+- **`on_ptc_tool_call`**: `{ tool_call_id, call_id, name, status: running|success|error, args?,
+  error?, durationMs?, runId? }`, twice per inner call of a programmatic tool-calling program (start,
+  then settle with the same `call_id`). Fire-and-forget from `createPtcProgressEmitter`; never written
+  to the message and not rebuilt by a resume, so it is live-only. Mapped to `StreamEvent.PtcToolCall`
+  and folded per code card in `LiveReplyDelegate` (cap 100, a resume marks running rows interrupted).
+  (BUILT)
+- **`executor` on the completion**: `on_run_step_completed`'s `result.tool_call.executor` is
+  `attached_workspace` for a `bash_tool` that ran on an attached machine (`stampCommandExecutor`), as
+  the persisted part already said. Mapped onto `ToolCallComplete`, so the live card reads the exit
+  trailer too. (BUILT)
+- **File tools** `read_file` / `create_file` / `edit_file` (sandbox, skills and attached machines):
+  args `{ path | file_path, content }` / `{ path, edits: [{ old_text, new_text }] }` (or a single
+  `old_text`/`new_text`); `create_file` output opens `Created ` or `Updated ` and may carry a unified
+  diff, as `edit_file`'s does. Rendered as file cards (BUILT, `FileToolCalls.kt`).
 
 ---
 

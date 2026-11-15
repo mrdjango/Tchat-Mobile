@@ -7,6 +7,8 @@ import com.garfiec.librechat.feature.settings.viewmodel.ApiKeysViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.AppearanceSettingsViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.ChatLayoutSettingsViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.ChatSettingsViewModel
+import com.garfiec.librechat.feature.settings.viewmodel.CodeExecutionViewModel
+import com.garfiec.librechat.feature.settings.viewmodel.CodeSetupViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.ContextUsageSettingsViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.DataSettingsViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.FavoritesViewModel
@@ -14,10 +16,14 @@ import com.garfiec.librechat.feature.settings.viewmodel.GeneralSettingsViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.McpServerEditorViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.McpViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.MemoriesViewModel
+import com.garfiec.librechat.feature.settings.viewmodel.NotificationSettingsViewModel
+import com.garfiec.librechat.feature.settings.viewmodel.PasskeysViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.PrefetchActivityViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.PrefetchSettingsViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.PresetManagerViewModel
+import com.garfiec.librechat.feature.settings.viewmodel.PullRequestAccountViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.ReleaseNotesViewModel
+import com.garfiec.librechat.feature.settings.viewmodel.ReportProblemViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.RoleMemoriesAdminViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.RoleSkillsAdminViewModel
 import com.garfiec.librechat.feature.settings.viewmodel.ServerHeadersViewModel
@@ -51,6 +57,7 @@ val settingsModule = module {
             serverDataStore = get(),
             keyRepository = get(),
             roleRepository = get(),
+            passkeyRepository = get(),
             ioDispatcher = get(KoinQualifiers.IO),
         )
     }
@@ -58,12 +65,7 @@ val settingsModule = module {
         DataSettingsViewModel(
             cacheCleaner = get(),
             conversationRepository = get(),
-            keyRepository = get(),
             diagnosticLogRepository = get(),
-            mcpRepository = get(),
-            memoryRepository = get(),
-            roleRepository = get(),
-            permissionGate = get(),
             configRepository = get(),
         )
     }
@@ -72,10 +74,15 @@ val settingsModule = module {
             settingsDataStore = get(),
             preferenceStore = get(),
             speechSettingsFactory = get(),
+            libraryConsent = get(),
+            fileRepository = get(),
+            configRepository = get(),
+            roleRepository = get(),
         )
     }
     viewModelOf(::ApiKeysViewModel)
     viewModelOf(::AppearanceSettingsViewModel)
+    viewModelOf(::NotificationSettingsViewModel)
     viewModelOf(::ChatLayoutSettingsViewModel)
     viewModelOf(::ContextUsageSettingsViewModel)
     viewModelOf(::FavoritesViewModel)
@@ -84,6 +91,11 @@ val settingsModule = module {
     viewModelOf(::McpViewModel)
     // viewModelOf can't read parametersOf: the editor takes the server it edits, or null to add one.
     viewModel { params -> McpServerEditorViewModel(get(), get(), params.getOrNull()) }
+    viewModelOf(::PasskeysViewModel)
+    viewModelOf(::PullRequestAccountViewModel)
+    viewModel { CodeExecutionViewModel(get(), get(), get(), get()) }
+    // viewModelOf can't read parametersOf: the page takes the attempt it approves.
+    viewModel { params -> CodeSetupViewModel(params.get(), get(), get()) }
     viewModelOf(::PresetManagerViewModel)
     // Explicit block for the same reason as AccountSettingsViewModel: the IO dispatcher is resolved by
     // qualifier, which the constructor DSL cannot express.
@@ -104,6 +116,7 @@ val settingsModule = module {
     viewModelOf(::UpdateCheckViewModel)
     viewModelOf(::WhatsNewViewModel)
     viewModelOf(::ReleaseNotesViewModel)
+    viewModelOf(::ReportProblemViewModel)
 
     // viewModelOf has no overload that accepts ParametersHolder, so the runtime
     // endpointName parameter forces the lambda DSL. The SavedStateHandle comes from the

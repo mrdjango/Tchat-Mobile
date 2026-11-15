@@ -291,7 +291,8 @@ private fun SheetHeader(state: SetProviderKeyUiState, retrying: Boolean, onRetry
     ) {
         EndpointIcon(
             endpointName = state.endpointName,
-            iconUrl = state.iconUrl,
+            iconUrl = rememberJoinedIconUrl(state.iconUrl),
+            provider = state.iconProvider,
             size = HeaderIconSize,
             glyphTint = MaterialTheme.colorScheme.onSurface,
         )

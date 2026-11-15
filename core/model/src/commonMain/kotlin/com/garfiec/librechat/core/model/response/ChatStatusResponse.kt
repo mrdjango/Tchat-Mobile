@@ -38,4 +38,26 @@ data class ChatStatusResponse(
      * skipped. This field carries data only on the raw wire decode.
      */
     val unrecoveredSteers: List<PendingSteer> = emptyList(),
+    /**
+     * The run's temporary state as the server recorded it at admission (v0.8.9-rc1), so a client
+     * attaching to it after a reload keeps a temporary chat out of its cache and titling.
+     */
+    val isTemporary: Boolean = false,
+    val resumeState: StatusResumeState? = null,
+)
+
+@Serializable
+data class StatusResumeState(
+    /** The run's request message, which its reply is saved under. */
+    val userMessage: StatusResumeUserMessage? = null,
+    val responseMessageId: String? = null,
+)
+
+@Serializable
+data class StatusResumeUserMessage(
+    val messageId: String? = null,
+    val conversationId: String? = null,
+    val parentMessageId: String? = null,
+    val text: String? = null,
+    val privacyRevision: String? = null,
 )

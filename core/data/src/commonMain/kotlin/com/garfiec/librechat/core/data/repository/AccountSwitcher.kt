@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.garfiec.librechat.core.common.extensions.trimTrailingSlash
 import com.garfiec.librechat.core.common.identity.AccountId
 import com.garfiec.librechat.core.common.identity.ActiveAccountProvider
+import com.garfiec.librechat.core.common.identity.cleanServerUrl
 import com.garfiec.librechat.core.common.identity.currentAccountId
 import com.garfiec.librechat.core.common.identity.deriveAccountId
 import com.garfiec.librechat.core.common.identity.deriveServerId
@@ -122,6 +123,14 @@ class AccountSwitcher(
     @Volatile
     var pendingAdd: PendingAddSession? = null
         private set
+
+    /**
+     * Whether a sign-in now re-authenticates the active roster account whose session ended (expiry,
+     * renewal block, declined terms, 2FA setup) rather than starting a new identity. Logout, remove
+     * and [prepareForSignIn] clear the active account, and add-account sets [pendingAdd].
+     */
+    fun signInReauthenticatesActive(): Boolean =
+        pendingAdd == null && activeAccountProvider.currentAccountId() != null
 
     /**
      * Enter normal sign-in on [serverUrl], ending any identity left behind by a sign-in route.
@@ -415,15 +424,38 @@ class AccountSwitcher(
     suspend fun failOverFromActive(): FailoverResult = switchGate.withSwitch {
         val active = activeAccountProvider.currentAccountId()?.value
             ?: return@withSwitch FailoverResult.NoLiveAccount
-        if (hasSession(active)) return@withSwitch FailoverResult.ActiveStillLive
+        // Slot presence, not [hasSession]: a hard expiry empties the slot, and a clock-judged check would
+        // fail over from a working account on a device clock that runs ahead.
+        if (tokenManager.getAccessTokenFor(active) != null) return@withSwitch FailoverResult.ActiveStillLive
         val successor = liveSuccessor(roster.snapshot().entries, excluding = active)
             ?: return@withSwitch FailoverResult.NoLiveAccount
         flipTo(successor)
         FailoverResult.Switched(successor)
     }
 
-    /** Whether [accountId]'s keyed slot still holds a session. A hard expiry empties it. */
-    suspend fun hasSession(accountId: String): Boolean = tokenManager.getAccessTokenFor(accountId) != null
+    /** Whether [accountId]'s keyed slot still holds a live session ([TokenManager.hasLiveSession]). */
+    suspend fun hasSession(accountId: String): Boolean = tokenManager.hasLiveSession(accountId)
+
+    /**
+     * True when [accountId] lost its session because its server now requires 2FA setup (see
+     * [TokenManager.isTwoFactorSetupRequired]). Signing in to it again runs the setup flow.
+     */
+    suspend fun needsTwoFactorSetup(accountId: String): Boolean = tokenManager.isTwoFactorSetupRequired(accountId)
+
+    /**
+     * The roster accounts on [serverUrl] that are signed out because their server now requires 2FA
+     * setup ([needsTwoFactorSetup]), for the sign-in screen to name. Signing in to one runs the setup
+     * flow, and that sign-in clears its marker.
+     */
+    suspend fun awaitingTwoFactorSetupOn(serverUrl: String): List<AccountEntry> {
+        val server = cleanServerUrl(serverUrl).trimTrailingSlash()
+        if (server.isEmpty()) return emptyList()
+        return roster.snapshot().entries.filter { entry ->
+            cleanServerUrl(entry.serverUrl).trimTrailingSlash() == server &&
+                !hasSession(entry.accountId) &&
+                needsTwoFactorSetup(entry.accountId)
+        }
+    }
 
     private suspend fun liveSuccessor(entries: List<AccountEntry>, excluding: String): AccountEntry? =
         entries

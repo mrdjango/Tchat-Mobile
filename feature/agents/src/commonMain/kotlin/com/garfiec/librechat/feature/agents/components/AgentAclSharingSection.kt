@@ -23,12 +23,11 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,9 +50,12 @@ import com.garfiec.librechat.core.ui.components.AdaptiveAlertDialog
 import com.garfiec.librechat.core.ui.components.AdaptiveAssistChip
 import com.garfiec.librechat.core.ui.components.AdaptiveButton
 import com.garfiec.librechat.core.ui.components.AdaptiveCircularProgressIndicator
+import com.garfiec.librechat.core.ui.components.AdaptiveExposedDropdownMenu
+import com.garfiec.librechat.core.ui.components.AdaptiveExposedDropdownMenuBox
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedButton
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedTextField
 import com.garfiec.librechat.core.ui.components.AdaptiveSwitch
+import com.garfiec.librechat.core.ui.components.acl.permissionUpdateFailureText
 import com.garfiec.librechat.core.ui.components.clearFocusOnTap
 import com.garfiec.librechat.core.ui.sharing.accessRoleLabel
 import com.garfiec.librechat.core.ui.sharing.defaultAccessRoleId
@@ -223,7 +225,8 @@ fun AgentAclSharingSection(
                     Text(stringResource(Res.string.acl_add_principal))
                 }
 
-                uiState.error?.let { err ->
+                val failureText = uiState.updateFailure?.let { permissionUpdateFailureText(it) }
+                (failureText ?: uiState.error)?.let { err ->
                     Text(
                         text = err,
                         style = MaterialTheme.typography.bodySmall,
@@ -344,7 +347,7 @@ private fun PublicToggle(
         }
         if (isPublic && roles.isNotEmpty()) {
             var roleMenu by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(
+            AdaptiveExposedDropdownMenuBox(
                 expanded = roleMenu,
                 onExpandedChange = { roleMenu = it && roleEnabled },
                 modifier = Modifier.fillMaxWidth(),
@@ -358,9 +361,9 @@ private fun PublicToggle(
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = roleMenu) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
                 )
-                ExposedDropdownMenu(expanded = roleMenu, onDismissRequest = { roleMenu = false }) {
+                AdaptiveExposedDropdownMenu(expanded = roleMenu, onDismissRequest = { roleMenu = false }) {
                     roles.forEach { role ->
                         DropdownMenuItem(
                             text = { Text(accessRoleLabel(ResourceType.AGENT, role.accessRoleId, roles)) },
@@ -427,7 +430,7 @@ internal fun GrantAccessDialog(
                         modifier = Modifier.fillMaxWidth(),
                     )
 
-                    ExposedDropdownMenuBox(
+                    AdaptiveExposedDropdownMenuBox(
                         expanded = roleMenu,
                         onExpandedChange = { roleMenu = it && canGrant },
                         modifier = Modifier.fillMaxWidth(),
@@ -441,9 +444,9 @@ internal fun GrantAccessDialog(
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = roleMenu) },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
                         )
-                        ExposedDropdownMenu(expanded = roleMenu, onDismissRequest = { roleMenu = false }) {
+                        AdaptiveExposedDropdownMenu(expanded = roleMenu, onDismissRequest = { roleMenu = false }) {
                             roles.forEach { role ->
                                 DropdownMenuItem(
                                     text = { Text(accessRoleLabel(ResourceType.AGENT, role.accessRoleId, roles)) },

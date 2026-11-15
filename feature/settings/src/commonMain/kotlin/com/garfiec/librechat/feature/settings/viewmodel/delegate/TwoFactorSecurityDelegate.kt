@@ -8,6 +8,21 @@ import com.garfiec.librechat.feature.settings.viewmodel.isHttpStatus
 import kotlinx.coroutines.launch
 
 /**
+ * The account providers enforced 2FA applies to: upstream `TWO_FACTOR_POLICY_PROVIDERS`
+ * (`packages/data-provider/src/config.ts`), registered in `scripts/mirrors.json`. Federated accounts
+ * are left to their identity provider.
+ */
+internal val TWO_FACTOR_POLICY_PROVIDERS = setOf("local", "ldap")
+
+/** Whether 2FA applies to an account of [provider] at all: upstream `isTwoFactorPolicyProvider` (unknown counts). */
+internal fun isTwoFactorPolicyProvider(provider: String?): Boolean =
+    provider == null || provider in TWO_FACTOR_POLICY_PROVIDERS
+
+/** Whether the server refuses to disable 2FA for an account of [provider]. */
+internal fun isTwoFactorRequiredFor(enforced: Boolean?, provider: String?): Boolean =
+    enforced == true && isTwoFactorPolicyProvider(provider)
+
+/**
  * Handles 2FA setup, backup codes, and disable flow.
  */
 class TwoFactorSecurityDelegate(

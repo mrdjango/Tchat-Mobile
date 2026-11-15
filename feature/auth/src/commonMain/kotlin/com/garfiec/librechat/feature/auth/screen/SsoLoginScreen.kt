@@ -26,8 +26,10 @@ import com.garfiec.librechat.core.ui.components.AdaptiveCircularProgressIndicato
 import com.garfiec.librechat.feature.auth.diagnostics.DiagnosticLogLink
 import com.garfiec.librechat.feature.auth.resources.*
 import com.garfiec.librechat.feature.auth.resources.Res
+import com.garfiec.librechat.feature.auth.viewmodel.AUTH_FAILED_CODE
 import com.garfiec.librechat.feature.auth.viewmodel.SsoLoginError
 import com.garfiec.librechat.feature.auth.viewmodel.SsoLoginViewModel
+import com.garfiec.librechat.feature.auth.viewmodel.authRefusalOfCode
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -52,6 +54,8 @@ fun SsoLoginScreen(
         SsoWebView(
             serverUrl = viewModel.serverUrl,
             provider = provider,
+            keepProviderSession = viewModel.keepProviderSession,
+            signedIn = uiState.isLoggedIn,
             onTokenCapture = viewModel::onTokenCapture,
             onOAuthError = viewModel::onOAuthError,
             onCaptureFail = viewModel::onCaptureFailed,
@@ -85,11 +89,15 @@ fun SsoLoginScreen(
 @Composable
 private fun SsoErrorPane(error: SsoLoginError, onBack: (() -> Unit)?) {
     val fallback = stringResource(Res.string.sso_sign_in_failed)
+    val refusal = (error as? SsoLoginError.Provider)?.code?.let(::authRefusalOfCode)
     val message = when (error) {
         is SsoLoginError.Exchange -> error.message ?: fallback
-        is SsoLoginError.Provider, SsoLoginError.CaptureFailed -> fallback
+        SsoLoginError.ExchangeRejected -> stringResource(Res.string.sso_error_exchange_rejected)
+        is SsoLoginError.Provider -> refusal?.let { authRefusalText(it) } ?: fallback
+        SsoLoginError.CaptureFailed -> fallback
     }
-    val code = (error as? SsoLoginError.Provider)?.code
+    // Only a code the app can't word is shown, for a report; `auth_failed` says no more than the fallback.
+    val code = (error as? SsoLoginError.Provider)?.code?.takeIf { refusal == null && it != AUTH_FAILED_CODE }
 
     // Opaque, because this pane is drawn OVER the WebView: Android leaves a blank white page
     // under it and iOS leaves the stopped provider page. Without a surface behind it the

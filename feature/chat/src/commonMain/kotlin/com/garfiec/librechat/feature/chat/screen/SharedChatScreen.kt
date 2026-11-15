@@ -66,6 +66,7 @@ import com.garfiec.librechat.core.ui.components.topbar.BarNavigation
 import com.garfiec.librechat.core.ui.components.topbar.BarTitle
 import com.garfiec.librechat.core.ui.datetime.LocalDateTimeFormat
 import com.garfiec.librechat.core.ui.datetime.LocalRelativeTimeReference
+import com.garfiec.librechat.core.ui.datetime.resolve
 import com.garfiec.librechat.feature.chat.components.ChatRoot
 import com.garfiec.librechat.feature.chat.components.LocalOpenFileActions
 import com.garfiec.librechat.feature.chat.components.LocalOpenMessageFile
@@ -74,6 +75,8 @@ import com.garfiec.librechat.feature.chat.components.MessageList
 import com.garfiec.librechat.feature.chat.components.ParsedMarkdownCache
 import com.garfiec.librechat.feature.chat.components.SharedTextFileSheet
 import com.garfiec.librechat.feature.chat.components.artifact.MermaidRenderCache
+import com.garfiec.librechat.feature.chat.components.mcpapp.McpApps
+import com.garfiec.librechat.feature.chat.components.toAttachment
 import com.garfiec.librechat.feature.chat.resources.Res
 import com.garfiec.librechat.feature.chat.resources.cd_back
 import com.garfiec.librechat.feature.chat.resources.cd_more_options
@@ -124,6 +127,7 @@ internal data class SharedChatDisplay(
     val inlineArtifactPrefs: InlineArtifactPrefs = InlineArtifactPrefs(),
     val siteIcons: SiteIconsState = SiteIconsState.OFF,
     val thinkingOpenByDefault: Boolean = false,
+    val collapseLongUserMessages: Boolean = true,
 )
 
 internal class SharedChatActions(
@@ -203,6 +207,7 @@ fun SharedChatScreen(
         mermaidRenderCache = remember { MermaidRenderCache() },
         parsedMarkdownCache = remember { ParsedMarkdownCache() },
         subagentProgress = emptyMap(),
+        ptcTraces = emptyMap(),
         previewOverrides = emptyMap(),
         // No conversation of the user's to read child threads from, and no live run to trace.
         conversationId = null,
@@ -222,10 +227,15 @@ fun SharedChatScreen(
         onRefreshPrompts = {},
         siteIcons = display.siteIcons,
         thinkingOpenByDefault = display.thinkingOpenByDefault,
+        collapseLongUserMessages = display.collapseLongUserMessages,
         onSiteIconsChoice = rememberSiteIconsChoice(),
         onSiteIconsPromptDismiss = koinInject<SiteIconPromptSession>()::dismiss,
         // The memories shown are the sharer's, not the viewer's: no Manage.
         onOpenMemories = null,
+        mcpSignIn = null,
+        // Public shares omit App attachments; any that remain say Apps don't run here.
+        mcpApps = McpApps.ReadOnly,
+        legacyUiResources = null,
     ) {
         ProvideSharedFileOpeners(state, viewModel) {
             SharedChatScaffold(
@@ -273,20 +283,7 @@ private fun ProvideSharedFileOpeners(
         }
     }
     val messageFile: (FileReference) -> Unit = remember(fileActions) {
-        { file ->
-            fileActions(
-                Attachment(
-                    fileId = file.fileId,
-                    filename = file.filename,
-                    filepath = file.filepath,
-                    type = file.type,
-                    width = file.width,
-                    height = file.height,
-                    bytes = file.bytes,
-                    source = file.source,
-                ),
-            )
-        }
+        { file -> fileActions(file.toAttachment()) }
     }
     CompositionLocalProvider(
         LocalOpenFileActions provides fileActions,
@@ -329,7 +326,7 @@ internal fun SharedChatScaffold(
                 belowBar = shared?.let { label ->
                     {
                         Text(
-                            text = stringResource(Res.string.shared_chat_subtitle, label),
+                            text = stringResource(Res.string.shared_chat_subtitle, label.resolve()),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -357,7 +354,7 @@ internal fun SharedChatScaffold(
                 snapshot != null -> MessageList(
                     displayMessages = state.displayMessages,
                     isStreaming = false,
-                    streamingContent = "",
+                    streamingContent = { "" },
                     onSiblingNavigation = onSwitchBranch,
                     onEditMessage = {},
                     onRegenerateMessage = {},
@@ -370,7 +367,6 @@ internal fun SharedChatScaffold(
                     // Whoever opens a link didn't write its prompts: a neutral label, no avatar.
                     userAvatarUrl = null,
                     userName = stringResource(Res.string.shared_chat_user),
-                    selectedEndpoint = null,
                     showImageDescriptions = display.showImageDescriptions,
                     chatLayoutStyle = display.chatLayoutStyle,
                     showAvatars = display.showAvatars,
@@ -518,6 +514,8 @@ private fun rememberSharedChatDisplay(): SharedChatDisplay {
     val siteIconsChoice by preferences.observe(AppPreferences.SiteIcons)
         .collectAsStateWithLifecycle(preferences.initial(AppPreferences.SiteIcons))
     val promptDismissed by promptSession.dismissed.collectAsStateWithLifecycle()
+    val collapseLong by preferences.observe(AppPreferences.CollapseLongUserMessages)
+        .collectAsStateWithLifecycle(preferences.initial(AppPreferences.CollapseLongUserMessages))
     return SharedChatDisplay(
         fontSizeMultiplier = when (fontSize) {
             ChatFontSize.SMALL -> 0.85f
@@ -531,6 +529,7 @@ private fun rememberSharedChatDisplay(): SharedChatDisplay {
         useKatex = latex == LatexRenderer.KATEX,
         inlineArtifactPrefs = inlineArtifacts,
         thinkingOpenByDefault = thinkingOpen,
+        collapseLongUserMessages = collapseLong,
         siteIcons = when (siteIconsChoice) {
             true -> SiteIconsState.ON
             false -> SiteIconsState.OFF

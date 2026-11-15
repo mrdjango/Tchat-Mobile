@@ -22,6 +22,7 @@ class SendButtonModeTest {
         target: DuringRunSendTarget = DuringRunSendTarget.QUEUE,
         isEditingQueued: Boolean = false,
         isAwaitingUploadSend: Boolean = false,
+        isQueuedEditEmptied: Boolean = false,
         showVoice: Boolean = false,
     ) = sendButtonModeFor(
         isStreaming = isStreaming,
@@ -29,10 +30,16 @@ class SendButtonModeTest {
         duringRunTarget = target,
         isEditingQueued = isEditingQueued,
         isAwaitingUploadSend = isAwaitingUploadSend,
+        isQueuedEditEmptied = isQueuedEditEmptied,
         showVoice = showVoice,
     )
 
     // ── The button names its target ───────────────────────────────────────
+
+    @Test
+    fun `an interrupt default shows the interrupt face, not the steer one`() {
+        assertThat(mode(target = DuringRunSendTarget.INTERRUPT)).isEqualTo(SendButtonMode.INTERRUPT)
+    }
 
     @Test
     fun `a send that will answer a paused run says so`() {
@@ -67,6 +74,20 @@ class SendButtonModeTest {
         assertThat(mode(canQueue = false)).isEqualTo(SendButtonMode.STOP)
         assertThat(mode(canQueue = false, target = DuringRunSendTarget.ANSWER_PAUSE))
             .isEqualTo(SendButtonMode.STOP)
+    }
+
+    /**
+     * An emptied queued edit must still reach the commit, which withdraws the message; otherwise
+     * the user has no way to take it back and the original runs at the run end.
+     */
+    @Test
+    fun `an emptied queued edit offers to remove the message`() {
+        assertThat(mode(isEditingQueued = true, isQueuedEditEmptied = true))
+            .isEqualTo(SendButtonMode.REMOVE_QUEUED)
+        assertThat(mode(isEditingQueued = true, isQueuedEditEmptied = true, isStreaming = false))
+            .isEqualTo(SendButtonMode.REMOVE_QUEUED)
+        // Only while editing: an empty composer otherwise keeps its ordinary faces.
+        assertThat(mode(isQueuedEditEmptied = true, canQueue = false)).isEqualTo(SendButtonMode.STOP)
     }
 
     @Test
@@ -115,6 +136,16 @@ class SendButtonModeTest {
         assertThat(
             composerCanSend(inputText = "  ", hasAttachments = true, arePicksUnsettled = false),
         ).isTrue()
+    }
+
+    @Test
+    fun `a failed upload disables the control whatever else the composer holds`() {
+        assertThat(
+            composerCanSend(inputText = "hello", hasAttachments = true, arePicksUnsettled = false, hasFailedUploads = true),
+        ).isFalse()
+        assertThat(
+            composerCanSend(inputText = "", hasAttachments = true, arePicksUnsettled = false, hasFailedUploads = true),
+        ).isFalse()
     }
 
     @Test

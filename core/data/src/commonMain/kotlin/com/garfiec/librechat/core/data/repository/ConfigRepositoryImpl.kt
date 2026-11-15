@@ -7,11 +7,13 @@ import com.garfiec.librechat.core.common.DetectedBackend
 import com.garfiec.librechat.core.common.EndpointConstants
 import com.garfiec.librechat.core.common.UnmappedBuildDetection
 import com.garfiec.librechat.core.common.generated.BackendCommitMap
+import com.garfiec.librechat.core.common.identity.deriveServerId
 import com.garfiec.librechat.core.common.result.AccessGatewayException
 import com.garfiec.librechat.core.common.result.ApiException
 import com.garfiec.librechat.core.common.result.FailureKind
 import com.garfiec.librechat.core.common.result.Result
 import com.garfiec.librechat.core.common.result.failureKind
+import com.garfiec.librechat.core.common.result.message
 import com.garfiec.librechat.core.common.result.safeApiCall
 import com.garfiec.librechat.core.data.datastore.ConfigCacheDataStore
 import com.garfiec.librechat.core.data.datastore.ServerDataStore
@@ -22,12 +24,19 @@ import com.garfiec.librechat.core.model.config.StartupConfig
 import com.garfiec.librechat.core.model.response.Category
 import com.garfiec.librechat.core.network.api.ConfigApi
 import com.garfiec.librechat.core.network.client.PendingRequestIdentity
+import com.garfiec.librechat.core.network.client.ServerRedirectException
 import io.ktor.client.plugins.HttpRequestTimeoutException
+import io.ktor.http.URLBuilder
+import io.ktor.http.Url
+import io.ktor.http.encodedPath
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
@@ -36,13 +45,33 @@ class ConfigRepositoryImpl(
     private val configApi: ConfigApi,
     private val configCache: ConfigCacheDataStore,
     private val dispatcher: CoroutineDispatcher,
-    serverDataStore: ServerDataStore,
+    private val serverDataStore: ServerDataStore,
 ) : ConfigRepository {
 
     override val serverUrl: Flow<String> = serverDataStore.currentUrlFlow
 
     private val _startupConfig = MutableStateFlow<StartupConfig?>(null)
     override val startupConfig: StateFlow<StartupConfig?> = _startupConfig.asStateFlow()
+
+    private val _startupConfigForServer = MutableStateFlow<ServerStartupConfig?>(null)
+    override val startupConfigForServer: StateFlow<ServerStartupConfig?> = _startupConfigForServer.asStateFlow()
+
+    private val _startupConfigRefreshes =
+        MutableSharedFlow<StartupConfig>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    override val startupConfigRefreshes: Flow<StartupConfig> = _startupConfigRefreshes.asSharedFlow()
+
+    /**
+     * The one writer of both config flows. [serverId] is captured before the cache read or request:
+     * a cached config is tagged with the server whose cache it came from, and a fetched one must be
+     * dropped, not passed here, when the active server changed while it was in flight.
+     */
+    private fun setStartupConfig(config: StartupConfig?, serverId: String?) {
+        _startupConfigForServer.value = if (config != null && serverId != null) ServerStartupConfig(serverId, config) else null
+        _startupConfig.value = config
+    }
+
+    private suspend fun activeServerId(): String? =
+        serverDataStore.awaitBaseUrl().takeIf { it.isNotBlank() }?.let { deriveServerId(it).value }
 
     private val _endpointConfigs = MutableStateFlow<Map<String, EndpointConfig>>(emptyMap())
     override val endpointConfigs: StateFlow<Map<String, EndpointConfig>> = _endpointConfigs.asStateFlow()
@@ -101,7 +130,8 @@ class ConfigRepositoryImpl(
     }
 
     override suspend fun publishStartupConfig(config: StartupConfig) {
-        _startupConfig.value = config
+        setStartupConfig(config, activeServerId())
+        _startupConfigRefreshes.tryEmit(config)
         configCache.saveStartupConfig(config)
         logConfigSnapshot(config)
     }
@@ -112,9 +142,7 @@ class ConfigRepositoryImpl(
     ): ServerResolution {
         var typedFailure: ProbeFailure? = null
         candidates.forEachIndexed { index, candidate ->
-            val outcome = withContext(PendingRequestIdentity(candidate, headers = { headers }, bearer = { null })) {
-                fetchCandidateConfig()
-            }
+            val (address, outcome) = probeFollowingRedirects(candidate, headers)
             val failure = when (outcome) {
                 is ProbeOutcome.Valid -> {
                     if (index > 0) {
@@ -122,9 +150,10 @@ class ConfigRepositoryImpl(
                             "server found at the origin of the entered address"
                         }
                     }
-                    return ServerResolution.Resolved(candidate, outcome.config)
+                    return ServerResolution.Resolved(address, outcome.config)
                 }
                 is ProbeFailure -> outcome
+                is ProbeOutcome.Redirected -> tooManyRedirects()
             }
             val tryNext = index < candidates.lastIndex && failure.tryAnotherPath
             probeFailed(failure, candidateLabel(index), fellBack = tryNext)
@@ -132,6 +161,44 @@ class ConfigRepositoryImpl(
             if (!tryNext) return ServerResolution.Failed(pickError(typed, failure))
         }
         return ServerResolution.Failed(Result.Error(message = "Please enter a server URL"))
+    }
+
+    /**
+     * Probes [candidate] and, while it redirects, the address it redirects to, each under its own
+     * pending identity so the gateway headers go with it. Returns the address that answered last.
+     */
+    private suspend fun probeFollowingRedirects(
+        candidate: String,
+        headers: Map<String, String>,
+    ): Pair<String, ProbeOutcome> {
+        var address = candidate
+        val visited = mutableSetOf<String>()
+        while (visited.add(address) && visited.size <= MAX_SERVER_REDIRECTS + 1) {
+            val outcome = withContext(PendingRequestIdentity(address, headers = { headers }, bearer = { null })) {
+                fetchCandidateConfig()
+            }
+            if (outcome !is ProbeOutcome.Redirected) return address to outcome
+            address = outcome.base
+        }
+        return address to tooManyRedirects()
+    }
+
+    private fun tooManyRedirects(): ProbeFailure =
+        ProbeFailure("redirect_loop", Result.Error(message = "This address redirects too many times."))
+
+    /**
+     * The server's address from where its `/api/config` was redirected to: the Location minus that
+     * path, query and fragment, so a subpath deployment keeps its subpath. Null when the redirect
+     * leads anywhere else, such as a sign-in page.
+     */
+    private fun serverBaseOf(location: Url): String? {
+        val path = location.encodedPath.trimEnd('/')
+        if (!path.endsWith(CONFIG_PATH)) return null
+        return URLBuilder(location).apply {
+            encodedPath = path.removeSuffix(CONFIG_PATH)
+            parameters.clear()
+            fragment = ""
+        }.buildString().trimEnd('/')
     }
 
     /**
@@ -146,6 +213,7 @@ class ConfigRepositoryImpl(
 
     private sealed interface ProbeOutcome {
         data class Valid(val config: StartupConfig) : ProbeOutcome
+        data class Redirected(val base: String) : ProbeOutcome
     }
 
     /**
@@ -163,8 +231,10 @@ class ConfigRepositoryImpl(
         return try {
             // Maps its own failures instead of going through safeApiCall, so it takes
             // safeApiCall's dispatcher hop explicitly (#326).
-            val config = withContext(dispatcher) { configApi.getStartupConfig() }
+            val config = withContext(dispatcher) { configApi.probeStartupConfig() }
             if (!isValidLibreChatConfig(config)) notLibreChat(null) else ProbeOutcome.Valid(config)
+        } catch (e: ServerRedirectException) {
+            serverBaseOf(e.location)?.let { ProbeOutcome.Redirected(it) } ?: notLibreChat(e)
         } catch (e: SerializationException) {
             notLibreChat(e)
         } catch (e: ApiException) {
@@ -203,6 +273,10 @@ class ConfigRepositoryImpl(
                             "private certificate authority, install that authority's certificate on this device.",
                         kind = FailureKind.Tls,
                     ),
+                )
+                FailureKind.CleartextBlocked -> ProbeFailure(
+                    "cleartext",
+                    Result.Error(e, FailureKind.CleartextBlocked.message(), FailureKind.CleartextBlocked),
                 )
                 // A body that isn't JSON at all — a web page answering 200 at this path (Ktor finds no
                 // transformation for text/html) — is a host that answered, not one that didn't.
@@ -253,7 +327,8 @@ class ConfigRepositoryImpl(
     }
 
     override suspend fun reloadForActiveServer() {
-        _startupConfig.value = configCache.loadStartupConfig()
+        val serverId = activeServerId()
+        setStartupConfig(configCache.loadStartupConfig(), serverId)
         _endpointConfigs.value = configCache.loadEndpointConfigs().orEmpty()
         _availableModels.value = configCache.loadAvailableModels().orEmpty().normalizedModels()
         // Version re-detects from the reloaded config on the next checkBackendVersion pass.
@@ -263,15 +338,19 @@ class ConfigRepositoryImpl(
 
     override suspend fun fetchStartupConfig(): Result<StartupConfig> {
         // Emit cached value first if state is empty
+        val serverId = activeServerId()
         if (_startupConfig.value == null) {
             configCache.loadStartupConfig()?.let { cached ->
-                _startupConfig.value = cached
+                setStartupConfig(cached, serverId)
             }
         }
 
         val result = safeApiCall {
             val config = configApi.getStartupConfig()
-            _startupConfig.value = config
+            // Answered after a server switch: it describes the old server, so neither publish nor cache it.
+            if (activeServerId() != serverId) return@safeApiCall config
+            setStartupConfig(config, serverId)
+            _startupConfigRefreshes.tryEmit(config)
             configCache.saveStartupConfig(config)
             logConfigSnapshot(config)
             config
@@ -289,6 +368,7 @@ class ConfigRepositoryImpl(
     }
 
     override suspend fun fetchEndpoints(): Result<Map<String, EndpointConfig>> {
+        val serverId = activeServerId()
         if (_endpointConfigs.value.isEmpty()) {
             configCache.loadEndpointConfigs()?.let { cached ->
                 _endpointConfigs.value = cached
@@ -297,6 +377,7 @@ class ConfigRepositoryImpl(
 
         val result = safeApiCall {
             val endpoints = configApi.getEndpoints()
+            if (activeServerId() != serverId) return@safeApiCall endpoints
             _endpointConfigs.value = endpoints
             configCache.saveEndpointConfigs(endpoints)
             endpoints
@@ -313,6 +394,7 @@ class ConfigRepositoryImpl(
     }
 
     override suspend fun fetchModels(): Result<Map<String, List<String>>> {
+        val serverId = activeServerId()
         if (_availableModels.value.isEmpty()) {
             configCache.loadAvailableModels()?.let { cached ->
                 _availableModels.value = cached.normalizedModels()
@@ -321,6 +403,7 @@ class ConfigRepositoryImpl(
 
         val result = safeApiCall {
             val models = configApi.getModels().normalizedModels()
+            if (activeServerId() != serverId) return@safeApiCall models
             _availableModels.value = models
             configCache.saveAvailableModels(models)
             models
@@ -351,6 +434,7 @@ class ConfigRepositoryImpl(
      * [VersionCheckResult.backendVersion] = null and [VersionCheckResult.isCompatible] = true.
      */
     override suspend fun checkBackendVersion(): Result<VersionCheckResult> {
+        val serverId = activeServerId()
         return safeApiCall {
             // Early UI seed: resolve the version from the persisted config up front so version-gated
             // UI (the drawer's Projects section, pin) is already in place before the user opens the
@@ -380,7 +464,7 @@ class ConfigRepositoryImpl(
             // drops it and reads as the plain release line the app targets.
             val supportedDisplay = BackendVersion.parse(supported)?.toString() ?: supported
 
-            publishDetectedBackend(detected)
+            if (activeServerId() == serverId) publishDetectedBackend(detected)
 
             // Re-emit the config snapshot now that the backend version is resolved, so the export's
             // version-mismatch signal is accurate (the first snapshot ran before detection).
@@ -499,13 +583,17 @@ class ConfigRepositoryImpl(
     override suspend fun clear() {
         _endpointConfigs.value = emptyMap()
         _availableModels.value = emptyMap()
-        _startupConfig.value = null
+        setStartupConfig(null, null)
         publishDetectedBackend(null)
         loggedConfigSignature = null
         configCache.clear()
     }
 
     private companion object {
+        const val CONFIG_PATH = "/api/config"
+
+        /** Enough for http → https → www. */
+        const val MAX_SERVER_REDIRECTS = 3
         const val NOT_LIBRECHAT_MESSAGE = "This doesn't appear to be a LibreChat server"
         val ACTIONABLE_KINDS = setOf(FailureKind.AccessGateway, FailureKind.Tls)
     }

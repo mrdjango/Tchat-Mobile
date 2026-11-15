@@ -1,8 +1,14 @@
 package com.garfiec.librechat.feature.chat.components
 
+import com.garfiec.librechat.core.model.mcp.McpDisplayStatus
 import com.garfiec.librechat.feature.chat.model.ComposerPickerItem
+import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
+import com.garfiec.librechat.feature.chat.model.PickerMcpServer
 import com.garfiec.librechat.feature.chat.model.PickerSkill
 import com.garfiec.librechat.feature.chat.model.PromptMentionDisplayData
+import com.garfiec.librechat.feature.chat.util.HeaderLabel
+import com.garfiec.librechat.feature.chat.util.ModelPick
+import com.garfiec.librechat.feature.chat.util.PickerModel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -16,7 +22,7 @@ class ChatInputParsingTest {
         val withSkills = parsePickerQuery(text, canPickSkills = true)
         val withoutSkills = parsePickerQuery(text, canPickSkills = false)
         assertEquals(withSkills, withoutSkills, "`/` must not depend on skills for \"$text\"")
-        return withSkills?.takeIf { it.trigger == PickerTrigger.SLASH }?.query
+        return withSkills?.takeIf { it.scope == null }?.query
     }
 
     @Test
@@ -68,7 +74,7 @@ class ChatInputParsingTest {
 
     /** The prompt rows `/` lists for [query] over [prompts], by id. */
     private fun promptIds(query: String, prompts: List<PromptMentionDisplayData>): List<String> =
-        buildPickerRows(PickerQuery(PickerTrigger.SLASH, query), prompts, emptyList())
+        buildPickerRows(PickerQuery(scope = null, query = query), prompts, emptyList())
             .map { (it as ComposerPickerItem.Prompt).prompt.id }
 
     @Test
@@ -144,9 +150,9 @@ class ChatInputParsingTest {
 
     @Test
     fun eitherTriggerOpensThePicker() {
-        assertEquals(PickerQuery(PickerTrigger.SLASH, "summ"), parsePickerQuery("/summ"))
-        assertEquals(PickerQuery(PickerTrigger.DOLLAR, "pdf"), parsePickerQuery("\$pdf"))
-        assertEquals(PickerQuery(PickerTrigger.DOLLAR, ""), parsePickerQuery("\$"))
+        assertEquals(PickerQuery(scope = null, query = "summ"), parsePickerQuery("/summ"))
+        assertEquals(PickerQuery(PickerScope.SKILLS, "pdf", commandLength = 1), parsePickerQuery("\$pdf"))
+        assertEquals(PickerQuery(PickerScope.SKILLS, "", commandLength = 1), parsePickerQuery("\$"))
     }
 
     @Test
@@ -155,7 +161,7 @@ class ChatInputParsingTest {
         assertNull(parsePickerQuery("\$100", canPickSkills = false))
         assertNull(parsePickerQuery("\$AAPL", canPickSkills = false))
         // The slash still lists the prompts.
-        assertEquals(PickerQuery(PickerTrigger.SLASH, "summ"), parsePickerQuery("/summ", canPickSkills = false))
+        assertEquals(PickerQuery(scope = null, query = "summ"), parsePickerQuery("/summ", canPickSkills = false))
     }
 
     @Test
@@ -176,8 +182,8 @@ class ChatInputParsingTest {
     }
 
     @Test
-    fun aDollarIsNeverReadAsASlashQuery() {
-        assertEquals(PickerTrigger.DOLLAR, parsePickerQuery("\$pdf")?.trigger)
+    fun aDollarListsSkillsOnly() {
+        assertEquals(PickerScope.SKILLS, parsePickerQuery("\$pdf")?.scope)
     }
 
     private fun skill(name: String, title: String = name, description: String? = null) =
@@ -188,7 +194,7 @@ class ChatInputParsingTest {
     @Test
     fun slashListsPromptsThenSkills() {
         val rows = buildPickerRows(
-            PickerQuery(PickerTrigger.SLASH, ""),
+            PickerQuery(scope = null, query = ""),
             prompts = listOf(group("p1", "Alpha"), group("p2", "Beta")),
             skills = listOf(skill("pdf-tools"), skill("brand-voice")),
         )
@@ -196,13 +202,14 @@ class ChatInputParsingTest {
     }
 
     @Test
-    fun dollarListsSkillsThenPrompts() {
-        val rows = buildPickerRows(
-            PickerQuery(PickerTrigger.DOLLAR, ""),
-            prompts = listOf(group("p1", "Alpha")),
-            skills = listOf(skill("pdf-tools"), skill("brand-voice")),
+    fun aScopeListsOnlyItsType() {
+        val prompts = listOf(group("p1", "Alpha"))
+        val skills = listOf(skill("pdf-tools"), skill("brand-voice"))
+        assertEquals(
+            listOf("skill:pdf-tools", "skill:brand-voice"),
+            buildPickerRows(PickerQuery(PickerScope.SKILLS, ""), prompts, skills).keys(),
         )
-        assertEquals(listOf("skill:pdf-tools", "skill:brand-voice", "prompt:p1"), rows.keys())
+        assertEquals(listOf("prompt:p1"), buildPickerRows(PickerQuery(PickerScope.PROMPTS, ""), prompts, skills).keys())
     }
 
     @Test
@@ -213,7 +220,7 @@ class ChatInputParsingTest {
             group("exact", "Summarize", oneliner = "the short one"),
         )
         val rows = buildPickerRows(
-            PickerQuery(PickerTrigger.SLASH, "Summarize"),
+            PickerQuery(scope = null, query = "Summarize"),
             prompts,
             listOf(skill("summarize-pdf")),
         )
@@ -233,33 +240,196 @@ class ChatInputParsingTest {
         )
         assertEquals(
             listOf("skill:pdf-tools"),
-            buildPickerRows(PickerQuery(PickerTrigger.DOLLAR, "pdf"), emptyList(), skills).keys(),
+            buildPickerRows(PickerQuery(PickerScope.SKILLS, "pdf"), emptyList(), skills).keys(),
         )
         assertEquals(
             listOf("skill:brand-voice"),
-            buildPickerRows(PickerQuery(PickerTrigger.DOLLAR, "house style"), emptyList(), skills).keys(),
+            buildPickerRows(PickerQuery(PickerScope.SKILLS, "house style"), emptyList(), skills).keys(),
         )
     }
 
     @Test
-    fun theTriggersTypeFillsTheCapFirst() {
+    fun theMixedListIsCappedPromptsFirstAndAScopeIsNot() {
         val prompts = (1..10).map { group("p$it", "Item prompt $it") }
         val skills = (1..10).map { skill("item-skill-$it") }
-        val slash = buildPickerRows(PickerQuery(PickerTrigger.SLASH, "item"), prompts, skills)
-        val dollar = buildPickerRows(PickerQuery(PickerTrigger.DOLLAR, "item"), prompts, skills)
-        assertEquals(8, slash.size)
-        assertEquals(8, dollar.size)
-        assertEquals(true, slash.all { it is ComposerPickerItem.Prompt })
-        assertEquals(true, dollar.all { it is ComposerPickerItem.Skill })
+        val mixed = buildPickerRows(PickerQuery(scope = null, query = "item"), prompts, skills)
+        assertEquals(8, mixed.size)
+        assertEquals(true, mixed.all { it is ComposerPickerItem.Prompt })
+        assertEquals(10, buildPickerRows(PickerQuery(PickerScope.SKILLS, "item"), prompts, skills).size)
+        assertEquals(10, buildPickerRows(PickerQuery(PickerScope.PROMPTS, "item"), prompts, skills).size)
     }
 
     @Test
     fun noMatchesInEitherTypeIsAnEmptyList() {
         val rows = buildPickerRows(
-            PickerQuery(PickerTrigger.DOLLAR, "zzzz"),
+            PickerQuery(PickerScope.SKILLS, "zzzz"),
             listOf(group("1", "Alpha")),
             listOf(skill("pdf")),
         )
         assertEquals(emptyList(), rows)
+    }
+
+    // ── Scopes: `/prompt `, `/skill ` ────────────────────────────────────
+
+    @Test
+    fun aScopeCommandAndASpaceListOneType() {
+        assertEquals(PickerQuery(PickerScope.SKILLS, "", commandLength = 6), parsePickerQuery("/skill "))
+        assertEquals(PickerQuery(PickerScope.PROMPTS, "summ", commandLength = 7), parsePickerQuery("/prompt summ"))
+    }
+
+    @Test
+    fun scopeCommandsTakeThePluralAndAnyCase() {
+        assertEquals(PickerQuery(PickerScope.SKILLS, "sp", commandLength = 7), parsePickerQuery("/Skills sp"))
+        assertEquals(PickerScope.PROMPTS, parsePickerQuery("/PROMPTS ")?.scope)
+    }
+
+    @Test
+    fun aScopedQueryKeepsItsSpaces() {
+        assertEquals("code rev", parsePickerQuery("/prompt code rev")?.query)
+    }
+
+    @Test
+    fun aCommandWithoutItsSpaceIsAnOrdinaryQuery() {
+        assertEquals(PickerQuery(scope = null, query = "skill"), parsePickerQuery("/skill"))
+    }
+
+    @Test
+    fun anUnknownCommandWithASpaceClosesThePicker() {
+        assertNull(parsePickerQuery("/summ arize"))
+        assertNull(parsePickerQuery("/skillz pdf"))
+    }
+
+    @Test
+    fun theSkillScopeOpensWhereNoSkillCanBePicked() {
+        assertEquals(PickerScope.SKILLS, parsePickerQuery("/skill ", canPickSkills = false)?.scope)
+    }
+
+    @Test
+    fun theCommandRangeCoversTheScopeCommandOnly() {
+        assertEquals(0 until 6, pickerCommandRange("/skill pdf", canPickSkills = true))
+        assertEquals(0 until 7, pickerCommandRange("/Prompt code", canPickSkills = true))
+        assertEquals(0 until 1, pickerCommandRange("\$pdf", canPickSkills = true))
+        assertNull(pickerCommandRange("\$5", canPickSkills = false))
+        assertNull(pickerCommandRange("/summ", canPickSkills = true))
+    }
+
+    @Test
+    fun onlyAPickerThatListsSkillsNeedsTheCatalog() {
+        assertEquals(true, pickerListsSkills("/", canPickSkills = true))
+        assertEquals(true, pickerListsSkills("/skill ", canPickSkills = true))
+        assertEquals(true, pickerListsSkills("\$", canPickSkills = true))
+        assertEquals(false, pickerListsSkills("/prompt ", canPickSkills = true))
+        assertEquals(false, pickerListsSkills("/mcp ", canPickSkills = true))
+        assertEquals(false, pickerListsSkills("/skill ", canPickSkills = false))
+        assertEquals(false, pickerListsSkills("hello", canPickSkills = true))
+    }
+
+    @Test
+    fun aTrailingSpaceInAScopedQueryStillMatches() {
+        val groups = listOf(group("1", "Code review", oneliner = "bugs and style"))
+        assertEquals(
+            listOf("prompt:1"),
+            buildPickerRows(PickerQuery(PickerScope.PROMPTS, "code review "), groups, emptyList()).keys(),
+        )
+    }
+
+    // ── MCP servers: `/mcp ` ─────────────────────────────────────────────
+
+    private fun server(name: String, title: String? = null, description: String? = null) = PickerMcpServer(
+        server = McpServerDisplayData(name, title, description, McpDisplayStatus.CONNECTED),
+        on = false,
+        locked = false,
+    )
+
+    @Test
+    fun theMcpCommandListsServersAndIsDrawnAsAToken() {
+        assertEquals(PickerQuery(PickerScope.MCP, "git hub", commandLength = 4), parsePickerQuery("/MCP git hub"))
+        assertEquals(PickerScope.MCP, parsePickerQuery("/mcp ", canPickSkills = false)?.scope)
+        assertEquals(0 until 4, pickerCommandRange("/mcp gi", canPickSkills = false))
+        assertNull(parsePickerQuery("/mcps "))
+    }
+
+    @Test
+    fun serversCloseTheMixedListAfterPromptsAndSkills() {
+        val rows = buildPickerRows(
+            PickerQuery(scope = null, query = "git"),
+            prompts = listOf(group("p1", "Git commit message")),
+            skills = listOf(skill("git-flow")),
+            mcpServers = listOf(server("github", title = "GitHub"), server("linear")),
+        )
+        assertEquals(listOf("prompt:p1", "skill:git-flow", "mcp:github"), rows.keys())
+    }
+
+    @Test
+    fun theMcpScopeMatchesTitleDescriptionAndNameAndListsNothingElse() {
+        val servers = listOf(
+            server("gh", title = "GitHub"),
+            server("tracker", title = "Linear", description = "issues and projects"),
+            server("files-srv"),
+        )
+        fun keys(query: String) =
+            buildPickerRows(PickerQuery(PickerScope.MCP, query), listOf(group("p", "GitHub prompt")), emptyList(), servers).keys()
+        assertEquals(listOf("mcp:gh"), keys("github"))
+        assertEquals(listOf("mcp:tracker"), keys("issues "))
+        assertEquals(listOf("mcp:files-srv"), keys("files"))
+        assertEquals(3, keys("").size)
+    }
+
+    private fun model(name: String, group: String?) = PickerModel(
+        key = "model:$group::$name",
+        title = name,
+        description = null,
+        group = group?.let { HeaderLabel.Text(it) },
+        icon = null,
+        selected = false,
+        starred = false,
+        keyHint = null,
+        pick = ModelPick.Raw(group.orEmpty(), name),
+    )
+
+    @Test
+    fun theModelCommandOpensItsScopeAndIsDrawnAsAToken() {
+        assertEquals(PickerQuery(PickerScope.MODEL, "gpt 4", commandLength = 6), parsePickerQuery("/Model gpt 4"))
+        assertEquals(0 until 6, pickerCommandRange("/model ", canPickSkills = false))
+        assertNull(parsePickerQuery("/models "))
+    }
+
+    @Test
+    fun modelsAreListedOnlyUnderTheModelCommand() {
+        val models = listOf(model("gpt-4o", "OpenAI"))
+        val prompts = listOf(group("p1", "gpt helper"))
+        val mixed = buildPickerRows(PickerQuery(scope = null, query = "gpt"), prompts, emptyList(), models = models)
+        assertEquals(listOf("prompt:p1"), mixed.keys())
+        val scoped = buildPickerRows(PickerQuery(PickerScope.MODEL, "gpt"), prompts, emptyList(), models = models)
+        assertEquals(listOf("model:model:OpenAI::gpt-4o"), scoped.keys())
+    }
+
+    @Test
+    fun theModelScopeMatchesTheModelBeforeItsSection() {
+        val models = listOf(
+            model("claude-sonnet", "Anthropic"),
+            model("open-mixtral", "Mistral"),
+            model("gpt-4o", "OpenAI"),
+        )
+        fun titles(query: String) =
+            buildPickerRows(PickerQuery(PickerScope.MODEL, query), emptyList(), emptyList(), models = models)
+                .map { (it as ComposerPickerItem.Model).model.title }
+        assertEquals(listOf("open-mixtral", "gpt-4o"), titles("open "))
+        assertEquals(listOf("claude-sonnet"), titles("anthropic"))
+        assertEquals(3, titles("").size)
+    }
+
+    @Test
+    fun anEndpointWaitingForItsKeyIsFoundByTheModelsItHides() {
+        val keyless = model("OpenAI", group = null).copy(
+            pick = ModelPick.AddKey("openAI"),
+            hiddenModels = listOf("gpt-4o", "o3"),
+        )
+        val models = listOf(model("gpt-oss", "Groq"), keyless)
+        fun titles(query: String) =
+            buildPickerRows(PickerQuery(PickerScope.MODEL, query), emptyList(), emptyList(), models = models)
+                .map { (it as ComposerPickerItem.Model).model.title }
+        assertEquals(listOf("gpt-oss", "OpenAI"), titles("gpt"))
+        assertEquals(listOf("OpenAI"), titles("o3"))
     }
 }

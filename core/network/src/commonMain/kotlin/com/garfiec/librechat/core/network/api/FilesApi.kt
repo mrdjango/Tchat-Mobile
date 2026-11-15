@@ -1,6 +1,7 @@
 package com.garfiec.librechat.core.network.api
 
 import co.touchlab.kermit.Logger
+import com.garfiec.librechat.core.logging.redact.LogRedactor
 import com.garfiec.librechat.core.model.FileObject
 import com.garfiec.librechat.core.model.request.DeleteFilesRequest
 import com.garfiec.librechat.core.model.response.DeleteFilesResponse
@@ -66,6 +67,8 @@ class FilesApi constructor(
         width: Int? = null,
         height: Int? = null,
         onProgress: ((Float) -> Unit)? = null,
+        conversationId: String? = null,
+        isTemporary: Boolean = false,
     ): FileObject {
         // The one place the part's Content-Type is written, so the one place a platform spelling
         // the server has never heard of can be rewritten. Android reports `.sh` as `text/x-sh`,
@@ -74,8 +77,9 @@ class FilesApi constructor(
         val wireType = uploadMimeType(type) ?: type
         Logger.d("FilesApi") {
             val reported = if (wireType != type) " (platform reported $type)" else ""
-            "uploadFile: filename=$filename, type=$wireType$reported, size=${bytes.size} bytes, fileId=$fileId, " +
-                "endpoint=$endpoint, model=$model, agentId=$agentId, messageFile=$messageFile, width=$width, height=$height"
+            "uploadFile: filename=${LogRedactor.redactFileName(filename)}, type=$wireType$reported, " +
+                "size=${bytes.size} bytes, fileId=$fileId, endpoint=$endpoint, model=$model, " +
+                "agentId=$agentId, messageFile=$messageFile, width=$width, height=$height, isTemporary=$isTemporary"
         }
 
         val multipart = MultiPartFormDataContent(
@@ -92,6 +96,8 @@ class FilesApi constructor(
                 if (messageFile != null) append("message_file", messageFile.toString())
                 if (width != null) append("width", width.toString())
                 if (height != null) append("height", height.toString())
+                if (conversationId != null) append("conversationId", conversationId)
+                if (isTemporary) append("isTemporary", "true")
             },
         )
 
@@ -131,7 +137,7 @@ class FilesApi constructor(
         }.body()
 
         Logger.d("FilesApi") {
-            "uploadFile success: fileId=${response.fileId}, filepath=${response.filepath}, " +
+            "uploadFile success: fileId=${response.fileId}, filepath=${LogRedactor.redactFileName(response.filepath)}, " +
                 "type=${response.type}, width=${response.width}, height=${response.height}"
         }
         return response

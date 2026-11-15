@@ -13,12 +13,18 @@ import com.garfiec.librechat.core.model.response.BackupCodesResponse
 import com.garfiec.librechat.core.model.response.LoginResponse
 import com.garfiec.librechat.core.model.response.RefreshResponse
 import com.garfiec.librechat.core.model.response.RegisterResponse
+import com.garfiec.librechat.core.model.response.TwoFactorSetupAcknowledgeResponse
+import com.garfiec.librechat.core.model.response.TwoFactorSetupConfirmResponse
 import com.garfiec.librechat.core.model.response.TwoFactorSetupResponse
 import com.garfiec.librechat.core.network.api.dto.LoginResult
 import com.garfiec.librechat.core.network.api.dto.RefreshResult
 import com.garfiec.librechat.core.network.api.dto.TwoFactorConfirmRequest
+import com.garfiec.librechat.core.network.api.dto.TwoFactorSetupAcknowledgeRequest
+import com.garfiec.librechat.core.network.api.dto.TwoFactorSetupFinalizeRequest
+import com.garfiec.librechat.core.network.api.dto.TwoFactorSetupRequest
 import com.garfiec.librechat.core.network.client.CookieHelper
 import com.garfiec.librechat.core.network.client.attachAuthCookies
+import com.garfiec.librechat.core.network.client.unauthorizedIsVerdict
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.post
@@ -122,8 +128,11 @@ class AuthApi constructor(
     suspend fun enableTwoFactor(token: String? = null, backupCode: String? = null): TwoFactorSetupResponse =
         client.post {
             url { path("api/auth/2fa/enable") }
+            // Only a request that carries a code can be refused for it; without one (first
+            // enrolment) a 401 is an expired session and must still refresh.
             if (token != null || backupCode != null) {
                 setBody(OtpVerificationRequest(token = token, backupCode = backupCode))
+                unauthorizedIsVerdict()
             }
         }.body()
 
@@ -158,11 +167,48 @@ class AuthApi constructor(
         return LoginResult(body, refreshToken)
     }
 
+    /*
+     * Required 2FA enrollment (v0.8.9-rc1), signed in with nothing but the setup `tempToken` a
+     * login, refresh or gated request handed out. Four steps, each credential single-use:
+     * setup -> { otpauthUrl, backupCodes } (stages a secret); confirm(code) -> { backupCodes,
+     * acknowledgementToken }; acknowledge -> { finalizationToken }; finalize -> { token, user } plus
+     * the refreshToken cookie, i.e. a sign-in.
+     */
+
+    suspend fun startTwoFactorSetup(tempToken: String): TwoFactorSetupResponse =
+        client.post {
+            url { path("api/auth/2fa/setup") }
+            setBody(TwoFactorSetupRequest(tempToken = tempToken))
+        }.body()
+
+    suspend fun confirmTwoFactorSetup(tempToken: String, code: String): TwoFactorSetupConfirmResponse =
+        client.post {
+            url { path("api/auth/2fa/setup/confirm") }
+            setBody(TwoFactorSetupRequest(tempToken = tempToken, token = code))
+        }.body()
+
+    suspend fun acknowledgeTwoFactorSetup(acknowledgementToken: String): TwoFactorSetupAcknowledgeResponse =
+        client.post {
+            url { path("api/auth/2fa/setup/acknowledge") }
+            setBody(TwoFactorSetupAcknowledgeRequest(acknowledgementToken = acknowledgementToken))
+        }.body()
+
+    suspend fun finalizeTwoFactorSetup(finalizationToken: String): LoginResult {
+        val httpResponse = client.post {
+            url { path("api/auth/2fa/setup/finalize") }
+            setBody(TwoFactorSetupFinalizeRequest(finalizationToken = finalizationToken))
+        }
+        val body = httpResponse.body<LoginResponse>()
+        val refreshToken = CookieHelper.extractRefreshToken(httpResponse.headers)
+        return LoginResult(body, refreshToken)
+    }
+
     suspend fun regenerateBackupCodes(token: String? = null, backupCode: String? = null): BackupCodesResponse =
         client.post {
             url { path("api/auth/2fa/backup/regenerate") }
             if (token != null || backupCode != null) {
                 setBody(OtpVerificationRequest(token = token, backupCode = backupCode))
+                unauthorizedIsVerdict()
             }
         }.body()
 
@@ -171,6 +217,7 @@ class AuthApi constructor(
         client.post {
             url { path("api/auth/2fa/disable") }
             setBody(TwoFactorDisableRequest(token = token, backupCode = backupCode))
+            if (token != null || backupCode != null) unauthorizedIsVerdict()
         }
     }
 }

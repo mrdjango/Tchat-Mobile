@@ -14,6 +14,7 @@ import com.garfiec.librechat.core.model.permissions.PermissionType
 import com.garfiec.librechat.core.model.permissions.hasAccessOrPermissive
 import com.garfiec.librechat.feature.agents.viewmodel.AgentEditorStateHandle
 import com.garfiec.librechat.feature.agents.viewmodel.AgentEditorViewModel
+import com.garfiec.librechat.feature.agents.viewmodel.AgentInferenceEndpoint
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
@@ -42,9 +43,11 @@ class AgentCapabilitiesDelegate(
         observeWebSearchAvailability()
         observeSkillsAvailability()
         observeSubagentsAvailability()
+        observeBuiltinToolAccess()
         observeServerVersion()
         observeFileRemovalSemantics()
         observeDropParams()
+        observeEndpointConfigs()
     }
 
     /**
@@ -74,6 +77,23 @@ class AgentCapabilitiesDelegate(
                 stateHandle.update { copy(dropParamsMap = config?.endpointsDropParamsMap) }
             }
         }
+        stateHandle.scope.launch {
+            configRepository.endpointConfigs.collect { configs ->
+                val endpoints = configs.mapValues { (_, config) ->
+                    AgentInferenceEndpoint(config.customParams?.defaultParamsEndpoint, config.customParams?.declaredKeys.orEmpty())
+                }
+                stateHandle.update { copy(inferenceEndpoints = endpoints) }
+            }
+        }
+    }
+
+    /** The endpoint configs pick the parameter set of an agent on a custom endpoint (`parameterProvider`). */
+    private fun observeEndpointConfigs() {
+        stateHandle.scope.launch {
+            configRepository.endpointConfigs.collect { configs ->
+                stateHandle.update { copy(endpointConfigs = configs) }
+            }
+        }
     }
 
     /**
@@ -91,11 +111,15 @@ class AgentCapabilitiesDelegate(
                     BackendVersion.isCompatibleOrNewer(version, "0.8.5-rc1")
                 stateHandle.update {
                     copy(
+                        filtersInferenceParameters = version != null &&
+                            BackendVersion.isCompatibleOrNewer(version, "0.8.9-rc1"),
                         showCollaborativeToggle = show,
                         isHandoffsAvailable = handoffsAvailable,
                         isAclAvailable = handoffsAvailable,
                         isAgentFileUnlinkAvailable = version != null &&
                             BackendVersion.isCompatibleOrNewer(version, "0.8.8-rc1"),
+                        isToolApprovalVersionSupported = version != null &&
+                            BackendVersion.isCompatibleOrNewer(version, "0.8.9-rc1"),
                     )
                 }
             }
@@ -125,7 +149,13 @@ class AgentCapabilitiesDelegate(
                     ToolConstants.ASK_USER_QUESTION in agentsCapabilities
                 stateHandle.update {
                     copy(
+                        toolApprovalPolicy = configs["agents"]?.toolApproval,
                         isCodeInterpreterAvailable = codeAvailable,
+                        // Web shows the Code section only on this capability; no fail-open here.
+                        isStatefulCodeAvailable = STATEFUL_CODE_SESSIONS in agentsCapabilities,
+                        // Opt-in upstream (not a default capability) and fail-closed on web.
+                        isCodeBackgroundAvailable = RUN_IN_BACKGROUND in agentsCapabilities,
+                        statefulCodeConfig = configs["agents"]?.statefulCodeSessions,
                         isChainAvailable = chainAvailable,
                         isGenericToolsAvailable = genericToolsAvailable,
                         isAskUserQuestionAvailable = askAvailable,
@@ -177,6 +207,44 @@ class AgentCapabilitiesDelegate(
             }
         }
     }
+
+    /**
+     * The role grants web's catalog requires on top of a builtin's capability
+     * (`Tools/items/catalog.ts` `BUILTIN_ROLE_PERMISSIONS`): RUN_CODE, WEB_SEARCH and FILE_SEARCH
+     * `USE`, plus file search's own capability. They hide the row and
+     * the section only: a save still writes back a tool the agent already has (`buildToolsList`
+     * never reads them), as web's form keeps the flag of a row it doesn't show. Fail-open on an
+     * unknown role and an empty capability list, like the sibling gates.
+     */
+    private fun observeBuiltinToolAccess() {
+        stateHandle.scope.launch {
+            combine(configRepository.endpointConfigs, roleRepository.userPermissions) { configs, role ->
+                val agentsCapabilities = configs["agents"]?.capabilities ?: emptyList()
+                BuiltinToolAccess(
+                    fileSearchAvailable = agentsCapabilities.isEmpty() || ToolConstants.FILE_SEARCH in agentsCapabilities,
+                    runCode = role.hasAccessOrPermissive(PermissionType.RUN_CODE, Permission.USE),
+                    webSearch = role.hasAccessOrPermissive(PermissionType.WEB_SEARCH, Permission.USE),
+                    fileSearch = role.hasAccessOrPermissive(PermissionType.FILE_SEARCH, Permission.USE),
+                )
+            }.collect { access ->
+                stateHandle.update {
+                    copy(
+                        isFileSearchAvailable = access.fileSearchAvailable,
+                        canUseRunCode = access.runCode,
+                        canUseWebSearch = access.webSearch,
+                        canUseFileSearch = access.fileSearch,
+                    )
+                }
+            }
+        }
+    }
+
+    private data class BuiltinToolAccess(
+        val fileSearchAvailable: Boolean,
+        val runCode: Boolean,
+        val webSearch: Boolean,
+        val fileSearch: Boolean,
+    )
 
     /**
      * Observes the agents endpoint `capabilities` array and the user's SKILLS
@@ -359,5 +427,7 @@ class AgentCapabilitiesDelegate(
          * exists only so a misbehaving cursor cannot loop indefinitely.
          */
         const val MAX_SKILL_CATALOG_PAGES = 50
+        const val STATEFUL_CODE_SESSIONS = "stateful_code_sessions"
+        const val RUN_IN_BACKGROUND = "run_in_background"
     }
 }

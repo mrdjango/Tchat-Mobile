@@ -8,7 +8,15 @@
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Approximate only, for an MCP App the user allowed per server; asked at first use. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <uses-feature
+        android:name="android.hardware.location"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.location.network"
+        android:required="false" />
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
@@ -36,10 +44,14 @@
             android:name="com.garfiec.librechat.CHANNEL"
             android:value="${distributionChannel}" />
 
+        <!-- Handles size changes itself: rebuilding on a rotation, fold or resize would close open
+             sheets and reload artifact and MCP app pages. System dark mode, locale and font size
+             still rebuild. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|navigation"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.LibreChat">
             <intent-filter>
@@ -132,6 +144,16 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+        <!-- intoExisting keys the task on the intent's data URI, so each artifact keeps one task and
+             one Recents card. Rotating or folding would otherwise
+             reload the page and lose its state. Launched only by our own shortcuts. -->
+        <activity
+            android:name=".artifact.ArtifactAppActivity"
+            android:exported="false"
+            android:documentLaunchMode="intoExisting"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.LibreChat" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

@@ -27,7 +27,6 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.garfiec.librechat.core.ui.components.AdaptiveButton
-import com.garfiec.librechat.core.ui.components.AdaptiveCircularProgressIndicator
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedButton
 import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedTextField
 import com.garfiec.librechat.core.ui.components.AdaptiveScaffold
@@ -35,6 +34,7 @@ import com.garfiec.librechat.core.ui.components.AdaptiveSnackbarHost
 import com.garfiec.librechat.core.ui.components.DiscardChangesDialog
 import com.garfiec.librechat.core.ui.components.LoadingIndicator
 import com.garfiec.librechat.core.ui.components.PlatformBackHandler
+import com.garfiec.librechat.core.ui.components.VerbatimKeyboardOptions
 import com.garfiec.librechat.core.ui.components.topbar.AdaptiveTopBar
 import com.garfiec.librechat.core.ui.components.topbar.AdaptiveTopBarSpec
 import com.garfiec.librechat.core.ui.components.topbar.BarAction
@@ -153,6 +153,7 @@ fun PromptEditorScreen(
                 inputTransformation = CommandInputTransformation,
                 label = { Text(stringResource(Res.string.prompt_command_label)) },
                 lineLimits = TextFieldLineLimits.SingleLine,
+                keyboardOptions = VerbatimKeyboardOptions,
                 prefix = { Text("/") },
                 placeholder = { Text(stringResource(Res.string.prompt_command_placeholder)) },
                 modifier = Modifier.fillMaxWidth(),
@@ -196,17 +197,17 @@ fun PromptEditorScreen(
 
             AdaptiveButton(
                 onClick = viewModel::save,
-                enabled = !uiState.isSaving && uiState.name.isNotBlank() && uiState.promptText.isNotBlank(),
+                enabled = uiState.name.isNotBlank() && uiState.promptText.isNotBlank(),
+                loading = uiState.isSaving,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                if (uiState.isSaving) {
-                    AdaptiveCircularProgressIndicator(
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Text(stringResource(if (uiState.isNewPrompt) Res.string.prompt_editor_create else Res.string.save))
+                val label = when {
+                    uiState.isSaving && uiState.isNewPrompt -> Res.string.prompt_editor_creating
+                    uiState.isSaving -> Res.string.prompt_editor_saving
+                    uiState.isNewPrompt -> Res.string.prompt_editor_create
+                    else -> Res.string.save
                 }
+                Text(stringResource(label))
             }
 
             Spacer(modifier = Modifier.height(8.dp))

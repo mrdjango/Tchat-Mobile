@@ -25,4 +25,4 @@ Your chats are sent to TensorGrid's servers to generate replies. The app contain
 
 Compatibility
 
-Built against LibreChat v0.8.8, the open-source platform Tchat's service runs on. Tchat is based on the open-source Switchboard client and is not affiliated with the LibreChat project.
+Built against LibreChat v0.8.9-rc1, the open-source platform Tchat's service runs on. Tchat is based on the open-source Switchboard client and is not affiliated with the LibreChat project.

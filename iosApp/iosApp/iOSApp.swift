@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UserNotifications
 import Shared
 
 @main
@@ -19,6 +20,7 @@ struct iOSApp: App {
         // Here rather than in the scene delegate: a launch triggered by a background task connects
         // no scene at all, but it still constructs the App.
         PrefetchBackgroundTasks.register()
+        ScheduleCheckTask.register()
         // Initialize Koin DI — must happen before any KMP code is used
         IosKoinHelperKt.startIosKoin()
     }
@@ -39,8 +41,9 @@ struct iOSApp: App {
     }
 }
 
-/// Supplies a scene delegate; that's the object iOS delivers quick-action taps to.
-final class AppDelegate: NSObject, UIApplicationDelegate {
+/// Supplies a scene delegate (where iOS delivers quick-action taps and URLs) and receives
+/// notification taps.
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
@@ -48,7 +51,32 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // The BGTask launch handlers are registered in `iOSApp.init()`, which runs before this and
         // before Koin can submit anything. Registering again here would throw: iOS accepts each
         // identifier once per process.
+        // Before launch finishes, or a tap that launched the app is never delivered.
+        UNUserNotificationCenter.current().delegate = self
         return true
+    }
+
+    /// The app posts only when it is in the background, so one arriving in front lost a race with the
+    /// user opening the app: list it without a banner.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.list])
+    }
+
+    /// Opens the notification's conversation link through the shared navigation host.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        // "link" is the userInfo key IosNotifier posts the conversation link under.
+        if let link = response.notification.request.content.userInfo["link"] as? String {
+            try? IosKoinAccessor.shared.openDeepLink(url: link)
+        }
+        completionHandler()
     }
 
     func application(
@@ -62,9 +90,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
-/// Handles Home-Screen quick actions both at cold launch (`willConnectTo`) and while running
-/// (`performActionFor`). It only observes scene events — it never creates a window, so SwiftUI's
-/// `WindowGroup` still owns the UI.
+/// Handles Home-Screen quick actions and `librechat://` URLs, both at cold launch (`willConnectTo`) and
+/// while running (`performActionFor`, `openURLContexts`). It only observes scene events — it never
+/// creates a window, so SwiftUI's `WindowGroup` still owns the UI. URLs come in here rather than
+/// through SwiftUI's `.onOpenURL`, which this custom scene delegate would not reliably receive.
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func scene(
         _ scene: UIScene,
@@ -73,6 +102,18 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     ) {
         if let shortcutItem = connectionOptions.shortcutItem {
             ModelQuickActions.handle(shortcutItem)
+        }
+        openDeepLinks(connectionOptions.urlContexts)
+    }
+
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        openDeepLinks(URLContexts)
+    }
+
+    /// Hands each URL to the shared navigation host, which ignores anything that isn't a `librechat://` link.
+    private func openDeepLinks(_ contexts: Set<UIOpenURLContext>) {
+        for context in contexts {
+            try? IosKoinAccessor.shared.openDeepLink(url: context.url.absoluteString)
         }
     }
 

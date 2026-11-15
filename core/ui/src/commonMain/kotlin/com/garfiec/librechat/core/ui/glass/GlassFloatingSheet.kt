@@ -23,7 +23,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -51,9 +54,12 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
-import com.garfiec.librechat.core.ui.components.PlatformBackHandler
+import com.garfiec.librechat.core.ui.components.predictiveBackSheet
+import com.garfiec.librechat.core.ui.components.predictiveBackSheetContent
+import com.garfiec.librechat.core.ui.components.rememberSheetPredictiveBack
 import com.garfiec.librechat.core.ui.theme.LocalDarkTheme
 import kotlinx.coroutines.launch
 
@@ -65,10 +71,12 @@ import kotlinx.coroutines.launch
  * call [onDismissRequest] straight away; otherwise it is called once the sheet has slid away. If
  * [interceptDismiss] turned true during that slide, the sheet slides back up as it asks.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun GlassFloatingSheet(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
+    maxWidth: Dp = BottomSheetDefaults.SheetMaxWidth,
     interceptDismiss: () -> Boolean = { false },
     dragHandle: @Composable (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -123,7 +131,13 @@ internal fun GlassFloatingSheet(
             settleBack()
         }
     }
-    PlatformBackHandler(enabled = true, onBack = dismiss)
+    val back = rememberSheetPredictiveBack(enabled = true) {
+        dismiss()
+        // Held open by the caller: grow back. Otherwise it slides away shrunk, as M3's does.
+        if (!dismissing) reset()
+    }
+    // Also when a hold that started during the slide brings the sheet back up.
+    LaunchedEffect(dismissing) { if (!dismissing) back.reset() }
 
     // Scrollable content first takes back any pull it gave the sheet, and hands its unused downward
     // scroll at the top (a pull past the start of the list) to the sheet.
@@ -173,16 +187,16 @@ internal fun GlassFloatingSheet(
                 .padding(SheetMargin),
             contentAlignment = Alignment.BottomCenter,
         ) {
-            Column(
+            Box(
                 modifier = Modifier
-                    .widthIn(max = MaxSheetWidth)
+                    .widthIn(max = maxWidth)
                     .fillMaxWidth()
                     .onSizeChanged { panelHeight = it.height }
                     .graphicsLayer {
                         val hiddenOffset = panelHeight + SheetMargin.toPx() + bottomInset.getBottom(this)
                         translationY = (1f - shown.value) * hiddenOffset + dragged.coerceAtLeast(0f)
                     }
-                    .glassSheetPanel(style, backdrop, thickening)
+                    .predictiveBackSheet(back)
                     .draggable(
                         state = rememberDraggableState { delta -> dragged = (dragged + delta).coerceAtLeast(0f) },
                         orientation = Orientation.Vertical,
@@ -193,11 +207,19 @@ internal fun GlassFloatingSheet(
                     // least keep the sheet's own contents together for screen readers.
                     .semantics { isTraversalGroup = true },
             ) {
+                // Glass as a sibling behind the content, not a modifier around it: inside the glass's layer
+                // a UIKitView's see-through cut-out (an artifact's WKWebView) stops there and never shows.
+                Box(Modifier.matchParentSize().glassSheetPanel(style, backdrop, thickening))
                 // What an M3 sheet provides from its container; without it, text that relies on the
                 // ambient content colour renders in the default black, unreadable on dark glass.
                 CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
-                    dragHandle?.invoke()
-                    content()
+                    Column(Modifier.fillMaxWidth().clip(SheetShape).predictiveBackSheetContent(back)) {
+                        // Centred as M3's sheet does: its default handle is a bare pill with no width of its own.
+                        if (dragHandle != null) {
+                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) { dragHandle() }
+                        }
+                        content()
+                    }
                 }
             }
         }
@@ -205,14 +227,17 @@ internal fun GlassFloatingSheet(
 }
 
 /** Shared with `AdaptiveSheetSurface`, so a sheet a screen drags itself matches this one. */
-internal fun Modifier.glassSheetPanel(style: GlassStyle, backdrop: GlassBackdrop?, thickening: Color): Modifier =
-    glassSurface(style, SheetShape, backdrop).clip(SheetShape).background(thickening)
+internal fun Modifier.glassSheetPanel(
+    style: GlassStyle,
+    backdrop: GlassBackdrop?,
+    thickening: Color,
+    shape: CornerBasedShape = SheetShape,
+): Modifier = glassSurface(style, shape, backdrop).clip(shape).background(thickening)
 
-private val SheetShape = RoundedCornerShape(28.dp) // TCHAT: radius-xl, sheets (was 32)
+internal val SheetShape = RoundedCornerShape(32.dp)
 
 /** How far a floating sheet sits in from the screen's edges (inside the safe area). */
 internal val SheetMargin = 12.dp
-private val MaxSheetWidth = 640.dp
 private val DismissVelocity = 1200.dp
 private const val DISMISS_FRACTION = 0.33f
 private val ScrimColor = Color.Black.copy(alpha = 0.2f)

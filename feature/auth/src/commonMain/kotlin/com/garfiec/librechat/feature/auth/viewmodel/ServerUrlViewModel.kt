@@ -1,13 +1,19 @@
 package com.garfiec.librechat.feature.auth.viewmodel
 
 import androidx.compose.runtime.Immutable
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.garfiec.librechat.core.brand.ServerPinning
+import com.garfiec.librechat.core.common.extensions.serverHostLabel
 import com.garfiec.librechat.core.common.identity.cleanServerUrl
 import com.garfiec.librechat.core.common.identity.serverOrigin
+import com.garfiec.librechat.core.common.result.FailureKind
 import com.garfiec.librechat.core.common.result.Result
+import com.garfiec.librechat.core.common.result.message
 import com.garfiec.librechat.core.common.result.suspendRunCatching
+import com.garfiec.librechat.core.data.datastore.AccountEntry
+import com.garfiec.librechat.core.data.datastore.AccountRoster
 import com.garfiec.librechat.core.data.datastore.ServerDataStore
 import com.garfiec.librechat.core.data.repository.AccountSwitcher
 import com.garfiec.librechat.core.data.repository.ConfigRepository
@@ -24,6 +30,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 
 /**
  * A rejected header row, as the row index plus the machine-readable reason. Deliberately not a
@@ -33,6 +41,16 @@ import kotlinx.coroutines.launch
 @Immutable
 data class HeaderFieldError(val index: Int, val reason: HeaderRejection)
 
+/** A server the roster's accounts are on, as the "Your servers" shortcut shows it. */
+@Immutable
+data class KnownServer(
+    val url: String,
+    /** The address without its scheme; the path stays, so two subpath servers on one host differ. */
+    val label: String,
+    val host: String,
+    val accountCount: Int,
+)
+
 @Immutable
 data class ServerUrlUiState(
     val url: String = "",
@@ -41,6 +59,12 @@ data class ServerUrlUiState(
     val isValidated: Boolean = false,
     val showHttpWarning: Boolean = false,
     val showAdvanced: Boolean = false,
+    /**
+     * TCHAT: true for the lifetime of this screen when the server is force-pinned
+     * ([ServerPinning.allowOverride] false, every Tchat build). The screen renders a brand splash
+     * instead of the URL field and Advanced section, using [error] to pick a spinner or Retry.
+     */
+    val autoConnecting: Boolean = false,
     val customHeaders: List<CustomHeaderRow> = emptyList(),
     val headerError: HeaderFieldError? = null,
     /**
@@ -55,14 +79,22 @@ data class ServerUrlUiState(
      * sends the user to fix a URL that was never the problem.
      */
     val headersSaveFailure: HeaderWriteFailure? = null,
-    /**
-     * TCHAT: true for the lifetime of this screen when the server is force-pinned
-     * ([ServerPinning.allowOverride] false — every Tchat build, with no exceptions). The screen
-     * renders a brand splash instead of the URL field/Advanced section while this is true, using
-     * [error] (still populated normally) to decide between a spinner and a Retry affordance.
-     */
-    val autoConnecting: Boolean = false,
+    /** Servers of the accounts on this device, most recently used first. */
+    val knownServers: List<KnownServer> = emptyList(),
 )
+
+internal fun knownServersOf(entries: List<AccountEntry>): List<KnownServer> =
+    entries.groupBy { it.serverUrl }
+        .entries
+        .sortedByDescending { (_, accounts) -> accounts.maxOf { it.lastActiveAt } }
+        .map { (url, accounts) ->
+            KnownServer(
+                url = url,
+                label = serverLabel(url),
+                host = url.serverHostLabel(),
+                accountCount = accounts.size,
+            )
+        }
 
 /**
  * Validates a server URL and selects it for the sign-in flow.
@@ -78,16 +110,19 @@ data class ServerUrlUiState(
  * - **Add-account** (`addAccount = true`): reached from the account switcher while another account
  *   is live. Must never touch the live account's state: the URL goes into a pending add session
  *   ([AccountSwitcher.beginAdd]) instead of the global store, and the config rides on that session
- *   for the add-mode login screen instead of being published.
+ *   for the add-mode login screen instead of being published. The field starts empty; the live
+ *   server is the first of [ServerUrlUiState.knownServers].
  */
 class ServerUrlViewModel(
     private val serverDataStore: ServerDataStore,
     private val serverRepository: ServerRepository,
     private val configRepository: ConfigRepository,
     private val accountSwitcher: AccountSwitcher,
+    private val accountRoster: AccountRoster,
+    private val savedStateHandle: SavedStateHandle,
     private val addAccount: Boolean = false,
-    // TCHAT: blank url == unpinned, the exact upstream default — every existing caller/test that
-    // doesn't pass this keeps today's onboarding behaviour verbatim.
+    private val cleartextBlockedForDomainNames: Boolean = platformBlocksCleartextToDomainNames,
+    // TCHAT: a blank url is unpinned, upstream's default, so a caller or test that omits it behaves as before.
     private val pinning: ServerPinning = ServerPinning(url = "", allowOverride = true),
 ) : ViewModel() {
 
@@ -105,15 +140,10 @@ class ServerUrlViewModel(
     private var userEdited = false
 
     init {
-        // TCHAT: force-pinned builds (every Tchat build) skip the URL/headers form entirely and
-        // connect to the pin immediately — doValidateAndConnect already branches on `addAccount`
-        // internally (validateLiveServer vs validatePendingServer), so this reaches the right path
-        // in both the normal and add-account flows with no other change to either. Deliberately
-        // not gated on the async prefill below: setServerUrl() inside doValidateAndConnect always
-        // wins the race against ServerDataStore's own warm-up (see its urlExplicitlySet guard), so
-        // there is nothing to await first. No custom headers are attached on this very first
-        // attempt — a non-issue for Tchat's own deployment (no gateway in front of it; the header
-        // editor is hidden entirely anyway, see TchatBrand.EXPOSE_PROVIDER_BACKEND_SETTINGS).
+        // TCHAT: a force-pinned build skips the URL and headers form and connects to the pin at once.
+        // `doValidateAndConnect` already branches on `addAccount`, and the prefill below can't beat it:
+        // `setServerUrl` wins the race against ServerDataStore's warm-up. No custom headers go out on
+        // this attempt; Tchat has no gateway in front of it (TchatBrand.EXPOSE_PROVIDER_BACKEND_SETTINGS).
         if (pinning.url.isNotBlank() && !pinning.allowOverride) {
             _uiState.value = _uiState.value.copy(url = pinning.url, autoConnecting = true)
             doValidateAndConnect(pinning.url)
@@ -121,19 +151,19 @@ class ServerUrlViewModel(
     }
 
     init {
+        restoreDraft()
         viewModelScope.launch {
+            accountRoster.entriesFlow().collect { entries ->
+                _uiState.value = _uiState.value.copy(knownServers = knownServersOf(entries))
+            }
+        }
+        viewModelScope.launch {
+            if (addAccount) return@launch
             // awaitBaseUrl (not getBaseUrl) so a cold-start relaunch doesn't read "" before
             // ServerDataStore's async warm-up resolves, which would skip pre-filling the saved URL.
-            // In add mode this pre-fills the ACTIVE server so the common same-server-different-user
-            // add is a single tap; typing a different URL adds a new server.
             val existingUrl = serverDataStore.awaitBaseUrl()
             if (existingUrl.isBlank()) return@launch
-            // The URL prefill above deliberately shows the ACTIVE server in add mode — but its
-            // headers must NOT come along. They are a credential, and prefilling them would show the
-            // live server's secret on a screen the user believes is configuring a *new* server; an
-            // edit there would then silently rewrite the live server's credential. Add mode starts
-            // empty and the user re-enters what the new server needs.
-            val savedHeaders = if (addAccount) emptyMap() else serverRepository.headersForServer(existingUrl)
+            val savedHeaders = serverRepository.headersForServer(existingUrl)
             // Both awaits above can outlast the first frame, and `headersForServer` adds a second
             // suspension on the header store's own warm-up. By the time they resolve the user may
             // already be typing — applying the prefill then overwrites a URL or a freshly rotated
@@ -153,11 +183,55 @@ class ServerUrlViewModel(
         }
     }
 
+    /**
+     * Connects to a known server in one tap, with the headers already stored for [url]. The editor is
+     * reset first: rows in it belong to another server, and Connect would file them under this one.
+     */
+    fun connectTo(url: String) {
+        userEdited = true
+        headersEdited = false
+        _uiState.value = _uiState.value.copy(
+            url = url,
+            error = null,
+            showAdvanced = false,
+            customHeaders = emptyList(),
+            headerError = null,
+            headersLoadFailed = false,
+            headersSaveFailure = null,
+        )
+        saveDraft()
+        validateAndConnect()
+    }
+
     fun onUrlChanged(url: String) {
         // Deliberately does not re-key the saved headers: this fires per keystroke, and deriveServerId
         // throws on partial input. The header set is committed against the final URL on Connect.
         userEdited = true
         _uiState.value = _uiState.value.copy(url = url, error = null)
+        saveDraft()
+    }
+
+    /**
+     * What the user typed outlives the process, header values included: Android may kill it while
+     * the user is in another app copying a gateway secret. Written on every edit, read once in init.
+     */
+    private fun saveDraft() {
+        val state = _uiState.value
+        val draft = ServerUrlDraft(state.url, state.customHeaders.map { SavedHeader(it.name, it.value) }, headersEdited)
+        savedStateHandle[KEY_DRAFT] = Json.encodeToString(ServerUrlDraft.serializer(), draft)
+    }
+
+    private fun restoreDraft() {
+        val raw = savedStateHandle.get<String>(KEY_DRAFT) ?: return
+        val draft = runCatching { Json.decodeFromString(ServerUrlDraft.serializer(), raw) }.getOrNull() ?: return
+        userEdited = true
+        headersEdited = draft.headersEdited
+        _uiState.value = _uiState.value.copy(
+            url = draft.url,
+            customHeaders = draft.headers.map { CustomHeaderRow(it.name, it.value) },
+            // Open after a removal too: Connect will clear the stored headers, which must stay visible.
+            showAdvanced = draft.headersEdited || draft.headers.isNotEmpty(),
+        )
     }
 
     /**
@@ -184,6 +258,7 @@ class ServerUrlViewModel(
             headerError = null,
             headersSaveFailure = null,
         )
+        saveDraft()
     }
 
     fun removeHeaderRow(index: Int) {
@@ -195,6 +270,7 @@ class ServerUrlViewModel(
             headerError = null,
             headersSaveFailure = null,
         )
+        saveDraft()
     }
 
     private fun markHeadersEdited() {
@@ -219,6 +295,7 @@ class ServerUrlViewModel(
             headerError = null,
             headersSaveFailure = null,
         )
+        saveDraft()
     }
 
     fun validateAndConnect() {
@@ -230,6 +307,10 @@ class ServerUrlViewModel(
 
         // Show warning dialog if user enters an HTTP URL
         if (url.startsWith("http://", ignoreCase = true)) {
+            if (cleartextBlockedForDomainNames && hostIsQualifiedDomainName(url)) {
+                _uiState.value = _uiState.value.copy(error = FailureKind.CleartextBlocked.message())
+                return
+            }
             _uiState.value = _uiState.value.copy(showHttpWarning = true)
             return
         }
@@ -287,10 +368,10 @@ class ServerUrlViewModel(
             //   derive different serverIds, so the credential would be filed under a server the
             //   app never contacts.
             // - Only when a row was actually edited. An empty map means "delete this server's
-            //   headers", and the editor is empty by default both in add mode (which prefills the
-            //   ACTIVE server's URL, so one tap on the untouched prefill would wipe the live
-            //   session's credential) and before the store resolves. Clearing is expressed by
-            //   removing rows, which sets the flag.
+            //   headers", and the editor is empty by default both in add mode (where the URL may be
+            //   a signed-in server, so Connect on the untouched editor would wipe a live session's
+            //   credential) and before the store resolves. Clearing is expressed by removing rows,
+            //   which sets the flag.
             // Stop on a refusal rather than probing anyway: the probe would go out without the
             // credential, come back as the gateway's login page, and surface as "could not connect
             // to server" — sending the user to re-check a URL that was never the problem, with the
@@ -300,10 +381,10 @@ class ServerUrlViewModel(
             val typed = CustomHeaderRules.toHeaderMap(headers)
             // Add mode's editor starts empty by design — it must not show the active server's secret
             // — so an empty map here is "the user typed nothing", never "the user cleared their
-            // headers". The URL is prefilled with the ACTIVE server, so writing it would delete a
-            // credential belonging to a session the user is still signed in to, from a screen about
-            // a different account. There is nothing to clear in add mode: the editor never
-            // represented anything stored.
+            // headers". The URL may be a signed-in server (a known-server row), so writing it would
+            // delete a credential belonging to a session the user is still signed in to, from a
+            // screen about a different account. There is nothing to clear in add mode: the editor
+            // never represented anything stored.
             val wouldClearWithoutHavingLoaded = addAccount && typed.isEmpty()
             val wroteTyped = headersEdited && !wouldClearWithoutHavingLoaded
             if (wroteTyped) {
@@ -390,3 +471,28 @@ class ServerUrlViewModel(
         return null
     }
 }
+
+/**
+ * Whether the platform refuses plain HTTP to a dotted DNS name outside `.local`, as iOS App Transport
+ * Security does. Local IPs, single-label names and `.local` names stay reachable.
+ */
+internal expect val platformBlocksCleartextToDomainNames: Boolean
+
+/**
+ * Whether [url]'s host is a dotted DNS name outside `.local`. IP literals are not: which addresses
+ * iOS counts as external is the platform's call, and the probe reports its refusal.
+ */
+internal fun hostIsQualifiedDomainName(url: String): Boolean {
+    val authority = serverOrigin(url).substringAfter("://").substringAfterLast('@')
+    if (authority.startsWith('[')) return false
+    val host = authority.substringBefore(':').trimEnd('.').lowercase()
+    return '.' in host && !host.all { it.isDigit() || it == '.' } && !host.endsWith(".local")
+}
+
+private const val KEY_DRAFT = "server_url_draft"
+
+@Serializable
+private data class ServerUrlDraft(val url: String, val headers: List<SavedHeader>, val headersEdited: Boolean)
+
+@Serializable
+private data class SavedHeader(val name: String, val value: String)

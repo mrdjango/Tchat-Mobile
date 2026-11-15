@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.input.KeyboardActionHandler
 import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.then
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -26,11 +27,16 @@ import androidx.compose.material3.TextFieldLabelPosition
 import androidx.compose.material3.TextFieldLabelScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
@@ -71,6 +77,20 @@ fun AdaptiveOutlinedTextField(
     shape: Shape = OutlinedTextFieldDefaults.shape,
     colors: TextFieldColors = OutlinedTextFieldDefaults.colors(),
 ) {
+    if (keyboardOptions.undoesSmartPunctuation()) {
+        StraightenedTextField(value, onValueChange) { field, onFieldChange ->
+            AdaptiveOutlinedTextField(
+                value = field, onValueChange = onFieldChange,
+                modifier = modifier, enabled = enabled, readOnly = readOnly, textStyle = textStyle, label = label,
+                placeholder = placeholder, leadingIcon = leadingIcon, trailingIcon = trailingIcon, prefix = prefix,
+                suffix = suffix, supportingText = supportingText, isError = isError,
+                visualTransformation = visualTransformation, keyboardOptions = keyboardOptions,
+                keyboardActions = keyboardActions, singleLine = singleLine, maxLines = maxLines, minLines = minLines,
+                interactionSource = interactionSource, shape = shape, colors = colors,
+            )
+        }
+        return
+    }
     // TCHAT: the label sits above the box (see [LabeledField]).
     LabeledField(label = label, isError = isError, enabled = enabled, modifier = modifier) { fieldModifier ->
         if (!isLiquidGlass) {
@@ -89,7 +109,7 @@ fun AdaptiveOutlinedTextField(
         TextField(
             value = value, onValueChange = onValueChange, modifier = fieldModifier, enabled = enabled,
             readOnly = readOnly, textStyle = textStyle, label = null,
-                placeholder = oneLinePlaceholder(placeholder, singleLine || maxLines == 1),
+            placeholder = oneLinePlaceholder(placeholder, singleLine || maxLines == 1),
             leadingIcon = leadingIcon, trailingIcon = trailingIcon, prefix = prefix, suffix = suffix,
             supportingText = supportingText, isError = isError, visualTransformation = visualTransformation,
             keyboardOptions = keyboardOptions, keyboardActions = keyboardActions, singleLine = singleLine,
@@ -126,11 +146,16 @@ fun AdaptiveOutlinedTextField(
     shape: Shape = OutlinedTextFieldDefaults.shape,
     colors: TextFieldColors = OutlinedTextFieldDefaults.colors(),
 ) {
+    val onTyped: (TextFieldValue) -> Unit = if (keyboardOptions.undoesSmartPunctuation()) {
+        { typed -> onValueChange(typed.withoutSmartPunctuation(value.text)) }
+    } else {
+        onValueChange
+    }
     // TCHAT: the label sits above the box (see [LabeledField]).
     LabeledField(label = label, isError = isError, enabled = enabled, modifier = modifier) { fieldModifier ->
         if (!isLiquidGlass) {
             OutlinedTextField(
-                value = value, onValueChange = onValueChange, modifier = fieldModifier, enabled = enabled,
+                value = value, onValueChange = onTyped, modifier = fieldModifier, enabled = enabled,
                 readOnly = readOnly, textStyle = textStyle, label = null,
                 placeholder = oneLinePlaceholder(placeholder, singleLine || maxLines == 1),
                 leadingIcon = leadingIcon, trailingIcon = trailingIcon, prefix = prefix, suffix = suffix,
@@ -142,9 +167,9 @@ fun AdaptiveOutlinedTextField(
             return@LabeledField
         }
         TextField(
-            value = value, onValueChange = onValueChange, modifier = fieldModifier, enabled = enabled,
+            value = value, onValueChange = onTyped, modifier = fieldModifier, enabled = enabled,
             readOnly = readOnly, textStyle = textStyle, label = null,
-                placeholder = oneLinePlaceholder(placeholder, singleLine || maxLines == 1),
+            placeholder = oneLinePlaceholder(placeholder, singleLine || maxLines == 1),
             leadingIcon = leadingIcon, trailingIcon = trailingIcon, prefix = prefix, suffix = suffix,
             supportingText = supportingText, isError = isError, visualTransformation = visualTransformation,
             keyboardOptions = keyboardOptions, keyboardActions = keyboardActions, singleLine = singleLine,
@@ -179,6 +204,11 @@ fun AdaptiveOutlinedTextField(
     shape: Shape = OutlinedTextFieldDefaults.shape,
     colors: TextFieldColors = OutlinedTextFieldDefaults.colors(),
 ) {
+    val transformation = if (keyboardOptions.undoesSmartPunctuation()) {
+        inputTransformation?.let { SmartPunctuationTransformation.then(it) } ?: SmartPunctuationTransformation
+    } else {
+        inputTransformation
+    }
     if (!isLiquidGlass) {
         OutlinedTextField(
             labelPosition = TextFieldLabelPosition.Above(), // TCHAT: label above the box
@@ -186,7 +216,7 @@ fun AdaptiveOutlinedTextField(
             label = label, placeholder = oneLinePlaceholder(placeholder, lineLimits == TextFieldLineLimits.SingleLine),
             leadingIcon = leadingIcon, trailingIcon = trailingIcon,
             prefix = prefix, suffix = suffix, supportingText = supportingText, isError = isError,
-            inputTransformation = inputTransformation, outputTransformation = outputTransformation,
+            inputTransformation = transformation, outputTransformation = outputTransformation,
             keyboardOptions = keyboardOptions, onKeyboardAction = onKeyboardAction, lineLimits = lineLimits,
             interactionSource = interactionSource, shape = shape, colors = colors,
         )
@@ -198,10 +228,31 @@ fun AdaptiveOutlinedTextField(
         label = label, placeholder = oneLinePlaceholder(placeholder, lineLimits == TextFieldLineLimits.SingleLine),
         leadingIcon = leadingIcon, trailingIcon = trailingIcon,
         prefix = prefix, suffix = suffix, supportingText = supportingText, isError = isError,
-        inputTransformation = inputTransformation, outputTransformation = outputTransformation,
+        inputTransformation = transformation, outputTransformation = outputTransformation,
         keyboardOptions = keyboardOptions, onKeyboardAction = onKeyboardAction, lineLimits = lineLimits,
         interactionSource = interactionSource, shape = GlassFieldShape, colors = glassFieldColors(colors),
     )
+}
+
+/**
+ * Holds a String field's text as a [TextFieldValue], so undoing an em dash (one character becomes
+ * two) can place the caret; the String overload of a text field can't.
+ */
+@Composable
+private fun StraightenedTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    content: @Composable (TextFieldValue, (TextFieldValue) -> Unit) -> Unit,
+) {
+    var field by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
+    var lastText by remember(value) { mutableStateOf(value) }
+    content(if (field.text == value) field else field.copy(text = value)) { typed ->
+        field = typed
+        if (typed.text != lastText) {
+            lastText = typed.text
+            onValueChange(typed.text)
+        }
+    }
 }
 
 /**

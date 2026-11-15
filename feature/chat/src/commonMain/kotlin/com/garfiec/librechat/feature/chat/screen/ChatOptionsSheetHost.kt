@@ -1,21 +1,21 @@
 package com.garfiec.librechat.feature.chat.screen
 
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
-import com.garfiec.librechat.core.common.EndpointConstants
-import com.garfiec.librechat.core.model.config.EndpointDropParams
-import com.garfiec.librechat.core.model.paramsEndpointFor
-import com.garfiec.librechat.core.model.paramsEndpointForOrNull
+import com.garfiec.librechat.core.model.config.displayLabel
 import com.garfiec.librechat.feature.chat.components.ChatOptionsBottomSheet
 import com.garfiec.librechat.feature.chat.components.ChatOptionsSheetController
 import com.garfiec.librechat.feature.chat.components.ChatToolsPageParams
 import com.garfiec.librechat.feature.chat.components.ComparisonLane
 import com.garfiec.librechat.feature.chat.components.ModelParametersPageParams
 import com.garfiec.librechat.feature.chat.components.ModelSelectorPageParams
+import com.garfiec.librechat.feature.chat.components.OptionsSelection
 import com.garfiec.librechat.feature.chat.components.localizedStreamError
 import com.garfiec.librechat.feature.chat.tchat.rememberTchatPicker
 import com.garfiec.librechat.feature.chat.tchat.tchatPickerActions
+import com.garfiec.librechat.feature.chat.util.keyHint
 import com.garfiec.librechat.feature.chat.viewmodel.ChatUiState
 import com.garfiec.librechat.feature.chat.viewmodel.ChatViewModel
 
@@ -40,10 +40,17 @@ internal fun ChatOptionsSheetHost(
     onTakePhoto: () -> Unit,
     onPickPhotos: () -> Unit,
     onAttachFromServer: () -> Unit,
+    onAttachToCode: (() -> Unit)?,
+    /** An MCP row's sign-in, the settings line's with the server turned on once it connects. */
+    onSignInMcpServer: (String) -> Unit,
+    onCancelMcpSignIn: (String) -> Unit,
+    onSetUpMcpServer: (String) -> Unit,
+    onOpenWebSearchKeys: () -> Unit,
     onNavigateToProviderKeys: (endpointName: String?) -> Unit,
     onShowSavePresetDialog: () -> Unit,
     /** Compare setup's staged picks: during setup the Model page stages into them. */
     compareSetupPick: CompareSetupPick,
+    snackbarHostState: SnackbarHostState,
 ) {
     // A send-block auto-opens the standalone selector; close this one so they can't stack. Gate on
     // the flag (not just its change) to also catch it being already true when this sheet opens.
@@ -53,17 +60,15 @@ internal fun ChatOptionsSheetHost(
     val page = controller.openPage
     if (page == null || uiState.showModelSheet) return
 
-    // The agent behind the current selection, if the endpoint is "agents" — routes the parameters
-    // page to the agent's underlying provider rather than the "agents" pseudo-endpoint.
-    val activeAgent = remember(uiState.agents, uiState.selectedModel, uiState.selectedEndpoint) {
-        if (uiState.selectedEndpoint == EndpointConstants.AGENTS) {
-            uiState.agents.find { it.id == uiState.selectedModel }
-        } else {
-            null
+    // The parameter set the selection resolves to (an agent's provider's, a custom endpoint's type's),
+    // the same one the send payload is built from. Remembered: `uiState` emits per SSE delta.
+    val parameterTarget =
+        remember(uiState.agents, uiState.selectedModel, uiState.selectedEndpoint, uiState.endpointConfigs) {
+            uiState.parameterTarget
         }
-    }
 
     val error = uiState.error?.let { localizedStreamError(it) }
+    val optionsSelection = rememberOptionsSelection(uiState, selectedModelDisplay)
     val comparison = rememberComparisonSelectorRouting(
         uiState = uiState,
         initialTarget = if (isSecondaryTab) ComparisonLane.B else ComparisonLane.A,
@@ -74,41 +79,40 @@ internal fun ChatOptionsSheetHost(
         onSelectSecondarySpec = viewModel::setSecondarySpec,
     )
 
-    // TCHAT: the selector page renders the Tchat picker for the active tab's selection.
-    val tchatSelectedEndpoint = if (isSecondaryTab) uiState.comparisonState.secondaryEndpoint else uiState.selectedEndpoint
-    val tchatSelectedModel = if (isSecondaryTab) uiState.comparisonState.secondaryModel else uiState.selectedModel
+    // TCHAT: the selector page renders the Tchat picker for the lane the page edits; Image Gen is the primary's.
     val tchatPicker = rememberTchatPicker(
         uiState = uiState,
-        selectedEndpoint = tchatSelectedEndpoint,
-        selectedModel = tchatSelectedModel,
-        showImageGen = !isSecondaryTab,
+        selectedEndpoint = comparison.selectedEndpoint,
+        selectedModel = comparison.selectedModel,
+        showImageGen = comparison.header == null,
     )
 
     ChatOptionsBottomSheet(
         page = page,
+        entryPage = controller.entryPage ?: page,
         onPageChange = controller::open,
         onDismiss = controller::close,
+        snackbarHostState = snackbarHostState,
         tools = ChatToolsPageParams(
+            focus = controller.focus,
             enabledTools = uiState.effectiveEnabledTools,
             onToggleTool = viewModel::toggleTool,
-            mcpServers = uiState.mcpServers,
+            artifactsMode = uiState.selection.artifactsMode,
+            onSetArtifactsMode = viewModel::setArtifactsMode,
+            mcpServers = uiState.offeredMcpServers,
             selectedMcpServerNames = uiState.effectiveMcpServerNames,
             onToggleMcpServer = viewModel::toggleMcpServer,
             onAttachFiles = onAttachFiles,
             onTakePhoto = onTakePhoto,
             onPickPhotos = onPickPhotos,
             onAttachFromServer = onAttachFromServer,
+            onAttachToCode = onAttachToCode,
             selectedModelDisplay = selectedModelDisplay,
+            selection = optionsSelection,
+            toolsHiddenReason = uiState.toolsHiddenReason,
             comparisonModels = comparisonModelLabels(uiState),
-            isCodeInterpreterAvailable = uiState.isCodeInterpreterAvailable,
-            webSearchEnabled = uiState.webSearchAvailable,
+            openTools = uiState.sheetTools,
             webSearchKind = uiState.webSearchKind,
-            urlContextEnabled = uiState.urlContextProviderGate,
-            runCodeEnabled = uiState.runCodeEnabled,
-            fileSearchEnabled = uiState.fileSearchEnabled,
-            memoryEnabled = uiState.isMemoryToolAvailable,
-            imageGenEnabled = uiState.tchat.imageGenAvailable, // TCHAT
-            skillsEnabled = uiState.isSkillsToolAvailable,
             mcpServersEnabled = uiState.mcpServersEnabled,
             gates = uiState.chatInputGates,
             contextGauge = uiState.contextGaugeDetails,
@@ -118,6 +122,11 @@ internal fun ChatOptionsSheetHost(
             contextBarPlacement = uiState.contextBarPlacement,
             contextGaugeExpanded = uiState.contextGaugeExpanded,
             onContextGaugeExpandedChange = viewModel::setContextGaugeExpanded,
+            onSignInMcpServer = onSignInMcpServer,
+            onCancelMcpSignIn = onCancelMcpSignIn,
+            onSetUpMcpServer = onSetUpMcpServer,
+            webSearchKeys = uiState.webSearchKeysRow,
+            onOpenWebSearchKeys = onOpenWebSearchKeys,
         ),
         // While comparing, the page edits whichever lane its A/B pair picks, starting on the active
         // tab's; the sheet itself needs no comparison branch.
@@ -151,10 +160,7 @@ internal fun ChatOptionsSheetHost(
             starredDisplay = uiState.starredModelsDisplay,
             endpointKeyStates = uiState.endpointKeyStates,
             tchatPicker = tchatPicker, // TCHAT
-            tchatActions = tchatPickerActions(
-                viewModel,
-                onSelectModel = if (isSecondaryTab) viewModel::setSecondaryModel else viewModel::onModelSelected,
-            ),
+            tchatActions = tchatPickerActions(viewModel, onSelectModel = comparison.onModelSelect),
         ),
         // Always the primary model, even on the secondary tab: ComparisonState carries no per-pane
         // parameters, so there is nothing else to point this at (pre-existing; porting web's
@@ -162,34 +168,47 @@ internal fun ChatOptionsSheetHost(
         parameters = ModelParametersPageParams(
             parameters = uiState.selection.sendParameters,
             onParametersChange = viewModel::updateModelParameters,
-            // TCHAT: the parameter set the endpoint declares (TensorGrid → openAI), not its name.
-            selectedEndpoint = uiState.endpointConfigs.paramsEndpointFor(uiState.selectedEndpoint),
+            selectedEndpoint = parameterTarget.settingsEndpoint,
             extendedEffortSupported = uiState.extendedEffortSupported,
             thinkingDisplayUpdatesSupported = uiState.thinkingDisplayUpdatesSupported,
-            selectedProvider = uiState.endpointConfigs.paramsEndpointForOrNull(activeAgent?.provider), // TCHAT
-            selectedModel = activeAgent?.model ?: uiState.selectedModel,
+            selectedProvider = parameterTarget.settingsProvider,
+            selectedModel = parameterTarget.model,
             // Remembered: `uiState` emits per SSE delta, so an open sheet recomposes once per
             // token and this would walk the map and allocate a fresh list every time, for a value
             // that only moves when the endpoint, model or config does. `AgentAdvancedPanel` wraps
             // the identical call the same way.
-            dropParams = remember(
-                uiState.gates.dropParamsMap,
-                uiState.selectedEndpoint,
-                activeAgent?.provider,
-                activeAgent?.model ?: uiState.selectedModel,
-            ) {
-                EndpointDropParams.resolve(
-                    map = uiState.gates.dropParamsMap,
-                    endpoint = uiState.selectedEndpoint,
-                    provider = activeAgent?.provider,
-                    model = activeAgent?.model ?: uiState.selectedModel,
-                )
+            dropParams = remember(uiState.gates.dropParamsMap, parameterTarget) {
+                parameterTarget.dropParams(uiState.gates.dropParamsMap)
             },
             onSaveAsPreset = {
                 controller.close()
                 onShowSavePresetDialog()
             },
             setBySpec = uiState.parametersSetBySpec,
+            comparing = uiState.comparisonState.isEnabled,
         ),
     )
+}
+
+/** Remembered on exactly the inputs it reads: `uiState` emits per SSE delta and per parameter edit. */
+@Composable
+internal fun rememberOptionsSelection(uiState: ChatUiState, title: String?): OptionsSelection {
+    val selection = uiState.selection
+    return remember(
+        selection.choice,
+        selection.modelSpecs,
+        selection.endpointConfigs,
+        selection.endpointKeyStates,
+        selection.agents,
+        uiState.serverUrl,
+        title,
+    ) {
+        val spec = uiState.activeSpec
+        OptionsSelection(
+            modelIcon = uiState.selectionIcon(),
+            modelSubtitle = selectionModelSubtitle(uiState.selectedEndpoint, uiState.selectedModel, uiState.agents, title),
+            modelKeyHint = uiState.endpointKeyStates[uiState.selectedEndpoint].keyHint(),
+            lockedBy = spec?.displayLabel?.takeIf(String::isNotBlank),
+        )
+    }
 }

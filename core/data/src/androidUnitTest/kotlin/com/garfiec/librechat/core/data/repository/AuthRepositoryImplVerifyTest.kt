@@ -1,9 +1,11 @@
 package com.garfiec.librechat.core.data.repository
 
+import com.garfiec.librechat.core.common.identity.AccountId
 import com.garfiec.librechat.core.common.identity.AccountState
 import com.garfiec.librechat.core.common.identity.ActiveAccountProvider
 import com.garfiec.librechat.core.common.identity.SessionManager
 import com.garfiec.librechat.core.common.result.ApiException
+import com.garfiec.librechat.core.common.result.Result
 import com.garfiec.librechat.core.data.datastore.AccountRegistry
 import com.garfiec.librechat.core.data.util.SessionTaskRunner
 import com.garfiec.librechat.core.model.User
@@ -33,7 +35,9 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
@@ -104,11 +108,16 @@ class AuthRepositoryImplVerifyTest {
         )
     }
 
-    private fun jsonHeaders() = headersOf(HttpHeaders.ContentType, "application/json")
-
-    private fun engineReturning(content: String, status: HttpStatusCode) = MockEngine {
-        respond(content = content, status = status, headers = jsonHeaders())
-    }
+    private fun engineReturning(content: String, status: HttpStatusCode, setCookie: String? = REFRESH_COOKIE) =
+        MockEngine {
+            val headers = headersOf(
+                *listOfNotNull(
+                    HttpHeaders.ContentType to listOf("application/json"),
+                    setCookie?.let { HttpHeaders.SetCookie to listOf(it) },
+                ).toTypedArray(),
+            )
+            respond(content = content, status = status, headers = headers)
+        }
 
     @Test
     fun `an undecodable 2xx body reports SessionIncomplete, not a connectivity failure`() = runTest {
@@ -171,7 +180,73 @@ class AuthRepositoryImplVerifyTest {
         assertThat(outcome).isEqualTo(VerifyTwoFactorOutcome.Success(User(mongoId = "u1", email = "a@b.com")))
     }
 
+    @Test
+    fun `a password sign-in whose commit fails rolls the staged session back`() = runTest {
+        coEvery { accountSessionEstablisher.establish(any()) } throws IllegalStateException("registry write failed")
+
+        val result = repo(engineReturning(VALID_SESSION_BODY, HttpStatusCode.OK)).login("a@b.com", "pw")
+
+        assertThat(result).isInstanceOf(Result.Error::class.java)
+        coVerify { tokenManager.clearTokens() }
+    }
+
+    @Test
+    fun `leaving a password sign-in mid-commit still finishes the commit`() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var committed = false
+        coEvery { accountSessionEstablisher.establish(any()) } coAnswers {
+            entered.complete(Unit)
+            release.await()
+            committed = true
+            AccountId("u1")
+        }
+        val repository = repo(engineReturning(VALID_SESSION_BODY, HttpStatusCode.OK))
+
+        val signIn = launch { repository.login("a@b.com", "pw") }
+        entered.await()
+        signIn.cancel()
+        release.complete(Unit)
+        signIn.join()
+
+        assertThat(committed).isTrue()
+        coVerify(exactly = 0) { tokenManager.clearTokens() }
+    }
+
+    @Test
+    fun `a password sign-in with no refresh cookie fails and stages nothing`() = runTest {
+        for (cookie in listOf(null, "refreshToken=; Path=/")) {
+            val result = repo(engineReturning(VALID_SESSION_BODY, HttpStatusCode.OK, setCookie = cookie))
+                .login("a@b.com", "pw")
+
+            assertThat((result as Result.Error).exception).isInstanceOf(MissingRefreshCookieException::class.java)
+        }
+        coVerify(exactly = 0) { tokenManager.setTokens(any(), any()) }
+        coVerify(exactly = 0) { accountSessionEstablisher.establish(any()) }
+        // Nothing was staged, so nothing is rolled back: a re-auth keeps its account bound.
+        coVerify(exactly = 0) { tokenManager.clearTokens() }
+    }
+
+    @Test
+    fun `a 2FA verify with no refresh cookie reports SessionIncomplete naming the cookie`() = runTest {
+        val outcome = repo(engineReturning(VALID_SESSION_BODY, HttpStatusCode.OK, setCookie = null))
+            .verifyTwoFactor(tempToken = "temp-abc", code = "123456")
+
+        assertThat((outcome as VerifyTwoFactorOutcome.SessionIncomplete).cookieMissing).isTrue()
+        coVerify(exactly = 0) { tokenManager.setTokens(any(), any()) }
+    }
+
+    @Test
+    fun `a 2FA setup finalize with no refresh cookie fails naming the cookie`() = runTest {
+        val result = repo(engineReturning(VALID_SESSION_BODY, HttpStatusCode.OK, setCookie = null))
+            .finalizeTwoFactorSetup("finalization-token")
+
+        assertThat((result as Result.Error).exception).isInstanceOf(MissingRefreshCookieException::class.java)
+        coVerify(exactly = 0) { tokenManager.setTokens(any(), any()) }
+    }
+
     private companion object {
+        const val REFRESH_COOKIE = "refreshToken=rt-1; Path=/; HttpOnly"
         const val VALID_SESSION_BODY = """{"token":"jwt-1","user":{"_id":"u1","email":"a@b.com"}}"""
     }
 }

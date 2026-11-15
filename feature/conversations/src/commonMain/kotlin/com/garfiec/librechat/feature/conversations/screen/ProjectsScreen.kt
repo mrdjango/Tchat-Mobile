@@ -71,6 +71,7 @@ import com.garfiec.librechat.core.ui.components.AdaptiveOutlinedTextField
 import com.garfiec.librechat.core.ui.components.AdaptiveScaffold
 import com.garfiec.librechat.core.ui.components.AdaptiveSnackbarHost
 import com.garfiec.librechat.core.ui.components.EmptyState
+import com.garfiec.librechat.core.ui.components.ErrorBanner
 import com.garfiec.librechat.core.ui.components.UnderBarsPullToRefreshBox
 import com.garfiec.librechat.core.ui.components.UpToTwoColumns
 import com.garfiec.librechat.core.ui.components.topbar.AdaptiveTopBar
@@ -82,6 +83,7 @@ import com.garfiec.librechat.core.ui.components.topbar.MaterialBarStyle
 import com.garfiec.librechat.core.ui.datetime.LocalDateTimeFormat
 import com.garfiec.librechat.core.ui.datetime.LocalRelativeTimeReference
 import com.garfiec.librechat.core.ui.datetime.resolve
+import com.garfiec.librechat.core.ui.theme.chromeColors
 import com.garfiec.librechat.feature.conversations.components.ProjectDeleteDialog
 import com.garfiec.librechat.feature.conversations.components.ProjectEditorSheet
 import com.garfiec.librechat.feature.conversations.components.ProjectMenuButton
@@ -91,6 +93,7 @@ import com.garfiec.librechat.feature.conversations.resources.back
 import com.garfiec.librechat.feature.conversations.resources.project_chat_count
 import com.garfiec.librechat.feature.conversations.resources.project_create
 import com.garfiec.librechat.feature.conversations.resources.project_create_confirm
+import com.garfiec.librechat.feature.conversations.resources.project_create_failed
 import com.garfiec.librechat.feature.conversations.resources.project_edit
 import com.garfiec.librechat.feature.conversations.resources.project_new
 import com.garfiec.librechat.feature.conversations.resources.project_sort_activity
@@ -100,9 +103,11 @@ import com.garfiec.librechat.feature.conversations.resources.project_sort_label
 import com.garfiec.librechat.feature.conversations.resources.project_sort_name
 import com.garfiec.librechat.feature.conversations.resources.project_unassigned
 import com.garfiec.librechat.feature.conversations.resources.project_unassigned_subtitle
+import com.garfiec.librechat.feature.conversations.resources.project_update_failed
 import com.garfiec.librechat.feature.conversations.resources.projects_count
 import com.garfiec.librechat.feature.conversations.resources.projects_empty
 import com.garfiec.librechat.feature.conversations.resources.projects_empty_description
+import com.garfiec.librechat.feature.conversations.resources.projects_load_failed
 import com.garfiec.librechat.feature.conversations.resources.projects_no_match
 import com.garfiec.librechat.feature.conversations.resources.projects_search
 import com.garfiec.librechat.feature.conversations.resources.projects_title
@@ -112,6 +117,7 @@ import com.garfiec.librechat.feature.conversations.viewmodel.ProjectsEvent
 import com.garfiec.librechat.feature.conversations.viewmodel.ProjectsUiState
 import com.garfiec.librechat.feature.conversations.viewmodel.ProjectsViewModel
 import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
@@ -131,6 +137,7 @@ fun ProjectsScreen(
     viewModel: ProjectsViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val projectLimits by viewModel.projectLimits.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -146,6 +153,7 @@ fun ProjectsScreen(
         viewModel.events.collect { event ->
             when (event) {
                 is ProjectsEvent.ShowError -> snackbarHostState.showSnackbar(event.message)
+                is ProjectsEvent.ShowErrorRes -> snackbarHostState.showSnackbar(getString(event.message))
                 is ProjectsEvent.OpenProject -> currentOnProjectClick(event.projectId, event.projectName)
             }
         }
@@ -166,7 +174,8 @@ fun ProjectsScreen(
     // From the search the shown list answers, not the typed one, which runs ahead of the results.
     val isSearching = uiState.shownQuery.isNotEmpty()
     val isFirstLoad = uiState.isLoading && uiState.projects.isEmpty()
-    val hasNoProjects = uiState.projects.isEmpty() && !uiState.isLoading && !isSearching
+    val loadFailed = uiState.loadFailed && uiState.projects.isEmpty() && !uiState.isLoading
+    val hasNoProjects = uiState.projects.isEmpty() && !uiState.isLoading && !isSearching && !loadFailed
 
     AdaptiveScaffold(
         modifier = modifier,
@@ -240,6 +249,13 @@ fun ProjectsScreen(
                 when {
                     isFirstLoad -> items(PLACEHOLDER_COUNT, key = { "placeholder_$it" }) { ProjectCardPlaceholder() }
 
+                    loadFailed -> fullWidthItem(key = "error") {
+                        ErrorBanner(
+                            message = stringResource(Res.string.projects_load_failed),
+                            onRetry = viewModel::load,
+                        )
+                    }
+
                     hasNoProjects -> fullWidthItem(key = "empty") {
                         EmptyState(
                             title = stringResource(Res.string.projects_empty),
@@ -293,10 +309,9 @@ fun ProjectsScreen(
         ProjectEditorSheet(
             title = stringResource(Res.string.project_new),
             confirmLabel = stringResource(Res.string.project_create_confirm),
-            onConfirm = { name, description ->
-                viewModel.createProject(name, description)
-                showCreateDialog = false
-            },
+            failureMessage = stringResource(Res.string.project_create_failed),
+            maxDescriptionLength = projectLimits.maxDescriptionLength,
+            onConfirm = viewModel::createProject,
             onDismiss = { showCreateDialog = false },
         )
     }
@@ -307,10 +322,9 @@ fun ProjectsScreen(
             confirmLabel = stringResource(Res.string.save),
             initialName = target.name,
             initialDescription = target.description.orEmpty(),
-            onConfirm = { name, description ->
-                viewModel.editProject(target.id, name, description)
-                editTarget = null
-            },
+            failureMessage = stringResource(Res.string.project_update_failed),
+            maxDescriptionLength = projectLimits.maxDescriptionLength,
+            onConfirm = { name, description, onResult -> viewModel.editProject(target.id, name, description, onResult) },
             onDismiss = { editTarget = null },
         )
     }
@@ -366,8 +380,7 @@ private fun SortRow(uiState: ProjectsUiState, onSortChange: (ProjectSort) -> Uni
             AdaptiveDropdownMenu(
                 expanded = menuOpen,
                 onDismissRequest = { menuOpen = false },
-                shape = RoundedCornerShape(16.dp),
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                containerColor = chromeColors().popover,
             ) {
                 ProjectSort.entries.forEach { sort ->
                     DropdownMenuItem(

@@ -7,6 +7,8 @@ import com.garfiec.librechat.feature.agents.viewmodel.AgentEditorEvent
 import com.garfiec.librechat.feature.agents.viewmodel.AgentEditorStateHandle
 import com.garfiec.librechat.feature.agents.viewmodel.AgentEditorUiState
 import com.garfiec.librechat.feature.agents.viewmodel.applyAgentData
+import com.garfiec.librechat.feature.agents.viewmodel.inferenceParameterRejection
+import com.garfiec.librechat.feature.agents.viewmodel.isGitIdentityValid
 import com.garfiec.librechat.feature.agents.viewmodel.toCreateAgentRequest
 import com.garfiec.librechat.feature.agents.viewmodel.toUpdateAgentRequest
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -53,8 +55,10 @@ class AgentSaveDelegate(
                 "Enter a valid email address"
             else -> null
         }
-        val hasErrors = nameError != null || descriptionError != null ||
-            supportContactNameError != null || supportContactEmailError != null
+        // Web: a valid Git name and email, or both blank. Only checked while the field shows.
+        val gitIdentityError = state.code.statefulSessions && !state.code.isGitIdentityValid()
+        val hasErrors = gitIdentityError ||
+            listOfNotNull(nameError, descriptionError, supportContactNameError, supportContactEmailError).isNotEmpty()
         if (hasErrors) {
             stateHandle.update {
                 copy(
@@ -62,6 +66,7 @@ class AgentSaveDelegate(
                     descriptionError = descriptionError,
                     supportContactNameError = supportContactNameError,
                     supportContactEmailError = supportContactEmailError,
+                    codeGitIdentityError = gitIdentityError,
                 )
             }
             return
@@ -83,7 +88,9 @@ class AgentSaveDelegate(
                 }
                 is Result.Error -> {
                     stateHandle.update {
-                        copy(isSaving = false, error = result.message ?: "Failed to save agent")
+                        // A refused model parameter is named, rather than "Invalid request data".
+                        val message = inferenceParameterRejection(result.exception) ?: result.message
+                        copy(isSaving = false, error = message ?: "Failed to save agent")
                     }
                 }
                 is Result.Loading -> { /* no-op */ }

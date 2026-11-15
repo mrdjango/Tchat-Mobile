@@ -11,7 +11,7 @@ Native mobile client for LibreChat (Android & iOS). Connects to existing LibreCh
 - **Network**: Ktor Client (OkHttp engine)
 - **Serialization**: Kotlinx Serialization
 - **Local Storage**: Room (cache), DataStore (prefs), EncryptedSharedPreferences (tokens)
-- **Build**: Gradle 9.5.1, AGP 9.2.1, Kotlin 2.4.10, compileSdk 37, minSdk 26
+- **Build**: Gradle 9.8.2, AGP 9.5.1, Kotlin 2.4.10, compileSdk 37, minSdk 26
 
 ## Module Layout
 
@@ -24,6 +24,7 @@ core/model/           → @Serializable data classes (pure Kotlin, no Android de
 core/network/         → Ktor client, 16 API services, SSE client, auth interceptor
 core/data/            → Room DB, DataStore, EncryptedSharedPrefs, repository impls
 core/ui/              → Material 3 theme, shared composables
+core/notifications/   → Reply and scheduled-chat notifications (system + in-app), permission, background watchers
 feature/auth/         → Server URL, Login, Register, 2FA, OAuth, Forgot Password
 feature/chat/         → Real-time chat with SSE streaming, message rendering
 feature/conversations/→ Paginated list, CRUD, tags, search, export/import
@@ -34,6 +35,20 @@ testing/speech-fixture/ → Stand-in speech provider APK for scripts/verify-spee
 ```
 
 Each module has its own `CLAUDE.md` with specific guidance.
+
+## Writing code here
+
+- **Build for what users hit.** Handle an edge case when a user on a supported server reaches it in
+  normal use, or when it loses data, leaks a credential or strands the session. A rare glitch that a
+  retry, refresh or reopen clears doesn't earn new state, a Job, a flag or a new test file. Fix the
+  reported scenario with the smallest change, not its hypothetical neighbours; reuse or delete code
+  before adding it. This applies to review findings too, including `/code-review --fix`.
+- **Comments state present-tense rules** a plausible edit would break, in a line or two. No history,
+  no story of how a bug was found or fixed, no issue numbers as narrative: that goes in the commit and PR.
+- **A module `CLAUDE.md` holds rules, not history.** Every agent touching the module loads it, so add
+  only a rule that governs many files, once, with its condition in the same sentence. A rule that
+  guards one line belongs at that line, or in a test or detekt rule.
+- **Tests go in the class's existing test file**; a new test file is for a new class.
 
 ## Architecture Rules
 
@@ -82,7 +97,8 @@ Each module has its own `CLAUDE.md` with specific guidance.
 - **`backendTargetVersion`** (root `version.properties`) — single source of truth for the targeted backend; must match the tag in `UPSTREAM_VERSION` (without `v` prefix). A core/common Gradle task code-generates `BackendVersion.SUPPORTED_BACKEND_VERSION` from it, and `release.yml` reads it for release notes. Edit the property, not the constant.
 - **`/sync-upstream`** — Claude Code skill to diff upstream releases, identify gaps, propose changes, and implement them with user approval. Uses Agent Teams (investigator, android-expert, implementer, verifier).
 - **`scripts/web-assets.json`** — registry of the third-party JavaScript the artifact/diagram/math
-  WebViews execute (KaTeX, mermaid, marked, highlight.js, Tailwind, Babel, React). All of it is
+  WebViews execute (KaTeX, mermaid, marked, highlight.js, Tailwind, Babel, React, and the npm
+  modules React artifacts may import, bundled from `scripts/artifact-modules/`). All of it is
   **vendored into the app**; none of it is fetched at render time. This is required for F-Droid,
   which rejects apps that download executable code without explicit opt-in consent — a
   `<script src="https://cdn…">` in a WebView is exactly that. It also closes a silent-drift hole:

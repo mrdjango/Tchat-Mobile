@@ -8,15 +8,16 @@ import com.garfiec.librechat.feature.auth.viewmodel.ResetPasswordViewModel
 import com.garfiec.librechat.feature.auth.viewmodel.ServerUrlViewModel
 import com.garfiec.librechat.feature.auth.viewmodel.SsoLoginViewModel
 import com.garfiec.librechat.feature.auth.viewmodel.TermsViewModel
+import com.garfiec.librechat.feature.auth.viewmodel.TwoFactorSetupViewModel
 import com.garfiec.librechat.feature.auth.viewmodel.TwoFactorViewModel
 import com.garfiec.librechat.feature.auth.viewmodel.VerifyEmailViewModel
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
 
-// No authPlatformModule: this module's only platform seam is the `SsoWebView` expect/actual
-// composable, which the compiler links. An unimplemented expect is a compile error, so it needs no
-// DI binding and no runtime check.
+// No authPlatformModule: this module's platform seams (the `SsoWebView` composable,
+// `platformBlocksCleartextToDomainNames`) are expect/actuals the compiler links. An unimplemented
+// expect is a compile error, so they need no DI binding and no runtime check.
 val authModule = module {
     // Lambda form (not viewModelOf) for the addAccount mode flag the add-account nav entry passes
     // via parametersOf — see the note below.
@@ -26,6 +27,8 @@ val authModule = module {
             serverRepository = get(),
             configRepository = get(),
             accountSwitcher = get(),
+            accountRoster = get(),
+            savedStateHandle = get(),
             addAccount = params.getOrNull() ?: false,
             pinning = get(), // TCHAT
         )
@@ -40,13 +43,19 @@ val authModule = module {
     viewModel { params ->
         VerifyEmailViewModel(
             userRepository = get(),
-            initialEmail = params.getOrNull(),
+            accountSwitcher = get(),
+            initialEmail = params.getOrNull<String>(),
+            sendNow = params.getOrNull<Boolean>() ?: false,
         )
     }
     viewModelOf(::ForgotPasswordViewModel)
     viewModel { params ->
         ResetPasswordViewModel(
             authRepository = get(),
+            configRepository = get(),
+            accountSwitcher = get(),
+            serverDataStore = get(),
+            bannerRepository = get(),
             initialUserId = params.getOrNull(),
             initialToken = params.getOrNull(),
         )
@@ -55,6 +64,12 @@ val authModule = module {
         TwoFactorViewModel(
             authRepository = get(),
             initialTempToken = params.getOrNull(),
+        )
+    }
+    viewModel { params ->
+        TwoFactorSetupViewModel(
+            authRepository = get(),
+            tempToken = params.get(),
         )
     }
     viewModelOf(::TermsViewModel)

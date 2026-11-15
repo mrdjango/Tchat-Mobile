@@ -4,23 +4,35 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.garfiec.librechat.core.common.EndpointConstants
 import com.garfiec.librechat.core.model.config.displayLabel
 import com.garfiec.librechat.core.model.config.labelFor
+import com.garfiec.librechat.core.model.media.IconSource
+import com.garfiec.librechat.core.model.media.isImageUrl
 import com.garfiec.librechat.core.model.media.resolveAvatarUrl
+import com.garfiec.librechat.core.model.media.resolveIconSource
 import com.garfiec.librechat.core.ui.components.LoadingIndicator
+import com.garfiec.librechat.feature.chat.components.BindThreadScroll
+import com.garfiec.librechat.feature.chat.components.ConversationSeenEffect
 import com.garfiec.librechat.feature.chat.components.LandingContent
 import com.garfiec.librechat.feature.chat.components.LandingHeroIcon
 import com.garfiec.librechat.feature.chat.components.MessageList
 import com.garfiec.librechat.feature.chat.components.MessagesUnavailable
 import com.garfiec.librechat.feature.chat.components.StoppedReplyAction
+import com.garfiec.librechat.feature.chat.components.ThreadScrollTarget
+import com.garfiec.librechat.feature.chat.components.threadScrollTarget
 import com.garfiec.librechat.feature.chat.resources.Res
 import com.garfiec.librechat.feature.chat.resources.action_continue_reply
 import com.garfiec.librechat.feature.chat.resources.chat_agent_fallback_label
@@ -28,12 +40,15 @@ import com.garfiec.librechat.feature.chat.resources.sender_assistant
 import com.garfiec.librechat.feature.chat.util.ClipboardWriter
 import com.garfiec.librechat.feature.chat.util.MessageNode
 import com.garfiec.librechat.feature.chat.util.collapseParallelToPrimary
-import com.garfiec.librechat.feature.chat.util.ownIconSource
+import com.garfiec.librechat.feature.chat.util.iconSource
 import com.garfiec.librechat.feature.chat.util.rememberClipboardWriter
 import com.garfiec.librechat.feature.chat.viewmodel.ActiveToolCall
 import com.garfiec.librechat.feature.chat.viewmodel.ChatScreenState
 import com.garfiec.librechat.feature.chat.viewmodel.ChatUiState
 import com.garfiec.librechat.feature.chat.viewmodel.ChatViewModel
+import com.garfiec.librechat.feature.chat.viewmodel.StreamingText
+import com.garfiec.librechat.feature.chat.viewmodel.streamingText
+import com.garfiec.librechat.feature.chat.viewmodel.withoutStreamingText
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -57,12 +72,16 @@ internal fun ColumnScope.ChatContent(
     showAvatars: Boolean,
     showBubbles: Boolean,
     useKatex: Boolean,
-    bottomContentPadding: Dp,
-    /** Where side-by-side comparison cards end: just above the measured composer. */
-    paneBottomInset: Dp,
+    /**
+     * The measured bottom bar (composer and the rows above it), 0 before it is measured. Read here, not
+     * by the screen: it changes every frame while the composer folds, and only the thread needs it.
+     */
+    bottomBarHeightPx: () -> Int,
     topContentPadding: Dp,
     onShowSecondaryModelSheet: () -> Unit,
     onComparisonTabChange: (Int) -> Unit,
+    /** The phone pager's tab on screen while comparing (0 = A): the list the composer's drags scroll. */
+    activeComparisonTab: Int,
     comparisonWide: Boolean,
     compareSetupPick: CompareSetupPick,
     onBrowseAllModels: () -> Unit,
@@ -77,7 +96,27 @@ internal fun ColumnScope.ChatContent(
     /** The project a new chat from this landing is filed into, while it still is. */
     projectName: String? = null,
 ) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val fullState = viewModel.uiState.collectAsStateWithLifecycle()
+    // One collector split in two, so both halves of an emission land in the same frame: the finalize
+    // clears the text in the same update that swaps the message in.
+    val uiState by remember(fullState) {
+        derivedStateOf(structuralEqualityPolicy()) { fullState.value.withoutStreamingText() }
+    }
+    val liveText = remember(fullState) {
+        derivedStateOf(structuralEqualityPolicy()) { fullState.value.streamingText() }
+    }
+    val streamingText: () -> StreamingText = { liveText.value }
+    val barHeight = bottomBarHeightPx()
+    // 160dp stands in for the bar only until it is measured: the folded bar is far shorter.
+    val density = LocalDensity.current
+    val bottomContentPadding = with(density) { if (barHeight > 0) barHeight.toDp() + 16.dp else 160.dp }
+    // Side-by-side comparison panes are cards that stop above the composer, not lists that
+    // scroll under it, so they sit on the measured bar itself. The list floor above would
+    // leave a band of empty space, widest with the keyboard up (the bar loses its nav-bar inset).
+    val paneBottomInset = with(density) { if (barHeight > 0) barHeight.toDp() + 8.dp else bottomContentPadding }
+    // The jump-to-bottom button sits on the measured composer: the default placement, 30dp
+    // into the list's reserve, overlaps a tall composer.
+    val scrollToBottomPadding = with(density) { if (barHeight > 0) barHeight.toDp() + 8.dp else null }
     val clipboard = rememberClipboardWriter()
     val fallbackSenderName = stringResource(Res.string.sender_assistant)
     // Non-scrolling bodies (landing, loading, comparison panes) clear the floating bar with a
@@ -86,16 +125,7 @@ internal fun ColumnScope.ChatContent(
     val topInsetModifier = Modifier
         .weight(1f)
         .padding(top = topContentPadding)
-    // Streaming-bubble sender label for the active model: the agent's
-    // display name under the agents endpoint, else the raw model id.
-    val senderName = run {
-        val model = uiState.selectedModel
-        if (uiState.selectedEndpoint == EndpointConstants.AGENTS && model != null) {
-            uiState.agents.find { it.id == model }?.name ?: model
-        } else {
-            model ?: fallbackSenderName
-        }
-    }
+    val senderName = uiState.replySenderName(fallbackSenderName)
     // The thread's scroll position, shared by the single list and Compare's pane A: opening or
     // cancelling Compare swaps one for the other, and the reader keeps their place. A fresh one per
     // ACTIVE stretch: the landing entry outlives its chats (a handed-off new chat resets it to the
@@ -107,9 +137,19 @@ internal fun ColumnScope.ChatContent(
     // Pane B's, hoisted for the same reasons: the narrow pager disposes the off-screen pane and the
     // wide/narrow switch rebuilds both, so a pane-local state lost the reader's place on every one.
     val secondaryListState = rememberSaveable(uiState.screenState, saver = LazyListState.Saver) { LazyListState() }
+    // Unread replies (v0.8.9-rc1): the open chat's reply is acknowledged once it is on screen. The
+    // single list reports where it rests; Compare's panes don't, so a comparison acknowledges nothing.
+    var primaryNearBottom by remember(uiState.conversationId) { mutableStateOf(false) }
+    ConversationSeenEffect(
+        conversationId = uiState.conversationId.takeIf { uiState.screenState == ChatScreenState.ACTIVE },
+        displayMessages = uiState.displayMessages,
+        isStreaming = uiState.isStreaming,
+        nearBottom = primaryNearBottom && !uiState.showsComparisonPanes(comparisonWide),
+    )
     val comparisonPanes: @Composable () -> Unit = {
         ComparisonPanes(
             uiState = uiState,
+            streamingText = streamingText,
             viewModel = viewModel,
             senderName = senderName,
             fontSizeMultiplier = fontSizeMultiplier,
@@ -120,6 +160,7 @@ internal fun ColumnScope.ChatContent(
             useKatex = useKatex,
             bottomContentPadding = bottomContentPadding,
             paneBottomInset = paneBottomInset,
+            scrollToBottomPadding = scrollToBottomPadding,
             onCopyMessage = { messageId -> copyMessageToClipboard(viewModel, clipboard, messageId) },
             onShowSecondaryModelSheet = onShowSecondaryModelSheet,
             onComparisonTabChange = onComparisonTabChange,
@@ -136,9 +177,15 @@ internal fun ColumnScope.ChatContent(
         )
     }
     val messagesUnavailable = uiState.messagesUnavailable
+    // The composer's chrome scrolls the list it covers (see ThreadScrollHandle).
+    val comparing = uiState.showsComparisonPanes(comparisonWide)
+    if (comparing || (uiState.screenState == ChatScreenState.ACTIVE && !messagesUnavailable)) {
+        val target = threadScrollTarget(comparing = comparing, wide = comparisonWide, activeTab = activeComparisonTab)
+        BindThreadScroll(if (target == ThreadScrollTarget.SECONDARY) secondaryListState else primaryListState)
+    }
     // One call site for the panes in both LANDING and ACTIVE: Start on a wide landing turns one into
     // the other, and a second call site would rebuild the panes (pane A's list included) right then.
-    if (uiState.showsComparisonPanes(comparisonWide)) {
+    if (comparing) {
         comparisonPanes()
     } else {
         when (uiState.screenState) {
@@ -178,6 +225,7 @@ internal fun ColumnScope.ChatContent(
                     }
                     ChatMessageListPane(
                         listState = primaryListState,
+                        onNearBottomChange = { primaryNearBottom = it },
                         uiState = uiState,
                         viewModel = viewModel,
                         clipboard = clipboard,
@@ -190,10 +238,11 @@ internal fun ColumnScope.ChatContent(
                         topContentPadding = topContentPadding,
                         displayMessages = singleDisplayMessages,
                         isStreaming = uiState.isStreaming,
-                        streamingContent = uiState.streamingContent,
+                        streamingText = streamingText,
                         activeToolCalls = uiState.activeToolCalls,
                         streamingSenderName = senderName,
                         bottomContentPadding = bottomContentPadding,
+                        scrollToBottomPadding = scrollToBottomPadding,
                         modifier = Modifier
                             .weight(1f)
                             .then(listPullUpModifier),
@@ -228,10 +277,8 @@ private fun copyMessageToClipboard(
     clipboard: ClipboardWriter,
     messageId: String,
 ) {
-    val text = viewModel.getMessageClipboardText(messageId)
-    if (text.isNotBlank()) {
-        clipboard.copy(text, "Message")
-    }
+    // Asynchronous: a message with tool-call previews fetches their full parts before anything is copied.
+    viewModel.copyMessage(messageId) { text -> clipboard.copy(text, "Message") }
 }
 
 /**
@@ -242,6 +289,7 @@ private fun copyMessageToClipboard(
  */
 @Composable
 private fun ChatMessageListPane(
+    onNearBottomChange: (Boolean) -> Unit,
     uiState: ChatUiState,
     viewModel: ChatViewModel,
     clipboard: ClipboardWriter,
@@ -254,10 +302,11 @@ private fun ChatMessageListPane(
     topContentPadding: Dp,
     displayMessages: List<MessageNode>,
     isStreaming: Boolean,
-    streamingContent: String,
+    streamingText: () -> StreamingText,
     activeToolCalls: List<ActiveToolCall>,
     streamingSenderName: String,
     bottomContentPadding: Dp,
+    scrollToBottomPadding: Dp?,
     listState: LazyListState,
     modifier: Modifier = Modifier,
 ) {
@@ -271,9 +320,9 @@ private fun ChatMessageListPane(
         displayMessages = displayMessages,
         isStreaming = isStreaming,
         justSettledMessageId = uiState.justSettledMessageId,
-        streamingContent = streamingContent,
+        streamingContent = { streamingText().content },
         // Single-stream only: comparison panes fold reasoning into their own buffers.
-        streamingThinking = uiState.streamingThinking,
+        streamingThinking = { streamingText().thinking },
         activeToolCalls = activeToolCalls,
         sandboxStartingToolCallIds = uiState.sandboxStartingToolCallIds,
         streamingAttachments = uiState.streamingAttachments,
@@ -284,6 +333,15 @@ private fun ChatMessageListPane(
         onFeedback = viewModel::submitFeedback,
         feedbackEnabled = uiState.gates.feedbackEnabled,
         onReadAloud = viewModel::readAloud,
+        // Web's `quotesSupported` rule: everything but the Assistants endpoints, which keep every
+        // file upstream, so neither a retry nor a local copy leaves them behind.
+        recoveryAllowed = uiState.quotesSupportedOnEndpoint,
+        recoveryBranchSupported = uiState.forkExcludeFilesSupported,
+        recoveryBusy = uiState.isForkInProgress,
+        onRetryWithoutFiles = viewModel::retryWithoutFiles,
+        onBranchWithoutFiles = viewModel::branchWithoutFiles,
+        ownerTexts = uiState.ownerTexts,
+        onRetryOwnerTexts = viewModel::retryOwnerTexts,
         onFork = viewModel::showForkOptions,
         currentlyReadingMessageId = uiState.currentlyReadingMessageId,
         editing = uiState.editing,
@@ -298,7 +356,7 @@ private fun ChatMessageListPane(
         onRefresh = viewModel::refreshMessages,
         userAvatarUrl = uiState.userAvatarUrl,
         userName = uiState.userName,
-        selectedEndpoint = uiState.selectedEndpoint,
+        streamingAvatar = uiState.avatars.streaming,
         streamingSenderName = streamingSenderName,
         showImageDescriptions = showImageDescriptions,
         chatLayoutStyle = chatLayoutStyle,
@@ -313,28 +371,67 @@ private fun ChatMessageListPane(
         jumpPending = uiState.jumpPending,
         onSearchScrollHandle = viewModel::onSearchScrollHandled,
         bottomContentPadding = bottomContentPadding,
+        scrollToBottomPadding = scrollToBottomPadding,
         topContentPadding = topContentPadding,
         pendingAction = uiState.renderablePendingAction,
+        onNearBottomChange = onNearBottomChange,
         modifier = modifier,
     )
 }
 
 /**
- * The new chat's own icon, as web's landing shows it: the selected spec's own icon ([ownIconSource]:
- * its `iconURL`, its preset's, its agent's avatar), else the selected agent's avatar. Null keeps the
- * app tile, so a spec with no icon of its own looks like the raw model it runs on.
+ * The selection's icon, as web's landing draws it (`ConvoIcon`): the selected spec's ([iconSource]: its
+ * `iconURL`, its preset's, its agent's avatar, else its endpoint's brand), the selected agent's avatar
+ * (the agents glyph without one), else the selected endpoint's configured `iconURL` (`iconURL ||
+ * configured`), else its brand. Null before anything is selected. The landing hero and the "+" sheet's
+ * Model cell both draw it.
  */
-internal fun ChatUiState.landingHeroIcon(): LandingHeroIcon? {
+internal fun ChatUiState.selectionIcon(): IconSource? {
     val spec = modelSpecs?.list?.find { it.name == selectedSpec }
-    if (spec != null) {
-        val icon = spec.ownIconSource(agents, serverUrl) ?: return null
-        return LandingHeroIcon(endpointName = icon.endpointName, iconUrl = icon.imageUrl)
+    return when {
+        spec != null -> spec.iconSource(agents, serverUrl, endpointConfigs)
+        selectedEndpoint.isBlank() -> null
+        // No agent yet is the selection before seeding, not a choice to draw.
+        selectedEndpoint == EndpointConstants.AGENTS -> selectedModel?.let {
+            IconSource(
+                endpointName = EndpointConstants.AGENTS,
+                imageUrl = selectedAgent()?.avatarUrl?.let { resolveAvatarUrl(it, serverUrl) },
+            )
+        }
+        else -> resolveIconSource(
+            endpointConfigs[selectedEndpoint]?.iconURL?.takeIf(::isImageUrl),
+            selectedEndpoint,
+            serverUrl,
+            endpointConfigs,
+        )
     }
-    val agentAvatar = selectedAgent()
-        ?.avatarUrl
-        ?.let { resolveAvatarUrl(it, serverUrl) }
-        ?: return null
-    return LandingHeroIcon(endpointName = null, iconUrl = agentAvatar)
+}
+
+/** The new chat's icon: [selectionIcon]; null keeps the app tile. */
+internal fun ChatUiState.landingHeroIcon(): LandingHeroIcon? =
+    selectionIcon()?.let { LandingHeroIcon(endpointName = it.endpointName, iconUrl = it.imageUrl, provider = it.provider) }
+
+/**
+ * The name a reply in progress goes by until the server's saved one replaces it: the agent's name
+ * under the agents endpoint, else the server's sender chain (`getEphemeralSender`): the custom name
+ * (under `enforce`, the spec preset's, as the server sends the preset), the spec's label, the
+ * endpoint's `modelDisplayLabel`. Then the model, where `getResponseSender` isn't ported.
+ */
+internal fun ChatUiState.replySenderName(fallback: String): String {
+    val model = selectedModel
+    if (selectedEndpoint == EndpointConstants.AGENTS && model != null) {
+        return agents.find { it.id == model }?.name ?: model
+    }
+    val customName = if (parametersSetBySpec) {
+        activeSpec?.preset?.let { it.modelLabel ?: it.chatGptLabel }
+    } else {
+        modelParameters.customName
+    }
+    return customName?.takeIf { it.isNotBlank() }
+        ?: modelSpecs?.labelFor(selectedSpec)
+        ?: endpointConfigs[selectedEndpoint]?.modelDisplayLabel
+        ?: model
+        ?: fallback
 }
 
 private fun ChatUiState.selectedAgent() =
@@ -364,6 +461,7 @@ internal data class LandingText(
  * flag, because the landing switches each line as temporary chat's band reaches it. [agentName] is the selected agent's,
  * resolved by the caller; for an agent spec it wins over the spec's label, as on web. An agent not
  * (yet) in the list is captioned [agentFallbackLabel], so the landing still opens the picker.
+ * Under `interface.landingHeading: "greeting"` the greeting stays the title whatever is selected.
  */
 internal fun ChatUiState.landingText(agentName: String?, agentFallbackLabel: String? = null): LandingText {
     val spec = modelSpecs?.list?.find { it.name == selectedSpec }
@@ -375,9 +473,20 @@ internal fun ChatUiState.landingText(agentName: String?, agentFallbackLabel: Str
         else -> null
     }
     val branded = spec?.takeIf { it.showOnLanding == true }
-    val title = agentName ?: branded?.displayLabel
     val description = listOf(selectedAgent()?.description, branded?.description, spec?.preset?.greeting)
         .firstOrNull { !it.isNullOrBlank() }
+    // `interface.landingHeading: "greeting"`: the greeting stays the title, as web's empty `name`.
+    // Web's header selector still names the agent; mobile has no header selector, so the caption
+    // under the greeting names it instead.
+    if (gates.landingGreetingHeading) {
+        return LandingText(
+            description = description,
+            caption = agentName ?: modelLabel,
+            temporaryAgentName = agentName,
+            temporaryCaption = modelLabel,
+        )
+    }
+    val title = agentName ?: branded?.displayLabel
     return LandingText(
         title = title,
         description = description,

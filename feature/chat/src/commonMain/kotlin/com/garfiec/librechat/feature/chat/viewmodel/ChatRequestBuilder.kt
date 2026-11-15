@@ -1,10 +1,7 @@
 package com.garfiec.librechat.feature.chat.viewmodel
 
-import com.garfiec.librechat.core.common.EndpointConstants
 import com.garfiec.librechat.core.common.ToolConstants
 import com.garfiec.librechat.core.data.endpoint.EndpointDispatch
-import com.garfiec.librechat.core.model.paramsEndpointFor
-import com.garfiec.librechat.core.model.paramsEndpointForOrNull
 import com.garfiec.librechat.core.model.request.EphemeralAgent
 import com.garfiec.librechat.feature.chat.util.WebSearchRoute
 import kotlinx.serialization.json.JsonObject
@@ -52,15 +49,20 @@ class ChatRequestBuilder(
         val mcpServers = state.effectiveMcpServerNames.toList().ifEmpty { null }
         // Web search rides here only as LibreChat's search; the built-in one is a parameter.
         val webSearchEnabled = state.webSearchRoute == WebSearchRoute.LIBRECHAT
-        val tools = state.selection.effectiveTools - ToolConstants.URL_CONTEXT
+        val inUse = state.selection.effectiveTools
+        val tools = inUse - ToolConstants.URL_CONTEXT - ToolConstants.ARTIFACTS
         val enabledTools = if (webSearchEnabled) tools else tools - ToolConstants.WEB_SEARCH
         // The conversation's own toggle, sent only where it is offered: a model spec that
         // configures skills overrides it server-side, and without the capability or role the
         // server ignores it.
         val skillsOn = state.skillsToggle && state.isSkillsToolAvailable
+        // A spec's mode wins over the user's.
         val artifacts = state.activeSpec?.artifactsMode
-        val imageGen = state.tchat.imageGenRequestValue // TCHAT
+            ?: state.selection.artifactsMode.wire.takeIf {
+                ToolConstants.ARTIFACTS in inUse && state.toolGateOpen(ToolConstants.ARTIFACTS)
+            }
 
+        val imageGen = state.tchat.imageGenRequestValue // TCHAT
         val hasAnything = mcpServers != null || enabledTools.isNotEmpty() || skillsOn || artifacts != null || imageGen != null
         if (!hasAnything) return null
 
@@ -91,28 +93,28 @@ class ChatRequestBuilder(
     /**
      * Snapshots the configured model parameters (temperature, top_p, promptCache/promptCacheTtl, …)
      * into the provider-keyed map sent at the top level of the chat payload, mirroring the web
-     * client. Returns null when nothing was customized so the send path stays byte-for-byte identical
-     * to before for untouched conversations. For the agents endpoint the underlying agent's provider
-     * selects the correct parameter set.
+     * client. Returns null when nothing is sent. For the agents endpoint the underlying agent's
+     * provider selects the correct parameter set.
+     *
+     * `web_search` always goes out with ephemeral tools, `false` off the built-in route: left out, an
+     * admin's `paramDefinitions` default would turn the built-in search on beside LibreChat's, or with
+     * the control off (`getOpenAILLMConfig`). A saved agent runs its own parameters, so none is sent.
      */
     fun buildModelParams(): JsonObject? {
         val state = stateProvider()
-        val isAgent = state.selectedEndpoint == EndpointConstants.AGENTS
-        val agent = if (isAgent) state.agents.firstOrNull { it.id == state.selectedModel } else null
+        // The same target the options sheet renders from, so a control it shows is a key sent here.
+        // Its model is the agent's own on the agents endpoint, never the agent id `selectedModel` holds.
+        val target = state.parameterTarget
         return ModelParamPayload.build(
-            endpoint = state.selectedEndpoint,
-            provider = agent?.provider,
-            // The agent's own model, not `selectedModel` — that is the AGENT ID on this endpoint,
-            // and every model-keyed rule in the registry (Bedrock's variant dispatch, the Anthropic
-            // prompt-cache filter, Google's thinking-budget bounds) would resolve against a string
-            // no rule can match. The options sheet already passes the agent's model, so a mismatch
-            // here renders a control and then drops the value it produced.
-            model = agent?.model ?: state.selectedModel,
+            endpoint = target.endpoint,
+            provider = target.provider,
+            model = target.model,
             extendedEffortSupported = state.extendedEffortSupported,
             params = state.selection.sendParameters.copy(webSearch = state.webSearchRoute == WebSearchRoute.BUILT_IN),
             dropParamsMap = state.gates.dropParamsMap,
-            paramsEndpoint = state.endpointConfigs.paramsEndpointFor(state.selectedEndpoint), // TCHAT
-            paramsProvider = state.endpointConfigs.paramsEndpointForOrNull(agent?.provider), // TCHAT
+            settingsEndpoint = target.settingsEndpoint,
+            settingsProvider = target.settingsProvider,
+            alwaysSent = if (state.showEphemeralTools) setOf(ToolConstants.WEB_SEARCH) else emptySet(),
         ).takeIf { it.isNotEmpty() }
     }
 

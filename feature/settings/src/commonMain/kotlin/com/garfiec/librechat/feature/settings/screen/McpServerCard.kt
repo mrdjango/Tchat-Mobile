@@ -36,6 +36,8 @@ import com.garfiec.librechat.core.ui.components.AdaptiveCard
 import com.garfiec.librechat.core.ui.components.AdaptiveFilledTonalButton
 import com.garfiec.librechat.core.ui.components.InitialTile
 import com.garfiec.librechat.core.ui.components.TileStatusDot
+import com.garfiec.librechat.core.ui.mcp.mcpStatusLabel
+import com.garfiec.librechat.core.ui.mcp.tint
 import com.garfiec.librechat.core.ui.platform.rememberReduceMotion
 import com.garfiec.librechat.core.ui.theme.StatusColors
 import com.garfiec.librechat.core.ui.theme.statusColors
@@ -51,7 +53,12 @@ internal enum class McpCardAction(val label: StringResource) {
     SIGN_IN(Res.string.mcp_action_sign_in),
     RETRY(Res.string.action_retry),
     CONNECT(Res.string.mcp_action_connect),
+    SET_UP(Res.string.mcp_action_set_up),
 }
+
+/** As [McpDisplayStatus.cardAction], plus "Set up" for a server owed variables the app can take. */
+internal fun McpServerRow.cardAction(): McpCardAction? =
+    if (status == McpDisplayStatus.NEEDS_SETUP && userVars.isNotEmpty()) McpCardAction.SET_UP else status.cardAction()
 
 internal fun McpDisplayStatus.cardAction(): McpCardAction? = when (this) {
     McpDisplayStatus.NEEDS_SIGN_IN -> McpCardAction.SIGN_IN
@@ -63,16 +70,19 @@ internal fun McpDisplayStatus.cardAction(): McpCardAction? = when (this) {
 /** Label, icon and tint for a status. Null label: nothing reported yet, so nothing to say. */
 internal data class McpStatusPresentation(val label: StringResource?, val icon: ImageVector?, val tint: Color)
 
-internal fun McpDisplayStatus.presentation(colors: StatusColors): McpStatusPresentation = when (this) {
-    McpDisplayStatus.CONNECTED -> McpStatusPresentation(Res.string.mcp_status_connected, Icons.Default.CheckCircle, colors.success)
-    McpDisplayStatus.CONNECTING -> McpStatusPresentation(Res.string.mcp_status_connecting, null, colors.info)
-    McpDisplayStatus.NEEDS_SIGN_IN -> McpStatusPresentation(Res.string.mcp_status_needs_sign_in, Icons.Default.Key, colors.warning)
-    McpDisplayStatus.NEEDS_SETUP -> McpStatusPresentation(Res.string.mcp_status_needs_setup, Icons.Default.Tune, colors.warning)
-    McpDisplayStatus.ON_DEMAND -> McpStatusPresentation(Res.string.mcp_status_on_demand, Icons.Default.Schedule, colors.neutral)
-    McpDisplayStatus.DISCONNECTED -> McpStatusPresentation(Res.string.mcp_status_disconnected, Icons.Default.Power, colors.neutral)
-    McpDisplayStatus.FAILED -> McpStatusPresentation(Res.string.mcp_status_failed, Icons.Default.Error, colors.error)
-    McpDisplayStatus.UNKNOWN -> McpStatusPresentation(null, null, colors.neutral)
-}
+internal fun McpDisplayStatus.presentation(colors: StatusColors): McpStatusPresentation = McpStatusPresentation(
+    label = if (this == McpDisplayStatus.UNKNOWN) null else mcpStatusLabel(this),
+    icon = when (this) {
+        McpDisplayStatus.CONNECTED -> Icons.Default.CheckCircle
+        McpDisplayStatus.NEEDS_SIGN_IN -> Icons.Default.Key
+        McpDisplayStatus.NEEDS_SETUP -> Icons.Default.Tune
+        McpDisplayStatus.ON_DEMAND -> Icons.Default.Schedule
+        McpDisplayStatus.DISCONNECTED -> Icons.Default.Power
+        McpDisplayStatus.FAILED -> Icons.Default.Error
+        McpDisplayStatus.CONNECTING, McpDisplayStatus.UNKNOWN -> null
+    },
+    tint = tint(colors),
+)
 
 /**
  * One server in the list: its tile with a status dot, title, description, and a meta line saying
@@ -83,6 +93,7 @@ internal fun McpServerCard(
     row: McpServerRow,
     onOpen: () -> Unit,
     onReconnect: () -> Unit,
+    onSetUp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val presentation = row.status.presentation(statusColors())
@@ -137,12 +148,12 @@ internal fun McpServerCard(
                     }
                 }
             }
-            val action = row.status.cardAction()
+            val action = row.cardAction()
             if (action != null) {
                 // Capped so a long translation ("Erneut versuchen") wraps inside the button instead of
                 // squeezing the title beside it to a sliver on a narrow screen.
                 AdaptiveFilledTonalButton(
-                    onClick = onReconnect,
+                    onClick = if (action == McpCardAction.SET_UP) onSetUp else onReconnect,
                     modifier = Modifier.align(Alignment.CenterVertically).widthIn(max = ACTION_MAX_WIDTH),
                 ) {
                     Text(stringResource(action.label), maxLines = 2, textAlign = TextAlign.Center)

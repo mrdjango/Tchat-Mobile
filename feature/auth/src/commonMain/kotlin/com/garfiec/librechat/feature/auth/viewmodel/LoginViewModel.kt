@@ -1,17 +1,22 @@
 package com.garfiec.librechat.feature.auth.viewmodel
 
 import androidx.compose.runtime.Immutable
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.garfiec.librechat.core.common.result.ApiException
+import com.garfiec.librechat.core.common.identity.cleanServerUrl
 import com.garfiec.librechat.core.common.result.Result
 import com.garfiec.librechat.core.common.result.suspendRunCatching
 import com.garfiec.librechat.core.data.datastore.ServerDataStore
 import com.garfiec.librechat.core.data.datastore.SsoRiskDataStore
 import com.garfiec.librechat.core.data.repository.AccountSwitcher
 import com.garfiec.librechat.core.data.repository.AuthRepository
+import com.garfiec.librechat.core.data.repository.BannerRepository
 import com.garfiec.librechat.core.data.repository.ConfigRepository
+import com.garfiec.librechat.core.model.Banner
 import com.garfiec.librechat.core.model.LoginOutcome
+import com.garfiec.librechat.core.model.config.StartupConfig
+import com.garfiec.librechat.core.model.config.absoluteLinkUrl
 import com.garfiec.librechat.core.network.client.CertificateAuthority
 import com.garfiec.librechat.core.network.client.CertificateTrustRegistry
 import com.garfiec.librechat.feature.auth.diagnostics.offersDiagnosticLog
@@ -19,9 +24,11 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -35,23 +42,115 @@ data class LoginUiState(
     val offerDiagnosticLog: Boolean = false,
     val isLoggedIn: Boolean = false,
     val twoFactorTempToken: String? = null,
+    /** Setup credential when the server requires 2FA enrollment; consumed by navigation. */
+    val twoFactorSetupTempToken: String? = null,
+    /** A coded sign-in refusal the screen words itself; shown instead of [error] when set. */
+    val refusal: AuthRefusal? = null,
+    val inputError: LoginInputError? = null,
+    val minPasswordLength: Int = DEFAULT_MIN_PASSWORD_LENGTH,
+    /** LDAP signs in without the local strategy's password bounds, so they aren't checked. */
+    val ldapLogin: Boolean = false,
     val registrationEnabled: Boolean = false,
-    val socialLoginEnabled: Boolean = false,
-    val socialLogins: List<String> = emptyList(),
+    /** The sign-in buttons to show, in the server's order. */
+    val socialProviders: List<SocialProvider> = emptyList(),
     // ALLOW_EMAIL_LOGIN (upstream #14180): when the server disables email/password login it now
     // enforces it with a 403 on POST /api/auth/login. Fail-open to true so the form shows until
     // config confirms otherwise. Drives hiding the email/password form.
     val emailLoginEnabled: Boolean = true,
-    // TCHAT: server-supplied OIDC button label/auto-redirect (StartupConfig.openidLabel /
-    // .openidAutoRedirect) — parsed upstream but never surfaced. Null label falls back to
-    // TchatBrand.OIDC_FALLBACK_LABEL in the screen.
-    val openidLabel: String? = null,
-    val openidAutoRedirect: Boolean = false,
+    /** Off unless the server allows reset: its reset routes 403 otherwise. */
+    val passwordResetEnabled: Boolean = false,
+    val usernameLogin: Boolean = false,
     /** Set while the in-app-browser warning is up; carries the provider the user picked. */
     val pendingSsoProvider: String? = null,
     val ssoProvider: String? = null,
     val trustedViaUserCa: Boolean = false,
+    /** The server's published policy links, absolute and safe to open; null hides each. */
+    val policyLinks: PolicyLinks = PolicyLinks(),
+    /**
+     * The accounts on this server that are signed out because it now requires 2FA setup, joined
+     * for the notice; null when there are none. Signing in to one runs the setup flow.
+     */
+    val twoFactorSetupAccounts: String? = null,
+    /** The server's `appTitle`, for the heading; null until its config is known. */
+    val appTitle: String? = null,
+    /** The address being signed in to, always shown under the heading: [appTitle] is the operator's to set. */
+    val serverLabel: String? = null,
+    val banner: Banner? = null,
 )
+
+/** A problem with the form that the server would reject the same way, caught before sending. */
+enum class LoginInputError { MissingFields, InvalidEmail, PasswordTooShort, PasswordTooLong }
+
+/** Upstream `MIN_PASSWORD_LENGTH` default and `loginSchema`'s maximum (`api/strategies/validators.js`). */
+internal const val DEFAULT_MIN_PASSWORD_LENGTH = 8
+internal const val MAX_PASSWORD_LENGTH = 128
+
+/** zod 4's `z.string().email()` pattern, which the server's `loginSchema` applies to the raw email. */
+private val EMAIL_PATTERN = Regex(
+    "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+)
+
+internal fun LoginUiState.inputErrorOrNull(email: String): LoginInputError? = when {
+    email.isBlank() || password.isBlank() -> LoginInputError.MissingFields
+    !usernameLogin && !EMAIL_PATTERN.matches(email) -> LoginInputError.InvalidEmail
+    ldapLogin -> null
+    password.length < minPasswordLength -> LoginInputError.PasswordTooShort
+    password.length > MAX_PASSWORD_LENGTH -> LoginInputError.PasswordTooLong
+    else -> null
+}
+
+/**
+ * The privacy policy and terms of service a deployment publishes (`interface.privacyPolicy` /
+ * `termsOfService.externalUrl`), as the auth footer shows them. Only a non-blank URL with a safe
+ * scheme (see `isSafeLinkUrl`) is kept, resolved against the server so a relative one opens.
+ */
+@Immutable
+data class PolicyLinks(
+    val privacyPolicyUrl: String? = null,
+    val termsOfServiceUrl: String? = null,
+) {
+    companion object {
+        fun from(config: StartupConfig, serverUrl: String?): PolicyLinks {
+            val root = serverUrl?.takeIf { it.isNotBlank() }?.let(::cleanServerUrl) ?: return PolicyLinks()
+            val interfaceConfig = config.interfaceConfig ?: return PolicyLinks()
+            return PolicyLinks(
+                privacyPolicyUrl = interfaceConfig.privacyPolicy?.safeExternalUrl?.let { absoluteLinkUrl(it, root) },
+                termsOfServiceUrl = interfaceConfig.termsOfService?.safeExternalUrl?.let { absoluteLinkUrl(it, root) },
+            )
+        }
+    }
+}
+
+/** One social sign-in button: [id] is the `/oauth/<id>` route; a null [label] means "Continue with <name>". */
+@Immutable
+data class SocialProvider(val id: String, val label: String? = null)
+
+/**
+ * The server sends its full `socialLogins` list (a default of six when unset) but registers a
+ * strategy only for providers with credentials, so each name shows only behind its own flag, as
+ * upstream `SocialLoginRender` does.
+ */
+internal fun socialProviders(config: StartupConfig): List<SocialProvider> {
+    if (!config.socialLoginEnabled) return emptyList()
+    return config.socialLogins.orEmpty().mapNotNull { id ->
+        val enabled = when (id) {
+            "google" -> config.googleLoginEnabled
+            "facebook" -> config.facebookLoginEnabled
+            "github" -> config.githubLoginEnabled
+            "discord" -> config.discordLoginEnabled
+            "apple" -> config.appleLoginEnabled
+            "openid" -> config.openidLoginEnabled
+            "saml" -> config.samlLoginEnabled
+            else -> false
+        }
+        val label = when (id) {
+            "openid" -> config.openidLabel
+            "saml" -> config.samlLabel
+            else -> null
+        }
+        SocialProvider(id, label?.takeIf { it.isNotBlank() }).takeIf { enabled }
+    }
+}
 
 class LoginViewModel(
     private val authRepository: AuthRepository,
@@ -60,32 +159,83 @@ class LoginViewModel(
     private val ssoRiskDataStore: SsoRiskDataStore,
     serverDataStore: ServerDataStore,
     certificateTrust: CertificateTrustRegistry,
+    bannerRepository: BannerRepository,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(LoginUiState())
+    /** The typed email is restored after process death; the password is never saved. */
+    private val _uiState = MutableStateFlow(LoginUiState(email = savedStateHandle[KEY_EMAIL] ?: ""))
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
+
+    /**
+     * `openidAutoRedirect` fires once per screen: backing out of SSO returns to this ViewModel and
+     * must leave the user on the form, as the web's `redirect=false` does.
+     */
+    private var autoRedirected = false
+
+    /**
+     * Latched synchronously on the tap, because the acknowledgement read that follows suspends.
+     * Two taps would otherwise each resolve and each set `ssoProvider`, and since the screen
+     * consumes that field back to null between them, both would navigate — stacking two SSO
+     * routes, two WebViews and two round-trips over the one cookie jar they share.
+     */
+    private var ssoSelectionInFlight = false
 
     init {
         // In an add-account flow this screen signs into the PENDING server while another account is
         // live, so its feature flags (registration, social logins) must come from the pending
         // session's probed config — the global startupConfig still describes the live server. The
         // repository layer routes the sign-in calls themselves via the same pending session.
-        val configSource = accountSwitcher.pendingAdd?.startupConfig ?: configRepository.startupConfig
         viewModelScope.launch {
-            configSource.collect { config ->
-                if (config != null) {
-                    _uiState.value = _uiState.value.copy(
-                        registrationEnabled = config.registrationEnabled,
-                        socialLoginEnabled = config.socialLoginEnabled,
-                        socialLogins = config.socialLogins.orEmpty(),
-                        emailLoginEnabled = config.emailLoginEnabled,
-                        openidLabel = config.openidLabel, // TCHAT
-                        openidAutoRedirect = config.openidAutoRedirect, // TCHAT
-                    )
+            authServerConfig(configRepository, accountSwitcher, serverDataStore).collect { (config, url) ->
+                _uiState.value = _uiState.value.copy(
+                    registrationEnabled = config.registrationEnabled,
+                    socialProviders = socialProviders(config),
+                    emailLoginEnabled = config.emailLoginEnabled,
+                    passwordResetEnabled = config.emailLoginEnabled && config.passwordResetEnabled,
+                    usernameLogin = config.ldap?.username == true,
+                    ldapLogin = config.ldap?.enabled == true,
+                    minPasswordLength = config.minPasswordLength ?: DEFAULT_MIN_PASSWORD_LENGTH,
+                    policyLinks = PolicyLinks.from(config, url),
+                    appTitle = appTitleOf(config),
+                    serverLabel = url?.takeIf { it.isNotBlank() }?.let(::serverLabel),
+                )
+                if (config.openidLoginEnabled && config.openidAutoRedirect && !autoRedirected) {
+                    autoRedirected = true
+                    onSsoProviderSelected("openid")
                 }
             }
         }
+        // Reached straight from a logged-out cold start (an expired account still bound), nothing has
+        // loaded the server's config, and without it the provider buttons never show. Cache first.
+        if (accountSwitcher.pendingAdd == null && configRepository.startupConfig.value == null) {
+            viewModelScope.launch { configRepository.fetchStartupConfig() }
+        }
         observeCertificateTrust(serverDataStore, certificateTrust)
+        observeTwoFactorSetupMarkers(serverDataStore)
+        viewModelScope.launch {
+            val banner = publicBanner(bannerRepository, accountSwitcher)
+            _uiState.update { it.copy(banner = banner) }
+        }
+    }
+
+    /**
+     * Names the accounts on this server whose session ended because the server now requires 2FA
+     * setup (the marker the token store keeps), so a user who tapped one in the account switcher
+     * learns why they are here. Read once per server: the marker changes only with a sign-in, which
+     * leaves this screen.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun observeTwoFactorSetupMarkers(serverDataStore: ServerDataStore) {
+        val serverUrl = accountSwitcher.pendingAdd?.serverUrl?.let(::flowOf) ?: serverDataStore.currentUrlFlow
+        viewModelScope.launch {
+            serverUrl.distinctUntilChanged().mapLatest { url ->
+                suspendRunCatching { accountSwitcher.awaitingTwoFactorSetupOn(url) }.getOrDefault(emptyList())
+                    .map { it.displayLabel }
+                    .takeIf { it.isNotEmpty() }
+                    ?.joinToString(", ")
+            }.collect { labels -> _uiState.update { it.copy(twoFactorSetupAccounts = labels) } }
+        }
     }
 
     /** The server screen's probe has just connected, so this is known by the time the screen shows. */
@@ -98,14 +248,6 @@ class LoginViewModel(
             }
         }
     }
-
-    /**
-     * Latched synchronously on the tap, because the acknowledgement read that follows suspends.
-     * Two taps would otherwise each resolve and each set `ssoProvider`, and since the screen
-     * consumes that field back to null between them, both would navigate — stacking two SSO
-     * routes, two WebViews and two round-trips over the one cookie jar they share.
-     */
-    private var ssoSelectionInFlight = false
 
     /**
      * Social sign-in runs in an in-app browser, which some providers disallow. Warn once, then
@@ -150,24 +292,34 @@ class LoginViewModel(
     }
 
     fun onEmailChanged(email: String) {
-        _uiState.value = _uiState.value.copy(email = email, error = null)
+        savedStateHandle[KEY_EMAIL] = email
+        _uiState.value = _uiState.value.copy(email = email, error = null, refusal = null, inputError = null)
     }
 
     fun onPasswordChanged(password: String) {
-        _uiState.value = _uiState.value.copy(password = password, error = null)
+        _uiState.value = _uiState.value.copy(password = password, error = null, refusal = null, inputError = null)
     }
 
     fun login() {
         val state = _uiState.value.copy(offerDiagnosticLog = false)
-        if (state.email.isBlank() || state.password.isBlank()) {
-            _uiState.value = state.copy(error = "Please enter email and password")
+        // The server validates the raw email before trimming it, so a trailing space from a keyboard
+        // suggestion would fail sign-in.
+        val email = state.email.trim()
+        state.inputErrorOrNull(email)?.let { problem ->
+            _uiState.value = state.copy(inputError = problem, error = null, refusal = null)
             return
         }
 
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null, offerDiagnosticLog = false)
+            _uiState.value = _uiState.value.copy(
+                isLoading = true,
+                error = null,
+                refusal = null,
+                inputError = null,
+                offerDiagnosticLog = false,
+            )
 
-            when (val result = authRepository.login(state.email, state.password)) {
+            when (val result = authRepository.login(email, state.password)) {
                 is Result.Success -> {
                     when (val outcome = result.data) {
                         is LoginOutcome.Success -> {
@@ -182,34 +334,22 @@ class LoginViewModel(
                                 twoFactorTempToken = outcome.tempToken,
                             )
                         }
+                        is LoginOutcome.TwoFactorSetupRequired -> {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                twoFactorSetupTempToken = outcome.tempToken,
+                            )
+                        }
                     }
                 }
                 is Result.Error -> {
-                    // A 403 from /api/auth/login means the server enforces ALLOW_EMAIL_LOGIN=false
-                    // (#14180). Surface a clear reason and hide the form so the user reaches for a
-                    // provider instead of retrying credentials that will never be accepted.
-                    // checkBan runs BEFORE validateEmailLogin on this route and also answers 403,
-                    // so a banned account (or the non-browser-UA soft ban) must keep the server's
-                    // own message and leave the form visible — isBanned is that discriminator.
-                    //
-                    // [ApiException.serverAuthored] is a second, independent one, and it is required:
-                    // a bouncer or WAF in front of the deployment answers this route with a 403 HTML
-                    // interstitial too, and asserting "this server has email login disabled" over a
-                    // transient network block would hide the form for a condition the user can simply
-                    // wait out. Only LibreChat's own JSON envelope sets that flag.
-                    val apiException = result.exception as? ApiException
-                    val isEmailLoginDisabled = apiException?.statusCode == 403 &&
-                        apiException.serverAuthored &&
-                        !apiException.isBanned
+                    val refusal = result.loginRefusalOrNull()
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = if (isEmailLoginDisabled) {
-                            "Email and password sign-in is disabled on this server."
-                        } else {
-                            result.message ?: "Login failed"
-                        },
+                        error = result.message,
+                        refusal = refusal,
                         offerDiagnosticLog = result.offersDiagnosticLog(),
-                        emailLoginEnabled = if (isEmailLoginDisabled) false else _uiState.value.emailLoginEnabled,
+                        emailLoginEnabled = _uiState.value.emailLoginEnabled && refusal != AuthRefusal.EmailLoginDisabled,
                     )
                 }
                 is Result.Loading -> { /* no-op */ }
@@ -219,5 +359,13 @@ class LoginViewModel(
 
     fun consumeTwoFactorNavigation() {
         _uiState.value = _uiState.value.copy(twoFactorTempToken = null)
+    }
+
+    fun consumeTwoFactorSetupNavigation() {
+        _uiState.value = _uiState.value.copy(twoFactorSetupTempToken = null)
+    }
+
+    private companion object {
+        const val KEY_EMAIL = "login_email"
     }
 }

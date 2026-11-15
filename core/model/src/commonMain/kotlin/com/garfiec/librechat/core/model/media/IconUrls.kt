@@ -1,6 +1,7 @@
 package com.garfiec.librechat.core.model.media
 
 import com.garfiec.librechat.core.common.EndpointConstants
+import com.garfiec.librechat.core.model.EndpointConfig
 import com.garfiec.librechat.core.model.config.ModelSpec
 
 /**
@@ -26,31 +27,63 @@ private val IMAGE_FILE = Regex(
 
 /**
  * What to draw for an icon value: an image to load, or the endpoint whose glyph to show.
- * Both null leaves the caller's own fallback.
+ * [provider], when set, is the brand art to draw instead of [endpointName]'s glyph, and what an image
+ * that fails to load falls back to. All null leaves the caller's own fallback.
  */
-data class IconSource(val endpointName: String?, val imageUrl: String?)
+data class IconSource(val endpointName: String?, val imageUrl: String?, val provider: ProviderId? = null)
 
 /**
  * Resolves an icon value against the server: an image becomes a loadable URL (a rooted or bare path
  * joins the server, as avatars do; a protocol-relative one takes `https:`), a name becomes the glyph
  * to show. A blank value is unset, as web's `firstPresentIcon` treats `""`, and falls to [endpoint].
+ *
+ * The [IconSource.provider] follows web's `SpecIcon`: `agents` draws the agents mark, a value naming a
+ * brand (`groq`) that brand, else [endpoint]'s brand ([endpointBrand]: its configured brand `iconURL`,
+ * served `providerId`, first-class brand, then name). A value equal to [endpoint] counts as the
+ * endpoint's name, not a value of its own. For an image, [endpoint]'s brand alone. Without
+ * [endpointConfigs] the served `providerId` is skipped.
  */
-fun resolveIconSource(value: String?, endpoint: String?, serverUrl: String): IconSource {
-    val icon = value?.takeIf(String::isNotBlank) ?: return IconSource(endpoint, null)
-    if (!isImageUrl(icon)) return IconSource(icon, null)
-    val url = if (icon.startsWith("//")) "https:$icon" else resolveAvatarUrl(icon, serverUrl)
-    return IconSource(endpoint, url)
+fun resolveIconSource(
+    value: String?,
+    endpoint: String?,
+    serverUrl: String,
+    endpointConfigs: Map<String, EndpointConfig>? = null,
+): IconSource {
+    val icon = value?.takeIf(String::isNotBlank)
+    if (icon == EndpointConstants.AGENTS) return IconSource(icon, null, null)
+    if (icon == null || !isImageUrl(icon)) {
+        // A value that is just the endpoint's own name (iconValue's last fallback) is no icon of its
+        // own: it must not outrank the served providerId, which the server resolves ahead of the name.
+        val named = icon?.takeUnless { it == endpoint }?.let(::resolveProviderId)
+        return IconSource(icon ?: endpoint, null, named ?: endpointBrand(endpoint, endpointConfigs))
+    }
+    return IconSource(endpoint, iconImageUrl(icon, serverUrl), endpointBrand(endpoint, endpointConfigs))
 }
+
+/**
+ * The endpoint whose icon stands for an [iconURL] on [endpoint], as web's `getIconEndpoint`
+ * (`client/src/utils/endpoints.ts`, registered as `icon-endpoint-rule`): [iconURL] when
+ * [endpointConfigs] lists it as an endpoint key, else [endpoint]. An image, a bare provider name like
+ * `"groq"` or a blank value leaves [endpoint].
+ */
+fun iconEndpoint(iconURL: String?, endpoint: String?, endpointConfigs: Map<String, EndpointConfig>?): String? =
+    iconURL?.takeIf { it.isNotEmpty() && endpointConfigs?.containsKey(it) == true } ?: endpoint
 
 /**
  * The icon value a spec shows, as web's `getModelSpecIconURL` (`client/src/utils/endpoints.ts`,
  * registered as `model-spec-icon-chain`): its own `iconURL`, its preset's, the avatar of the agent
- * it runs (agent specs only), then its endpoint's name unless [withEndpoint] is false. Blank values
- * are skipped.
+ * it runs (agent specs only), then its endpoint's name. Blank values are skipped.
  */
-fun ModelSpec.iconValue(agentAvatar: String? = null, withEndpoint: Boolean = true): String? = listOf(
+fun ModelSpec.iconValue(agentAvatar: String? = null): String? = listOf(
     iconURL,
     preset?.iconURL,
     agentAvatar.takeIf { preset?.endpoint == EndpointConstants.AGENTS && preset.agentId != null },
-    preset?.endpoint?.takeIf { withEndpoint },
+    preset?.endpoint,
 ).firstOrNull { !it.isNullOrBlank() }
+
+/**
+ * Where an image icon value loads from: a protocol-relative `//host/…` over https, a relative path
+ * joined to [serverUrl] ([resolveAvatarUrl]), an absolute URL as is.
+ */
+fun iconImageUrl(icon: String?, serverUrl: String): String? =
+    if (icon?.startsWith("//") == true) "https:$icon" else resolveAvatarUrl(icon, serverUrl)

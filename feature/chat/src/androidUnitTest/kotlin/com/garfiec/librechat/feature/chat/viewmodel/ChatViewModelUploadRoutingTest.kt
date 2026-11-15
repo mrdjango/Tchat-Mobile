@@ -2,6 +2,7 @@ package com.garfiec.librechat.feature.chat.viewmodel
 
 import androidx.lifecycle.viewModelScope
 import com.garfiec.librechat.core.common.EndpointConstants
+import com.garfiec.librechat.core.common.ToolConstants
 import com.garfiec.librechat.core.common.result.Result
 import com.garfiec.librechat.core.data.datastore.ChatFontSize
 import com.garfiec.librechat.core.data.datastore.ChatHeaderAlignment
@@ -12,7 +13,9 @@ import com.garfiec.librechat.core.data.datastore.StarredModelsDisplay
 import com.garfiec.librechat.core.data.datastore.UploadRoutingMode
 import com.garfiec.librechat.core.model.Agent
 import com.garfiec.librechat.core.model.EndpointConfig
+import com.garfiec.librechat.core.model.response.FileUploadConfig
 import com.garfiec.librechat.core.model.response.UploadRoute
+import com.garfiec.librechat.feature.chat.components.AttachedFile
 import com.garfiec.librechat.feature.chat.viewmodel.delegate.PdfPasswordPrompt
 import com.garfiec.librechat.feature.chat.viewmodel.delegate.PickedFile
 import com.garfiec.librechat.feature.chat.viewmodel.delegate.PlatformFileHandler
@@ -69,6 +72,7 @@ class ChatViewModelUploadRoutingTest {
     private val platformDelegateFactory get() = fixture.platformDelegateFactory
     private val serverFileSelectionHandoff get() = fixture.serverFileSelectionHandoff
     private val fileHandler = mockk<PlatformFileHandler>(relaxed = true)
+    private val tray = MutableStateFlow<List<AttachedFile>>(emptyList())
 
     private val endpointConfigs = MutableStateFlow<Map<String, EndpointConfig>>(emptyMap())
     private val availableModels = MutableStateFlow<Map<String, List<String>>>(emptyMap())
@@ -101,7 +105,7 @@ class ChatViewModelUploadRoutingTest {
         every { platformDelegateFactory.createShareConsumer().sharesFor(any()) } returns shares
 
         every { platformDelegateFactory.createFileHandler(any()) } returns fileHandler
-        every { fileHandler.attachedFiles } returns MutableStateFlow(emptyList())
+        every { fileHandler.attachedFiles } returns tray
 
         coEvery { conversationRepository.getConversation(any(), any()) } returns Result.Error(message = "test")
     }
@@ -224,20 +228,25 @@ class ChatViewModelUploadRoutingTest {
         }
 
     @Test
-    fun `an empty capability list is read as unstated, not as a denial`() =
+    fun `an empty agents capability list denies extraction`() =
         routingTest(
-            endpoint = "anthropic",
-            configs = mapOf(
-                "anthropic" to EndpointConfig(),
-                EndpointConstants.AGENTS to EndpointConfig(capabilities = emptyList()),
-            ),
+            endpoint = EndpointConstants.AGENTS,
+            model = AGENT_ID,
+            agentProvider = "ollama",
+            configs = mapOf(EndpointConstants.AGENTS to EndpointConfig(capabilities = emptyList())),
         ) { vm ->
-            // `EndpointConfig.capabilities` defaults to an empty list, so a server that omits the
-            // field is indistinguishable from one sending `[]`. Reading `[]` as "no context
-            // capability" would ship the feature dead against every such server.
-            val routes = routesFor(vm, "notes.docx" to DOCX)
+            assertThat(routesFor(vm, "notes.docx" to DOCX)).containsExactly(UploadRoute.PROVIDER)
+        }
 
-            assertThat(routes).containsExactly(UploadRoute.TEXT)
+    @Test
+    fun `a missing agents capability list allows extraction, as the server's defaults do`() =
+        routingTest(
+            endpoint = EndpointConstants.AGENTS,
+            model = AGENT_ID,
+            agentProvider = "ollama",
+            configs = mapOf(EndpointConstants.AGENTS to EndpointConfig(capabilities = null)),
+        ) { vm ->
+            assertThat(routesFor(vm, "notes.docx" to DOCX)).containsExactly(UploadRoute.TEXT)
         }
 
     // ── Manual mode ─────────────────────────────────────────────────────────
@@ -567,13 +576,8 @@ class ChatViewModelUploadRoutingTest {
             model = AGENT_ID,
             providerAnswer = { provider.await() },
         ) { vm ->
-            vm.retryUpload(
-                com.garfiec.librechat.feature.chat.components.AttachedFile(
-                    uri = "notes.docx",
-                    name = "notes.docx",
-                    type = DOCX,
-                ),
-            )
+            tray.value = listOf(failedDocx)
+            vm.retryUpload(failedDocx)
             runCurrent()
 
             // The delegate re-derives the route from the live selection, and a retry is what the
@@ -586,6 +590,108 @@ class ChatViewModelUploadRoutingTest {
             io.mockk.verify(exactly = 1) { fileHandler.retryUpload(any()) }
         }
     }
+
+    @Test
+    fun `a file removed while its retry waits for the provider stays removed`() {
+        val provider = CompletableDeferred<Result<String?>>()
+        routingTest(
+            endpoint = EndpointConstants.AGENTS,
+            model = AGENT_ID,
+            providerAnswer = { provider.await() },
+        ) { vm ->
+            tray.value = listOf(failedDocx)
+            vm.retryUpload(failedDocx)
+            runCurrent()
+            // The row still reads failed, so its × is live: the user takes it off the message.
+            tray.value = emptyList()
+
+            provider.complete(Result.Success("ollama"))
+            runCurrent()
+            // A retry now would append the file again, and the × row's Undo would put back a second copy.
+            verify(exactly = 0) { fileHandler.retryUpload(any()) }
+        }
+    }
+
+    @Test
+    fun `a second tap on a failed row while its retry waits retries once`() {
+        val provider = CompletableDeferred<Result<String?>>()
+        routingTest(
+            endpoint = EndpointConstants.AGENTS,
+            model = AGENT_ID,
+            providerAnswer = { provider.await() },
+        ) { vm ->
+            tray.value = listOf(failedDocx)
+            vm.retryUpload(failedDocx)
+            vm.retryUpload(failedDocx)
+            runCurrent()
+
+            provider.complete(Result.Success("ollama"))
+            runCurrent()
+            verify(exactly = 1) { fileHandler.retryUpload(any()) }
+        }
+    }
+
+    @Test
+    fun `a retry for a file no longer in the tray does nothing`() =
+        routingTest(endpoint = "anthropic") { vm ->
+            // Taken off the message while its row was still on screen: a retry now would upload it again.
+            tray.value = emptyList()
+            vm.retryUpload(failedDocx)
+            runCurrent()
+            verify(exactly = 0) { fileHandler.retryUpload(any()) }
+        }
+
+    @Test
+    fun `a retry for a row that is not failed does nothing`() =
+        routingTest(endpoint = "anthropic") { vm ->
+            val uploaded = failedDocx.copy(uploadFailed = false, uploadProgress = 1f, fileId = "f1")
+            tray.value = listOf(uploaded)
+            vm.retryUpload(uploaded)
+            runCurrent()
+            verify(exactly = 0) { fileHandler.retryUpload(any()) }
+        }
+
+    private val failedDocx = AttachedFile(uri = "notes.docx", name = "notes.docx", type = DOCX, uploadFailed = true)
+
+    @Test
+    fun `a code-environment pick goes as picked and turns the code interpreter on`() {
+        coEvery { fixture.fileRepository.getFileConfig() } returns
+            Result.Success(FileUploadConfig(legacyFileUploadUX = true))
+        routingTest(
+            endpoint = "anthropic",
+            mode = UploadRoutingMode.MANUAL,
+            configs = mapOf(
+                "anthropic" to EndpointConfig(),
+                EndpointConstants.AGENTS to EndpointConfig(capabilities = listOf("execute_code")),
+            ),
+        ) { vm ->
+            assertThat(vm.uiState.value.codeUploadOffered).isTrue()
+            val picked = listOf(
+                PickedFile(ref = "photo.png", name = "photo.png", mimeType = "image/png"),
+                PickedFile(ref = "notes.docx", name = "notes.docx", mimeType = DOCX),
+            )
+            every { fileHandler.describe(any()) } returns picked
+            val captured = slot<List<RoutedFile>>()
+            every { fileHandler.onFilesSelected(capture(captured)) } returns Unit
+
+            vm.onCodeFilesSelected(picked.map { it.ref })
+            runCurrent()
+
+            // No routing sheet even in Manual mode: the destination was the pick.
+            assertThat(vm.uiState.value.composer.pendingUploadRouting).isNull()
+            assertThat(captured.captured.map { it.route }).containsExactly(UploadRoute.CODE, UploadRoute.CODE)
+            assertThat(vm.uiState.value.selection.effectiveTools).contains(ToolConstants.CODE_INTERPRETER)
+        }
+    }
+
+    @Test
+    fun `a code-environment pick is ignored where the option isn't offered`() =
+        routingTest(endpoint = "anthropic") { vm ->
+            vm.onCodeFilesSelected(listOf("a.py"))
+            runCurrent()
+
+            verify(exactly = 0) { fileHandler.onFilesSelected(any()) }
+        }
 
     /** Picks files in manual mode and leaves the batch staged. */
     private fun stage(vm: ChatViewModel, vararg files: Pair<String, String>) {

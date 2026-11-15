@@ -2,6 +2,9 @@ package com.garfiec.librechat.feature.conversations.drawer
 
 import androidx.compose.runtime.Immutable
 import com.garfiec.librechat.core.data.search.MessageSearchHit
+import com.garfiec.librechat.core.model.media.ProviderId
+import com.garfiec.librechat.core.model.pullrequest.ConversationPullRequest
+import com.garfiec.librechat.core.model.pullrequest.PullRequestPresentation
 import com.garfiec.librechat.feature.conversations.search.SearchNote
 import kotlin.time.Instant
 
@@ -28,6 +31,24 @@ data class DrawerConversationDisplayData(
     val endpointIconUrl: String? = null,
     val modelLabel: String? = model,
     val iconEndpoint: String? = endpoint,
+    /**
+     * The brand art the row draws when [endpointIconUrl] is null or fails to load; beats [iconEndpoint].
+     * Null when the endpoint's configured icon is an image, as on web.
+     */
+    val iconProvider: ProviderId? = null,
+    /** A reply the user has not seen (v0.8.9-rc1); never on a running row. */
+    val isUnread: Boolean = false,
+    /** Its reply is still being generated (the Running group's rows, wherever else they show). */
+    val isRunning: Boolean = false,
+    /** The pull request its code workspace opened, as the row's mark shows it; never on a running row. */
+    val pullRequest: DrawerPullRequestMark? = null,
+)
+
+/** A drawer row's pull request, presented once in the mapping rather than per frame. */
+@Immutable
+data class DrawerPullRequestMark(
+    val pullRequest: ConversationPullRequest,
+    val presentation: PullRequestPresentation,
 )
 
 /**
@@ -40,6 +61,7 @@ data class InlineProjectChatsState(
     val expandedProjectId: String? = null,
     val conversations: List<DrawerConversationDisplayData> = emptyList(),
     val isLoading: Boolean = false,
+    val loadFailed: Boolean = false,
 )
 
 /**
@@ -55,6 +77,11 @@ data class AccountUiModel(
     val isActive: Boolean,
     /** The session expired: the account stays listed, but needs signing in to before it's usable. */
     val needsSignIn: Boolean = false,
+    /**
+     * Its session ended because the server now requires 2FA setup; only with [needsSignIn]. Signing
+     * in to it again returns the setup flow.
+     */
+    val needsTwoFactorSetup: Boolean = false,
 )
 
 /**
@@ -67,6 +94,7 @@ data class DrawerUiState(
     val pinnedConversations: List<DrawerConversationDisplayData> = emptyList(),
     val searchQuery: String = "",
     val isRefreshing: Boolean = false,
+    val listLoad: ListLoad = ListLoad.PENDING,
     val isLoadingMore: Boolean = false,
     val hasMore: Boolean = true,
     // Role-permission gates — default permissive.
@@ -82,9 +110,9 @@ data class DrawerUiState(
     val skillsEnabled: Boolean = false,
     /** PROMPTS USE, permissive: the chat menu's Prompts gate. */
     val promptsEnabled: Boolean = true,
-    /** MCP_SERVERS USE, permissive: Settings › Data's MCP servers row gate. */
+    /** MCP_SERVERS USE, permissive: the Workspace tray's MCP servers row gate. */
     val mcpServersEnabled: Boolean = true,
-    /** `canReachMemoriesSettings()`: Settings › Data's Memories row gate. */
+    /** `canReachMemoriesSettings()`: the Workspace tray's Memories row gate. */
     val memoriesEnabled: Boolean = true,
     /** Scheduled chats: the SCHEDULES permission AND the server's `interface.schedules` flag,
      *  which is absent-means-OFF. Default false — the feature is opt-in. */
@@ -98,7 +126,22 @@ data class DrawerUiState(
     val projectsEnabled: Boolean = false,
     /** Message hits for the current query; [DrawerMessageSearch.Idle] while not searching. */
     val messageSearch: DrawerMessageSearch = DrawerMessageSearch.Idle,
+    /** Version-gated (v0.8.9-rc1): the menu's "Mark as unread" / "Mark as read". */
+    val readStateEnabled: Boolean = false,
+    /** Version-gated (v0.8.9-rc1): the search field's filter button and the filter sheet. */
+    val filtersEnabled: Boolean = false,
+    val filters: DrawerFilters = DrawerFilters.None,
+    /** The filtered list failed to load, so an empty one is not "nothing matches". */
+    val filterLoadFailed: Boolean = false,
+    val filterOptions: DrawerFilterOptions = DrawerFilterOptions(),
 ) {
+    /** Filters narrow the list only where the server takes them. */
+    val filtersApplied: Boolean get() = filtersEnabled && filters.isActive
+
+    val showsEmptyList: Boolean
+        get() = !filtersApplied && searchQuery.isBlank() && !isRefreshing && listLoad != ListLoad.PENDING &&
+            groupedConversations.isEmpty() && pinnedConversations.isEmpty() && favoriteConversations.isEmpty()
+
     /**
      * The Agents entry (phone drawer and tablet sidebar): AGENTS.USE and MARKETPLACE.USE, as the web
      * app hides its marketplace. It is also the app's only way to the agent editor, so a role without
@@ -143,3 +186,28 @@ data class DrawerMessageSearch(
         val Idle = DrawerMessageSearch()
     }
 }
+
+/** One endpoint the filter sheet offers, already labelled. */
+@Immutable
+data class FilterEndpointOption(
+    val name: String,
+    val label: String,
+    val iconUrl: String?,
+    val provider: ProviderId? = null,
+)
+
+/** What the filter sheet can offer, mapped from config, role and connectivity. */
+@Immutable
+data class DrawerFilterOptions(
+    val endpoints: List<FilterEndpointOption> = emptyList(),
+    /** `conversationListLimits.maxEndpointFilters`, or upstream's default. */
+    val maxEndpoints: Int = com.garfiec.librechat.core.model.config.ConversationListLimits.DEFAULT_MAX_ENDPOINT_FILTERS,
+    /** Shared links are enabled on the server. */
+    val sharedOnlyAvailable: Boolean = false,
+    /** Bookmarks are on for this role and server. */
+    val bookmarksAvailable: Boolean = false,
+    /** The bookmarks to pick from ([selectableBookmarks]), in the user's order. */
+    val bookmarks: List<FilterBookmarkOption> = emptyList(),
+    /** Applying asks the server, so it waits for a connection. */
+    val isOnline: Boolean = true,
+)

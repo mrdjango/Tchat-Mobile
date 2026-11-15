@@ -19,12 +19,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.garfiec.librechat.core.common.identity.cleanServerUrl
 import com.garfiec.librechat.core.model.auth.AuthCookies
 import com.garfiec.librechat.core.network.client.CookieHelper
-import com.garfiec.librechat.feature.auth.oauth.SSO_ANDROID_USER_AGENT
+import com.garfiec.librechat.core.ui.platform.findActivity
+import com.garfiec.librechat.core.ui.web.SSO_ANDROID_USER_AGENT
 import com.garfiec.librechat.feature.auth.oauth.SsoNavigationDecision
 import com.garfiec.librechat.feature.auth.oauth.SsoNavigationGate
 import com.garfiec.librechat.feature.auth.oauth.extractAuthCookies
-import com.garfiec.librechat.feature.auth.oauth.extractQueryParameter
 import com.garfiec.librechat.feature.auth.oauth.extractRefreshTokenFromCookies
+import com.garfiec.librechat.feature.auth.oauth.ssoFailureCode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -43,6 +44,8 @@ private fun expiredCookie(serverUrl: String, name: String): String {
 actual fun SsoWebView(
     serverUrl: String,
     provider: String,
+    keepProviderSession: Boolean,
+    signedIn: Boolean,
     onTokenCapture: (AuthCookies) -> Unit,
     onOAuthError: (String?) -> Unit,
     onCaptureFail: () -> Unit,
@@ -54,6 +57,10 @@ actual fun SsoWebView(
     val currentOnCaptureFail by rememberUpdatedState(onCaptureFail)
     val gate = remember(serverUrl, provider) { SsoNavigationGate(serverUrl, provider) }
     val serverHost = remember(serverUrl) { Uri.parse(serverUrl).host.orEmpty() }
+    // A round-trip that ends without a completed sign-in may have left a provider session for an
+    // identity the server refused or the user abandoned; a later keepProviderSession re-auth would
+    // silently reuse it, so every such ending wipes the jar.
+    val currentSignedIn by rememberUpdatedState(signedIn)
 
     AndroidView(
         modifier = modifier,
@@ -97,8 +104,14 @@ actual fun SsoWebView(
                                 }
                                 currentOnTokenCapture(checkNotNull(captured))
                             }
-                            errorCode != null -> currentOnOAuthError(errorCode)
-                            else -> currentOnCaptureFail()
+                            errorCode != null -> {
+                                cookies.removeAllCookies(null)
+                                currentOnOAuthError(errorCode)
+                            }
+                            else -> {
+                                cookies.removeAllCookies(null)
+                                currentOnCaptureFail()
+                            }
                         }
                     }
                 }
@@ -111,7 +124,7 @@ actual fun SsoWebView(
                         if (!request.isForMainFrame) return false
                         val url = request.url.toString()
                         if (gate.decide(url) != SsoNavigationDecision.STOP) return false
-                        finish(view, extractQueryParameter(url, "error"))
+                        finish(view, ssoFailureCode(url))
                         return true
                     }
 
@@ -129,7 +142,7 @@ actual fun SsoWebView(
                         super.doUpdateVisitedHistory(view, url, isReload)
                         if (finished || url.startsWith("about:")) return
                         if (gate.decide(url) == SsoNavigationDecision.STOP) {
-                            finish(view, extractQueryParameter(url, "error"))
+                            finish(view, ssoFailureCode(url))
                             return
                         }
                         captureIfTokenPresent(view, url)
@@ -187,22 +200,35 @@ actual fun SsoWebView(
                 cookies.setAcceptCookie(true)
                 cookies.setAcceptThirdPartyCookies(this, true)
                 val startUrl = "${cleanServerUrl(serverUrl)}/oauth/$provider"
-                // The load is issued from inside the clear's callback, because removeAllCookies is
-                // asynchronous and that ordering is the only thing keeping a stale token from being
-                // read back before the round-trip has even reached the provider.
-                //
-                // The whole jar, not just the server's refreshToken: the provider's own session
-                // cookie is process-global and survives our sign-out, so leaving it lets the flow
-                // re-select whoever was last signed in at the provider and complete as them with no
-                // chooser and no error. Nothing else in this jar holds a session — the chat
-                // WebViews render vendored local assets — and AndroidSwitchCacheCleaner already
-                // wipes it whole on every account switch for the same reason.
-                cookies.removeAllCookies { loadUrl(startUrl) }
+                // Both clears are asynchronous, so the load is issued from their callbacks: that
+                // ordering is the only thing keeping a stale token from being read back before the
+                // round-trip has even reached the provider.
+                if (keepProviderSession) {
+                    // Every cookie on the server's origin goes, not just refreshToken, so no server
+                    // state (connect.sid, markers) carries into the new session. The provider's live
+                    // on its own origin and stay.
+                    val names = CookieHelper.names(cookies.getCookie(serverUrl))
+                    var pending = names.size
+                    if (pending == 0) loadUrl(startUrl)
+                    names.forEach { name ->
+                        cookies.setCookie(serverUrl, expiredCookie(serverUrl, name)) {
+                            if (--pending == 0) loadUrl(startUrl)
+                        }
+                    }
+                } else {
+                    // The whole jar: the provider's own session cookie survives our sign-out, and
+                    // leaving it lets the flow re-select whoever was last signed in at the provider
+                    // and complete as them with no chooser and no error.
+                    cookies.removeAllCookies { loadUrl(startUrl) }
+                }
             }
         },
         onRelease = { webView ->
             webView.stopLoading()
             webView.destroy()
+            // A configuration change recreates the view and restarts the round-trip; it ends nothing.
+            val recreating = webView.context.findActivity()?.isChangingConfigurations == true
+            if (!currentSignedIn && !recreating) CookieManager.getInstance().removeAllCookies(null)
         },
     )
 }

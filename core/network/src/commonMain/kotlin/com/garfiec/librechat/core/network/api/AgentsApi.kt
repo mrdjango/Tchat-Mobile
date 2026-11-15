@@ -5,12 +5,17 @@ import com.garfiec.librechat.core.model.Agent
 import com.garfiec.librechat.core.model.AgentAction
 import com.garfiec.librechat.core.model.AgentCategory
 import com.garfiec.librechat.core.model.AgentTool
+import com.garfiec.librechat.core.model.code.CodeRunRequest
+import com.garfiec.librechat.core.model.code.CodeRunResponse
+import com.garfiec.librechat.core.model.code.ToolCallRecord
 import com.garfiec.librechat.core.model.request.CreateActionRequest
 import com.garfiec.librechat.core.model.request.CreateAgentRequest
+import com.garfiec.librechat.core.model.request.ResetToolApprovalsRequest
 import com.garfiec.librechat.core.model.request.RevertAgentRequest
 import com.garfiec.librechat.core.model.request.UpdateAgentRequest
 import com.garfiec.librechat.core.model.response.AgentListResponse
 import com.garfiec.librechat.core.model.response.DuplicateAgentResponse
+import com.garfiec.librechat.core.network.client.CookieHelper
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.delete
@@ -23,6 +28,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
+import io.ktor.http.appendPathSegments
 import io.ktor.http.path
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -35,11 +41,17 @@ class AgentsApi constructor(
 
     // --- Agent CRUD ---
 
-    suspend fun getAgents(category: String? = null): AgentListResponse =
-        client.get {
-            url { path("api/agents") }
-            if (category != null) parameter("category", category)
-        }.body()
+    /** Every page of `GET /api/agents`, merged: the route answers 100 per page when no `limit` is sent. */
+    suspend fun getAgents(category: String? = null): AgentListResponse {
+        val agents = mutableListOf<Agent>()
+        var cursor: String? = null
+        do {
+            val page = getAgentsPaginated(limit = WALK_PAGE_SIZE, cursor = cursor, category = category)
+            agents += page.data
+            cursor = page.after
+        } while (cursor != null)
+        return AgentListResponse(objectType = "list", data = agents)
+    }
 
     /**
      * One page of `GET /api/agents` (upstream `getListAgentsHandler`).
@@ -48,6 +60,10 @@ class AgentsApi constructor(
      * [promoted] narrows to Top picks and is sent as `promoted=1`, the only "on" value the route
      * matches. [requiredPermission] is the permission bit the caller needs on each agent; omitted,
      * the server uses VIEW.
+     *
+     * [sort] (`newest` | `oldest` | `popular` | `author`) and [mine] (`mine=1`, agents the caller
+     * authored) are v0.8.9-rc1; an older server ignores both. A cursor read under one sort and sent
+     * with another answers 409 `{ error: "cursor_ordering_mismatch" }`.
      */
     suspend fun getAgentsPaginated(
         limit: Int,
@@ -56,6 +72,8 @@ class AgentsApi constructor(
         category: String? = null,
         promoted: Boolean = false,
         requiredPermission: Int? = null,
+        sort: String? = null,
+        mine: Boolean = false,
     ): AgentListResponse =
         client.get {
             url { path("api/agents") }
@@ -65,6 +83,8 @@ class AgentsApi constructor(
             if (category != null) parameter("category", category)
             if (promoted) parameter("promoted", "1")
             if (requiredPermission != null) parameter("requiredPermission", requiredPermission)
+            if (sort != null) parameter("sort", sort)
+            if (mine) parameter("mine", "1")
         }.body()
 
     suspend fun getAgent(agentId: String): Agent {
@@ -160,6 +180,18 @@ class AgentsApi constructor(
         }
     }
 
+    /**
+     * POST /api/actions/:action_id/oauth/bind — sets `oauth_csrf` (Path `/api/actions`) and
+     * `oauth_session`, which the action's OAuth callback requires. Returned as `Set-Cookie` values
+     * for the in-app sign-in WebView to seed; empty when the server set none.
+     */
+    suspend fun bindActionOAuth(actionId: String): List<String> {
+        val response = client.post {
+            url { appendPathSegments("api", "actions", actionId, "oauth", "bind") }
+        }
+        return CookieHelper.setCookieValues(response.headers, MCP_OAUTH_BINDING_COOKIES)
+    }
+
     // --- Agent Avatar ---
 
     /**
@@ -196,4 +228,40 @@ class AgentsApi constructor(
         client.get {
             url { path("api/agents/tools") }
         }.body()
+
+    /**
+     * Forgets the caller's remembered tool approvals for an agent (v0.8.9-rc1), answering
+     * `{ reset: true }`. VIEW access is enough. 403 `APPROVAL_RESET_FORBIDDEN` when the agent is
+     * gone or unviewable, or for a per-tool reset whose SAVED mode is not chat/always; 503
+     * `APPROVAL_RESET_FAILED`; rate-limited by the tool-call limiter.
+     */
+    suspend fun resetToolApprovals(request: ResetToolApprovalsRequest) {
+        client.post {
+            url { path("api/agents/tools/approvals/reset") }
+            setBody(request)
+        }
+    }
+
+    /**
+     * Runs a fenced code block of a saved reply (web `RunCode.tsx`). `404` the message is not the
+     * caller's or has expired, `403` no RUN_CODE.USE, `429` the tool-call limiter, `500` the sandbox
+     * failed. A POST, so the shared retry never replays it.
+     */
+    suspend fun runCode(request: CodeRunRequest): CodeRunResponse =
+        client.post {
+            url { path("api/agents/tools/execute_code/call") }
+            setBody(request)
+        }.body()
+
+    /** Every stored code run of [conversationId] (`GET /api/agents/tools/calls`), oldest first. */
+    suspend fun getToolCalls(conversationId: String): List<ToolCallRecord> =
+        client.get {
+            url { path("api/agents/tools/calls") }
+            parameter("conversationId", conversationId)
+        }.body()
+
+    private companion object {
+        /** The page size web's `fetchAllAgentPages` asks for; the data layer caps `limit` at 1000. */
+        const val WALK_PAGE_SIZE = 1000
+    }
 }

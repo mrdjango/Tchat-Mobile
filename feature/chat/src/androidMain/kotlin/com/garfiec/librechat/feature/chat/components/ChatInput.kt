@@ -2,31 +2,21 @@
 
 package com.garfiec.librechat.feature.chat.components
 
-import android.net.Uri
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.input.OutputTransformation
+import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -35,26 +25,20 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
-import com.garfiec.librechat.core.data.datastore.ContextBarPlacement
 import com.garfiec.librechat.core.data.datastore.DuringRunAction
 import com.garfiec.librechat.core.ui.components.pressBounce
+import com.garfiec.librechat.core.ui.components.rememberDraftTextField
 import com.garfiec.librechat.core.ui.components.rememberPressBounce
 import com.garfiec.librechat.core.ui.theme.isLiquidGlass
 import com.garfiec.librechat.feature.chat.model.ComposerPickerItem
-import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
 import com.garfiec.librechat.feature.chat.model.PickerSkill
 import com.garfiec.librechat.feature.chat.model.PromptMentionDisplayData
 import com.garfiec.librechat.feature.chat.resources.*
 import com.garfiec.librechat.feature.chat.resources.Res
 import com.garfiec.librechat.feature.chat.tchat.ComposerTrayExtras
 import com.garfiec.librechat.feature.chat.viewmodel.ChatInputGates
-import com.garfiec.librechat.feature.chat.viewmodel.ContextGaugeDetails
 import com.garfiec.librechat.feature.chat.viewmodel.DuringRunSendTarget
-import com.garfiec.librechat.feature.chat.viewmodel.PendingSteerChip
-import com.garfiec.librechat.feature.chat.viewmodel.QueuedMessage
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -74,15 +58,12 @@ fun ChatInput(
     canQueue: Boolean = false,
     onDuringRunSend: () -> Unit = {},
     onSteer: () -> Unit = {},
+    onInterrupt: () -> Unit = {},
     canSteer: Boolean = false,
+    builtInSearchOn: Boolean = false,
     duringRunAction: DuringRunAction = DuringRunAction.QUEUE,
     duringRunSendTarget: DuringRunSendTarget = DuringRunSendTarget.QUEUE,
-    pendingSteers: List<PendingSteerChip> = emptyList(),
-    onCancelSteer: (steerId: String) -> Unit = {},
-    pendingQuotes: List<String> = emptyList(),
-    onRemoveQuote: (index: Int) -> Unit = {},
-    pendingManualSkills: List<String> = emptyList(),
-    onRemoveManualSkill: (name: String) -> Unit = {},
+    chrome: ComposerChrome = ComposerChrome(),
     onSetDuringRunAction: (DuringRunAction) -> Unit = {},
     queuedPausedCount: Int = 0,
     queueHeldForRefusal: Boolean = false,
@@ -96,13 +77,9 @@ fun ChatInput(
     comparison: ComposerComparison? = null,
     comparisonHint: ComposerComparisonHint = ComposerComparisonHint.NONE,
     onCancelPendingSend: () -> Unit = {},
-    queuedMessages: List<QueuedMessage> = emptyList(),
-    onEditQueuedMessage: (localId: String) -> Unit = {},
-    onCancelQueuedMessage: (localId: String) -> Unit = {},
-    onReorderQueuedMessages: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
     fontSizeMultiplier: Float = 1f,
-    attachedFiles: List<AttachedFile> = emptyList(),
-    onRemoveFile: (AttachedFile) -> Unit = {},
+    toolTray: ComposerTrayExtras? = null, // TCHAT
+    canFold: Boolean = false,
     promptSuggestions: List<PromptMentionDisplayData> = emptyList(),
     skillSuggestions: List<PickerSkill> = emptyList(),
     isLoadingSkills: Boolean = false,
@@ -114,46 +91,24 @@ fun ChatInput(
     isTranscribing: Boolean = false,
     onStartRecording: () -> Unit = {},
     onStopRecording: () -> Unit = {},
-    onImagePaste: ((Uri) -> Unit)? = null,
-    enabledTools: Set<String> = emptySet(),
-    onToggleTool: (String) -> Unit = {},
-    /** TCHAT: the tool tray; see ComposerToolTray. */
-    toolTray: ComposerTrayExtras? = null,
-    pinnedToolKeys: List<String> = emptyList(),
-    mcpServers: List<McpServerDisplayData> = emptyList(),
-    selectedMcpServerNames: Set<String> = emptySet(),
     selectedModelDisplay: String? = null,
     isCodeInterpreterAvailable: Boolean = true,
     gates: ChatInputGates = ChatInputGates(),
-    contextGauge: ContextGaugeDetails? = null,
-    contextUsageEnabled: Boolean = false,
-    onCompact: (() -> Unit)? = null,
-    /** "Not now" on a compact suggestion. */
-    onSnoozeCompact: () -> Unit = {},
-    /** A compact suggestion is due under the options-sheet placement: hint at it on the + button. */
-    compactSuggested: Boolean = false,
-    contextBarPlacement: ContextBarPlacement = ContextBarPlacement.OPTIONS_SHEET,
 ) {
     val cdOpenToolsMenu = stringResource(Res.string.cd_open_tools_menu)
-    val cdPasteImage = stringResource(Res.string.cd_paste_image)
     val cdMessageInput = stringResource(Res.string.cd_message_input)
 
     val focusRequester = remember { FocusRequester() }
 
-    // Use TextFieldValue internally so we can control cursor position.
-    // When inputText changes externally (e.g. STT result, prompt insertion),
-    // place the cursor at the end of the new text.
-    var textFieldValue by remember {
-        mutableStateOf(TextFieldValue(inputText, selection = TextRange(inputText.length)))
-    }
-    if (textFieldValue.text != inputText) {
-        textFieldValue = TextFieldValue(inputText, selection = TextRange(inputText.length))
-    }
-
-    // Badge suppressed on agents endpoint (retained state restores on concrete models).
-    val hasActiveTools by remember(enabledTools, selectedMcpServerNames, gates.showEphemeralTools) {
-        derivedStateOf {
-            gates.showEphemeralTools && (enabledTools.isNotEmpty() || selectedMcpServerNames.isNotEmpty())
+    // inputText reaches here a frame or more after each keystroke; the field keeps its own text and
+    // takes only the ViewModel's own writes (STT, prompt insertion, the clear on send).
+    val field = rememberDraftTextField(inputText, onInputChange)
+    val commandStyle = pickerCommandStyle()
+    val pickerCommandToken = remember(commandStyle, canPickSkills) {
+        OutputTransformation {
+            pickerCommandRange(asCharSequence().toString(), canPickSkills)?.let {
+                addStyle(commandStyle, it.first, it.last + 1)
+            }
         }
     }
 
@@ -162,30 +117,19 @@ fun ChatInput(
         isStreaming = isStreaming,
         isRecording = isRecording,
         isTranscribing = isTranscribing,
-        enabledTools = enabledTools,
-        pinnedToolKeys = pinnedToolKeys,
-        mcpServers = mcpServers,
-        selectedMcpServerNames = selectedMcpServerNames,
+        chrome = chrome,
         selectedModelDisplay = selectedModelDisplay,
         isCodeInterpreterAvailable = isCodeInterpreterAvailable,
-        attachedFiles = attachedFiles,
         gates = gates,
         canQueue = canQueue,
         canSteer = canSteer,
+        builtInSearchOn = builtInSearchOn,
         duringRunAction = duringRunAction,
         duringRunSendTarget = duringRunSendTarget,
-        pendingSteers = pendingSteers,
-        pendingQuotes = pendingQuotes,
-        pendingManualSkills = pendingManualSkills,
         isEditingQueued = isEditingQueued,
         isAwaitingUploadSend = isAwaitingUploadSend,
         arePicksUnsettled = arePicksUnsettled,
         comparisonHint = comparisonHint,
-        contextGauge = contextGauge,
-        contextUsageEnabled = contextUsageEnabled,
-        onCompact = onCompact,
-        onSnoozeCompact = onSnoozeCompact,
-        contextBarPlacement = contextBarPlacement,
         promptSuggestions = promptSuggestions,
         skillSuggestions = skillSuggestions,
         isLoadingSkills = isLoadingSkills,
@@ -205,14 +149,11 @@ fun ChatInput(
             onStop = onStopRecording,
         ),
         onSelectPickerItem = onPickerSelect,
-        onToggleTool = onToggleTool,
-        toolTray = toolTray, // TCHAT
+        onPickerTextChange = onInputChange,
         onQueue = onQueue,
         onDuringRunSend = onDuringRunSend,
         onSteer = onSteer,
-        onCancelSteer = onCancelSteer,
-        onRemoveQuote = onRemoveQuote,
-        onRemoveManualSkill = onRemoveManualSkill,
+        onInterrupt = onInterrupt,
         onRetrySkills = onRetrySkills,
         onSetDuringRunAction = onSetDuringRunAction,
         queuedPausedCount = queuedPausedCount,
@@ -222,22 +163,18 @@ fun ChatInput(
         onCommitEdit = onCommitEdit,
         onCancelEdit = onCancelEdit,
         onCancelPendingSend = onCancelPendingSend,
-        queuedMessages = queuedMessages,
-        onEditQueuedMessage = onEditQueuedMessage,
-        onCancelQueuedMessage = onCancelQueuedMessage,
-        onReorderQueuedMessages = onReorderQueuedMessages,
         fontSizeMultiplier = fontSizeMultiplier,
-        onRemoveFile = onRemoveFile,
+        toolTray = toolTray, // TCHAT
+        canFold = canFold,
         modifier = modifier,
-        leadingButtons = { compact ->
-            // "+" button to open tools bottom sheet
+        leadingButtons = {
             val toolsBounce = rememberPressBounce()
             Box(modifier = Modifier.pressBounce(toolsBounce, enabled = !isLiquidGlass)) {
-                FilledTonalIconButton(
+                IconButton(
                     onClick = onOpenTools,
                     colors = ChatInputDefaults.toolsButtonColors(),
                     modifier = Modifier
-                        .size(48.dp)
+                        .size(BoxButtonSize)
                         .semantics {
                             contentDescription = cdOpenToolsMenu
                             role = Role.Button
@@ -248,70 +185,22 @@ fun ChatInput(
                         contentDescription = null,
                     )
                 }
-                // Compact suggestion (options-sheet placement): the gauge lives in the sheet, so hint
-                // at it here. Bottom corner and the tertiary colour, apart from the tools badge.
-                if (compactSuggested) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .align(Alignment.BottomEnd)
-                            .offset(x = (-2).dp, y = (-2).dp)
-                            .background(color = MaterialTheme.colorScheme.tertiary, shape = CircleShape),
-                    )
-                }
-                // Active tools badge
-                if (hasActiveTools) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .align(Alignment.TopEnd)
-                            .offset(x = (-2).dp, y = 2.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.primary,
-                                shape = CircleShape,
-                            ),
-                    )
-                }
+                ToolsButtonDots(
+                    compactSuggested = chrome.compactSuggested,
+                    enabledTools = chrome.enabledTools,
+                    selectedMcpServerNames = chrome.selectedMcpServerNames,
+                    showEphemeralTools = gates.showEphemeralTools,
+                )
             }
-
-            // Paste image button (shown only when clipboard has image content)
-            if (onImagePaste != null) {
-                val pasteBounce = rememberPressBounce()
-                IconButton(
-                    onClick = {
-                        // Clipboard image pasting is handled by the screen
-                        onImagePaste(Uri.EMPTY)
-                    },
-                    modifier = Modifier
-                        .size(48.dp)
-                        .pressBounce(pasteBounce, enabled = !isLiquidGlass)
-                        .semantics {
-                            contentDescription = cdPasteImage
-                            role = Role.Button
-                        },
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ContentPaste,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            if (!compact) Spacer(modifier = Modifier.width(8.dp))
         },
         textFieldContent = {
             Box(modifier = Modifier.weight(1f)) {
                 val compactComparison = comparison?.takeIf { it.compact }
-                val comparisonCollapsed = compactComparison?.collapsedFor(textFieldValue.text) == true
+                val comparisonCollapsed = compactComparison?.collapsedFor(field.state.text.toString()) == true
                 val comparisonCollapse by animateComposerComparisonCollapse(comparisonCollapsed)
                 // The composer draws its own field (ChatInputDefaults), glass included; not the adaptive one.
                 OutlinedTextField(
-                    value = textFieldValue,
-                    onValueChange = { newValue ->
-                        textFieldValue = newValue
-                        onInputChange(newValue.text)
-                    },
+                    state = field.state,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 48.dp, max = 160.dp)
@@ -326,17 +215,16 @@ fun ChatInput(
                             comparisonHint = comparisonHint,
                         )
                     },
-                    leadingIcon = comparison?.takeUnless { it.compact }?.let { comparison ->
-                        { ComposerComparisonBadges(comparison) }
+                    leadingIcon = remember(comparison) { composerFieldLeadingIcon(comparison) },
+                    prefix = compactComparison?.let {
+                        { ComposerComparisonReserve(collapse = { comparisonCollapse }) }
                     },
-                    prefix = compactComparison?.let { { ComposerComparisonReserve { comparisonCollapse } } },
                     suffix = { ComposerAffixAnchor() },
                     textStyle = MaterialTheme.typography.bodyLarge,
-                    shape = ChatInputDefaults.shape,
-                    colors = ChatInputDefaults.textFieldColors(isTemporaryChat),
+                    outputTransformation = pickerCommandToken,
+                    colors = ChatInputDefaults.textFieldColors(),
                     keyboardOptions = ChatInputDefaults.keyboardOptions,
-                    keyboardActions = KeyboardActions.Default,
-                    maxLines = 6,
+                    lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 6),
                 )
                 if (compactComparison != null) {
                     ComposerComparisonMorph(
@@ -348,8 +236,6 @@ fun ChatInput(
                 }
             }
         },
-        trailingSpacer = { compact ->
-            if (!compact) Spacer(modifier = Modifier.width(8.dp))
-        },
+        // TCHAT: no trailing mic here; `voice` puts it in the send slot (one right-hand action).
     )
 }

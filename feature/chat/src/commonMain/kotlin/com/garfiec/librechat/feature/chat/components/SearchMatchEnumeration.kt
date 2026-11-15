@@ -1,10 +1,11 @@
 package com.garfiec.librechat.feature.chat.components
 
-import com.garfiec.librechat.core.data.mapper.LegacyThinking
 import com.garfiec.librechat.core.model.ContentType
 import com.garfiec.librechat.core.model.Message
 import com.garfiec.librechat.core.model.content.CitationIndex
+import com.garfiec.librechat.core.model.content.LegacyThinking
 import com.garfiec.librechat.core.model.content.MessageContentPart
+import com.garfiec.librechat.core.model.content.stripOpaqueReasoning
 import com.garfiec.librechat.feature.chat.components.artifact.Artifact
 import com.garfiec.librechat.feature.chat.components.artifact.ArtifactSegment
 import com.garfiec.librechat.feature.chat.components.artifact.detectArtifacts
@@ -26,7 +27,8 @@ import com.garfiec.librechat.feature.chat.util.steerText
 //     (as reasoning, see [legacyTextRuns]), then the rest of message.text as one TEXT part
 //     (clause 2) when [textFallbackSplitsArtifacts], else via MarkdownContent directly.
 //  2. TEXT parts split on artifact directives first (TextContentPart). Plain Text segments are
-//     enumerated. Artifact segments depend on Artifact.isComplete:
+//     enumerated, less their legacy MCP-UI `\ui{…}` markers (UiMarkedMarkdownContent): a marker
+//     contributes 0, the text either side of it is counted in order. Artifact segments depend on Artifact.isComplete:
 //       - complete   -> contributes 0. Content is highlighted but not navigable, because whether it
 //                       renders inline at all depends on a UI preference the ViewModel cannot see.
 //       - incomplete -> contributes its content's occurrences. An incomplete artifact always renders
@@ -102,7 +104,7 @@ internal fun countTextPartOccurrences(text: String, query: String): Int {
     if (cannotMatch(text, query)) return 0
     return detectArtifacts(text).sumOf { segment ->
         when (segment) {
-            is ArtifactSegment.Text -> countMarkdownOccurrences(segment.text, query)
+            is ArtifactSegment.Text -> countUiMarkedOccurrences(segment.text, query)
             is ArtifactSegment.ArtifactReference -> countArtifactOccurrences(segment.artifact, query)
         }
     }
@@ -121,7 +123,8 @@ internal fun countPartOccurrences(
     consumedLateBatchLabel: Boolean = false,
 ): Int = when (part.type) {
     ContentType.TEXT, ContentType.TEXT_DELTA -> countTextPartOccurrences(part.text.orEmpty(), query)
-    ContentType.THINK -> countMarkdownOccurrences(part.think.orEmpty(), query)
+    // What the thinking card renders: encrypted payloads removed (an all-payload part draws a marker).
+    ContentType.THINK -> countMarkdownOccurrences(stripOpaqueReasoning(part.think.orEmpty()), query)
     // The user's own mid-run steer renders as a turn inside the response, so it has to be
     // findable — it is the one thing in a reply they definitely wrote.
     ContentType.STEER -> countMarkdownOccurrences(part.steerText().orEmpty(), query)

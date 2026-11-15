@@ -1,5 +1,7 @@
 package com.garfiec.librechat.core.network.client
 
+import com.garfiec.librechat.core.common.result.CleartextBlockedException
+import com.garfiec.librechat.core.network.api.CodeEnvironmentsApi
 import com.google.common.truth.Truth.assertThat
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -124,6 +126,45 @@ class HttpRetryScopingTest {
     }
 
     @Test
+    fun `sends a machine status read once on 503, as a response or as an ApiException`() = runTest {
+        var responseAttempts = 0
+        val responding = countingClient(
+            MockEngine {
+                responseAttempts++
+                respond("busy", HttpStatusCode.ServiceUnavailable)
+            },
+        )
+        var thrownAttempts = 0
+        val throwing = countingClient(
+            MockEngine {
+                thrownAttempts++
+                throw ApiException(statusCode = 503, message = "busy")
+            },
+        )
+
+        runCatching { CodeEnvironmentsApi(responding).status("env-1") }
+        runCatching { CodeEnvironmentsApi(throwing).status("env-1") }
+
+        assertThat(responseAttempts).isEqualTo(1)
+        assertThat(thrownAttempts).isEqualTo(1)
+    }
+
+    @Test
+    fun `still retries a machine status read that failed in transport`() = runTest {
+        var attempts = 0
+        val client = countingClient(
+            MockEngine {
+                attempts++
+                throw IOException("connection reset")
+            },
+        )
+
+        runCatching { CodeEnvironmentsApi(client).status("env-1") }
+
+        assertThat(attempts).isEqualTo(SAFE_ATTEMPTS)
+    }
+
+    @Test
     fun `does not retry a GET whose certificate is untrusted`() = runTest {
         var attempts = 0
         val engine = MockEngine {
@@ -135,6 +176,20 @@ class HttpRetryScopingTest {
         val client = countingClient(engine)
 
         runCatching { client.get("https://example.com/api/config") }
+
+        assertThat(attempts).isEqualTo(1)
+    }
+
+    @Test
+    fun `does not retry a GET the platform refused as cleartext`() = runTest {
+        var attempts = 0
+        val engine = MockEngine {
+            attempts++
+            throw CleartextBlockedException()
+        }
+        val client = countingClient(engine)
+
+        runCatching { client.get("http://chat.example.com/api/config") }
 
         assertThat(attempts).isEqualTo(1)
     }

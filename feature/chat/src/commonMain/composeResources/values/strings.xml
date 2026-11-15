@@ -88,6 +88,7 @@
     <string name="title_edit_keep_editing">Keep editing</string>
     <string name="cd_more_options">More options</string>
     <string name="cd_temporary_chat">Temporary chat</string>
+    <string name="temporary_chat_enforced">Temporary chat is on for all chats, set by your administrator</string>
     <string name="temporary_chat_title">Temporary chat</string>
     <string name="temporary_chat_subtitle">This conversation won't be saved to your history</string>
     <string name="cd_scroll_to_bottom">Scroll to bottom</string>
@@ -144,6 +145,8 @@
     <!-- Content descriptions - Thinking -->
     <string name="cd_thinking_indicator">Thinking indicator</string>
     <string name="label_thinking">Thinking</string>
+    <string name="label_reasoning_encrypted">Reasoning (encrypted)</string>
+    <string name="cd_reasoning_encrypted">Reasoning (encrypted). The model returned its reasoning encrypted, so it can't be shown.</string>
     <string name="cd_collapse">Collapse</string>
     <string name="cd_expand">Expand</string>
     <string name="cd_collapse_thinking">Collapse thinking block</string>
@@ -163,6 +166,11 @@
     <string name="subagent_threads_empty">This conversation has no subagent threads.</string>
     <string name="subagent_threads_unavailable">No subagent threads are available here.</string>
     <string name="subagent_threads_event_origin">Started by an event</string>
+    <string name="subagent_guidance_label">Guidance sent while it worked</string>
+    <plurals name="subagent_activity_dropped">
+        <item quantity="one">One activity update was left out while the live stream was unavailable. The finished transcript keeps it.</item>
+        <item quantity="other">%1$d activity updates were left out while the live stream was unavailable. The finished transcript keeps them.</item>
+    </plurals>
     <string name="subagent_threads_truncated">Some of this was too long to show in full.</string>
     <string name="subagent_threads_load_older">Load older</string>
     <string name="subagent_threads_older_unavailable">Older history is no longer available.</string>
@@ -232,42 +240,36 @@
     <string name="tool_server_files">Server</string>
     <string name="tool_model">Model</string>
     <string name="tool_model_parameters">Model parameters</string>
-    <string name="tool_model_parameters_desc">Adjust temperature, tokens, and more</string>
+    <string name="params_title_lane_a">Parameters · Model A</string>
     <string name="param_set_by_spec">This model's settings are set by the server and can't be changed here.</string>
     <string name="tool_set_by_spec">Turned on for this model by the server</string>
     <string name="tool_web_search">Web search</string>
+    <string name="tool_model_parameters_desc">Adjust temperature, tokens, and more</string>
     <string name="tool_web_search_desc">Search the web for information</string>
     <string name="web_search_librechat">LibreChat search</string>
     <string name="web_search_checking">Checking LibreChat search…</string>
     <string name="web_search_built_in">%1$s's built-in search</string>
     <string name="web_search_built_in_plain">Built-in search</string>
-    <string name="web_search_set_by_spec">%1$s, turned on for this model by the server</string>
     <string name="web_searched">Searched the web</string>
     <string name="tool_url_context">URL context</string>
-    <string name="tool_url_context_desc">Let the model read URLs and YouTube you reference</string>
     <string name="tool_code">Code</string>
-    <string name="tool_code_desc">Run and analyze code</string>
     <string name="tool_file_search">File search</string>
+    <string name="tool_url_context_desc">Let the model read URLs and YouTube you reference</string>
+    <string name="tool_code_desc">Run and analyze code</string>
     <string name="tool_file_search_desc">Search through uploaded files</string>
     <string name="tool_mcp">MCP</string>
     <string name="tool_mcp_desc">Model Context Protocol servers</string>
     <string name="cd_web_search_enabled">Web Search enabled</string>
     <string name="cd_quoted_excerpt">Quoted excerpt</string>
-    <string name="cd_remove_quote">Remove quote</string>
     <string name="selection_add_to_chat">Add to chat</string>
-    <string name="cd_code_enabled">Code interpreter enabled</string>
-    <string name="cd_file_search_enabled">File Search enabled</string>
 
     <!-- Attachments -->
-    <string name="cd_attach_file">Attach file</string>
-    <string name="files_count">Files (%1$d)</string>
-    <string name="files_count_with_text">Files (%1$d) · %2$d as text</string>
-    <string name="cd_files_attached">%1$d files attached, tap to preview</string>
-    <string name="cd_files_attached_with_text">%1$d files attached, %2$d sent as text, tap to preview</string>
     <string name="upload_routing_sheet_title">How should these be sent?</string>
     <string name="upload_routing_sheet_title_single">How should this be sent?</string>
     <string name="upload_routing_option_provider">To the model</string>
     <string name="upload_routing_option_text">As text</string>
+    <string name="upload_route_file_search">Search it when needed</string>
+    <string name="upload_route_file_search_why">Long documents are indexed so the model looks up the parts it needs.</string>
     <string name="upload_routing_why_provider">The model reads the file itself.</string>
     <string name="upload_routing_why_text">The server reads the file and sends its text.</string>
     <string name="upload_routing_why_provider_only">This model can only take this file directly.</string>
@@ -275,8 +277,6 @@
     <string name="upload_routing_apply_all">Use for all</string>
     <string name="upload_routing_attach">Attach</string>
     <string name="cd_upload_route_text">Sent as extracted text</string>
-    <string name="cd_attached_file">Attached file: %1$s</string>
-    <string name="cd_preview_file">Preview of %1$s</string>
     <string name="cd_remove_file">Remove %1$s</string>
 
     <!-- Agent handoff -->
@@ -364,6 +364,10 @@
     <string name="cd_view_code">View code</string>
     <string name="label_diagram">Diagram</string>
     <string name="cd_fullscreen">Fullscreen</string>
+    <string name="cd_exit_fullscreen">Exit full screen</string>
+    <string name="cd_resize_artifact">Resize the artifact</string>
+    <string name="artifact_wider">Wider artifact</string>
+    <string name="artifact_narrower">Narrower artifact</string>
     <string name="cd_close_fullscreen">Close fullscreen</string>
 
     <!-- Message bubble -->
@@ -399,6 +403,7 @@
     <!-- Preset picker -->
     <string name="select_preset">Select preset</string>
     <string name="no_presets_saved">No presets saved yet</string>
+    <string name="presets_load_failed">Couldn't load your presets.</string>
     <string name="cd_edit_preset">Edit %1$s</string>
     <string name="cd_delete_preset">Delete %1$s</string>
     <string name="preset_endpoint">Endpoint: %1$s</string>
@@ -423,6 +428,12 @@
 
     <!-- Activity groups and mid-run steering -->
     <string name="activity_used_n_tools">Used %1$d tools</string>
+    <string name="tool_preparing">Preparing %1$s</string>
+    <string name="activity_n_of_n_failed">%1$d/%2$d failed</string>
+    <plurals name="activity_n_cancelled">
+        <item quantity="one">%1$d cancelled</item>
+        <item quantity="other">%1$d cancelled</item>
+    </plurals>
     <string name="steer_sent_during_reply">sent while replying</string>
     <string name="state_expanded">Expanded</string>
     <string name="state_collapsed">Collapsed</string>
@@ -486,6 +497,10 @@
     <string name="cd_reset_sort">Reset sort</string>
     <string name="cd_share">Share</string>
     <string name="prompt_author">by %1$s</string>
+    <string name="prompt_managed_in_langfuse_named">Managed in Langfuse (prompt %1$s). Edit it in Langfuse.</string>
+    <string name="prompt_managed_in_langfuse">Managed in Langfuse. Edit it in Langfuse.</string>
+    <string name="prompt_text_unavailable">Could not load this prompt's text.</string>
+    <string name="prompt_managed_externally">Managed outside LibreChat, so it can't be changed here.</string>
     <string name="prompt_sort_label">Sort: %1$s</string>
 
     <!-- Prompt versions -->
@@ -558,6 +573,8 @@
 
     <!-- Context usage gauge (v0.8.7) -->
     <string name="context_usage_label">Context</string>
+    <string name="context_percent">%1$d%</string>
+    <string name="context_percent_estimate">~%1$d%</string>
 
     <!-- Human-in-the-loop pauses (v0.8.8): tool approval + ask_user_question -->
     <string name="tool_approval_title">Approval needed</string>
@@ -572,6 +589,15 @@
     <string name="tool_approval_edited_arguments">Edited arguments (JSON)</string>
     <string name="tool_approval_response_text">Reply to send instead of running the tool</string>
     <string name="tool_approval_invalid_json">Enter valid JSON</string>
+    <string name="tool_approval_always_allow">Always allow</string>
+    <string name="tool_approval_always_allow_hint">Always allow: this tool will run without asking for the rest of this chat.</string>
+    <string name="tool_approval_reject_reason">Reason (optional)</string>
+    <string name="tool_approval_remember_chat">Approving remembers this tool for this agent in this chat, including calls with different arguments. Administrator rules still apply.</string>
+    <string name="tool_approval_remember_always">Approving remembers this tool for you and this agent across chats, including calls with different arguments. Administrator rules still apply.</string>
+    <string name="tool_approval_remember_unavailable_connection">Approval cannot be remembered for this connection. Each call requires review.</string>
+    <string name="tool_approval_remember_unavailable_disabled">Remembered approvals are disabled. Each call requires review.</string>
+    <string name="tool_approval_remember_unavailable_storage">Remembered approval is unavailable. This approval will apply only to this call.</string>
+    <string name="tool_approval_remember_unavailable_background">Background launches cannot teach approval. Approve a successful foreground call to remember this tool.</string>
     <string name="ask_user_question_answer_hint">Type your answer</string>
     <string name="ask_user_question_other_hint">Something else</string>
     <string name="ask_user_question_send">Send</string>
@@ -615,6 +641,8 @@
     <string name="error_model_stream_stalled">The model provider stopped sending the response, and the request timed out waiting for it. Anything already received was kept. Try again, or ask an administrator to check the provider.</string>
     <string name="error_mcp_authentication_rejected">A connected MCP server rejected your sign-in, so the message was not sent. Reconnect the server (or sign in again), then send it again.</string>
     <string name="error_mcp_authentication_refresh_failed">Sign-in for a connected MCP server could not be refreshed, so the message was not sent. Try again in a moment.</string>
+    <string name="error_project_resources_changed">This project's files changed while the message was starting, so it was not sent. Try again.</string>
+    <string name="error_project_context_unavailable">This chat's project is no longer available, so the message was not sent. It may have been deleted.</string>
     <string name="error_final_context_overflow">This conversation no longer fits the model's context window. Start a new conversation, or switch to a model with a larger window.</string>
     <string name="error_compaction_skipped">There was nothing to compact yet. Keep chatting and try again later.</string>
     <string name="error_compaction_failed">The summary couldn't be generated, so the conversation is unchanged. Try again.</string>
@@ -622,7 +650,7 @@
     <string name="error_upstream_model_error_status">The model provider couldn't complete this request (status %1$d). Try again, or pick a different model.</string>
     <string name="error_details_provider">Provider response</string>
     <string name="error_empty_messages">There was nothing left to send after this conversation was trimmed to fit the model's context. Start a new conversation, or switch to a model with a larger window.</string>
-    <string name="error_code_workspace_unavailable">The code workspace for this conversation isn't available. Try again, or pick a different workspace.</string>
+    <string name="error_code_workspace_unavailable">The selected code workspace is unavailable. Reconnect its machine or choose an available workspace, then try again.</string>
     <string name="error_stateful_code_environment_not_allowed">This server doesn't allow a persistent code environment. Turn it off in the code interpreter options and try again.</string>
     <string name="error_auth_rate_limited">Too many sign-in attempts. Wait a moment and try again.</string>
     <string name="error_auth_banned">This account or network is blocked from signing in. Contact an administrator.</string>
@@ -644,16 +672,27 @@
     <string name="cd_expand_ask_user_question">Expand question details</string>
     <string name="cd_collapse_ask_user_question">Collapse question details</string>
     <string name="tool_memory">Memory</string>
-    <string name="tool_memory_desc">Let the assistant remember details from this chat</string>
     <string name="tool_skills">Skills</string>
-    <string name="tool_skills_desc">Let the assistant use your skills in this chat</string>
-    <string name="cd_skills_enabled">Skills enabled</string>
+    <string name="tool_artifacts">Artifacts</string>
     <string name="picker_type_prompt">Prompt</string>
     <string name="picker_type_skill">Skill</string>
     <string name="picker_no_matches">No matches</string>
     <string name="picker_loading_skills">Loading skills…</string>
     <string name="picker_skills_failed">Couldn't load skills</string>
-    <string name="cd_pending_skills">Skills for the next message</string>
+    <string name="picker_scope_prompts">Searching prompts</string>
+    <string name="picker_scope_skills">Searching skills</string>
+    <string name="picker_chip_prompts">Prompts</string>
+    <string name="picker_chip_skills">Skills</string>
+    <string name="picker_skills_unavailable">Skills aren't available in this chat</string>
+    <string name="picker_type_mcp">MCP</string>
+    <string name="picker_scope_mcp">Searching MCP servers</string>
+    <string name="picker_chip_mcp">MCP</string>
+    <string name="picker_mcp_unavailable">MCP servers aren't available in this chat</string>
+    <string name="picker_scope_models">Searching models</string>
+    <string name="picker_chip_models">Models</string>
+    <string name="picker_models_unavailable">The model can't be changed in this chat</string>
+    <string name="picker_models_comparing">Models can't be switched here while comparing</string>
+    <string name="cd_picker_leave_scope">Show prompts, skills and MCP servers</string>
     <string name="cd_remove_skill">Remove skill %1$s</string>
     <string name="cd_skill_always_applied">Always-applied skill: %1$s</string>
     <string name="cd_skill_used">Skill used: %1$s</string>
@@ -663,7 +702,7 @@
 
     <!-- Mid-run steering (v0.8.8): send into the reply that is still being written -->
     <string name="cd_steer_message">Steer this reply</string>
-    <string name="cd_cancel_steer">Cancel steer</string>
+    <string name="cd_cancel_steer">Cancel steer: %1$s</string>
     <string name="cd_during_run_options">Choose what sending does now</string>
     <string name="during_run_steer">Steer this reply</string>
     <string name="during_run_queue">Add to queue</string>
@@ -671,6 +710,23 @@
     <string name="during_run_always_queue">Always queue while generating</string>
     <string name="steer_pending_hint">Joins the reply at its next tool step. If the reply finishes first, it’s sent after it.</string>
     <string name="steer_queued_as_follow_up">Your message couldn’t join this reply, so it’s queued to send after it.</string>
+    <!-- Interrupt and steer: a steer that stops the current tool or thinking step -->
+    <string name="during_run_interrupt">Interrupt and steer</string>
+    <string name="during_run_always_interrupt">Always interrupt while generating</string>
+    <string name="during_run_steer_detail">Joins at the next step</string>
+    <string name="during_run_interrupt_detail">Stops the current step</string>
+    <string name="during_run_interrupt_detail_built_in_search">Can’t stop built-in search</string>
+    <string name="during_run_queue_detail">Sends after the reply</string>
+    <string name="during_run_attachments_detail">Attachments send after the reply</string>
+    <string name="cd_during_run_default">Default</string>
+    <string name="cd_interrupt_message">Interrupt and steer this reply</string>
+    <string name="cd_interrupt_steer_now">Interrupt now: %1$s</string>
+    <string name="steer_interrupt_requested">Interrupt requested</string>
+    <string name="steer_interrupting_hint">Stopping the current step. What’s already written stays, and the reply continues with your message.</string>
+    <string name="steer_interrupt_unavailable">This reply can’t be interrupted. Your message will join at the next step.</string>
+    <string name="steer_interrupt_failed">Couldn’t interrupt. Your message may already be in the reply, or it will join at the next step.</string>
+    <string name="steer_interrupt_unconfirmed">Couldn’t confirm the interrupt. Your message may join sooner, or at the next step.</string>
+    <string name="tool_interrupted_by_you">Interrupted by your message</string>
     <!-- System events: wake-up turns (v0.8.8-rc4 styling) -->
     <string name="system_event_label">System</string>
     <string name="wakeup_explainer">This durable result woke the agent to continue the conversation.</string>
@@ -725,6 +781,19 @@
     <string name="background_tasks_running_elsewhere">Still running outside this turn. Its result may arrive as a new turn.</string>
     <string name="background_tasks_pending_delivery_note">Result pending delivery. It may still arrive as a new turn; poll to collect it sooner.</string>
     <string name="background_tasks_failed_delivery_note">Automatic delivery failed. Poll this task to collect its result; it will not arrive as a new turn.</string>
+    <string name="background_tasks_subagent_wakeup_guidance">This subagent resumes the agent by itself when it finishes, so it does not need checking again.</string>
+    <string name="background_tasks_subagent_poll_guidance">This subagent's result is not delivered automatically; the agent checks on it again later.</string>
+    <string name="background_tasks_view_activity">View activity</string>
+    <string name="subagent_progress">Progress</string>
+    <string name="subagent_progress_counts">Turns %1$d · Tool calls %2$d · Failed %3$d</string>
+    <string name="subagent_progress_nested">Turns %1$s · Tool calls %2$s</string>
+    <string name="subagent_progress_more">+%1$s more</string>
+    <string name="subagent_progress_reply">Reply</string>
+    <string name="subagent_progress_thinking">Thinking</string>
+    <string name="subagent_progress_turn">Turn %1$s</string>
+    <string name="subagent_progress_turns">Turns %1$s</string>
+    <string name="subagent_progress_evicted">Summary only: the detail of these turns is no longer kept.</string>
+    <string name="subagent_progress_truncated">Some steps are folded to keep this summary short.</string>
     <string name="background_tasks_cancellation_requested">Cancellation requested. The task may still be running; check again for its final status.</string>
 
     <!-- App update banner -->
@@ -742,14 +811,18 @@
     <string name="compact_confirm_title">Compact this conversation?</string>
     <string name="compact_confirm_body">%1$d% of the context window is used. Compacting summarizes the conversation so far into a shorter note the model keeps reading, freeing room for what comes next. Nothing is deleted.</string>
     <string name="compact_confirm_not_now">Not now</string>
+    <string name="compact_confirm_see_usage">See usage</string>
     <string name="compact_confirm_action">Compact</string>
     <string name="notice_rename_failed">Failed to rename conversation</string>
+    <string name="notice_rename_not_ready">This chat can't be renamed until its title is ready. Try again once the reply has finished.</string>
+    <string name="notice_rename_not_found">This chat no longer exists, so it can't be renamed.</string>
     <string name="notice_delete_failed">Failed to delete conversation</string>
     <string name="notice_archive_failed">Failed to archive conversation</string>
     <string name="notice_duplicate_failed">Failed to duplicate conversation</string>
     <string name="notice_preset_save_failed">Could not save preset</string>
     <string name="notice_preset_delete_failed">Could not delete preset</string>
     <string name="notice_preset_update_failed">Could not update preset</string>
+    <string name="notice_prompt_resolve_failed">Could not load this prompt's text. Try again.</string>
     <string name="notice_continue_response_failed">Failed to continue with selected response</string>
     <string name="notice_favorites_limit">You can pin up to %1$d favorites.</string>
     <string name="notice_favorites_update_failed">Could not update favorites.</string>
@@ -763,6 +836,25 @@
     <string name="notice_speech_permission_denied">Speech recognition permission denied</string>
     <string name="notice_speech_unavailable">Speech recognition not available. Check Settings &gt; Privacy &gt; Speech Recognition.</string>
     <string name="notice_send_refused">The server refused this message.</string>
+    <string name="notice_fork_failed">There was an error forking the conversation</string>
+    <string name="notice_fork_rate_limited">Too many fork requests. Please try again later</string>
+    <string name="notice_branch_without_files_unsupported">The copy still has its files, because this server can't leave them out yet. Your original conversation is unchanged.</string>
+    <string name="notice_branch_without_files_done">Copied this conversation without files.</string>
+    <string name="notice_branch_without_files_draft">Copied without files. Your message is ready to send.</string>
+    <string name="fork_exclude_files">Leave out files</string>
+    <string name="fork_exclude_files_desc">The new conversation copies the messages without their attached or generated files, so later messages don't send them again.</string>
+    <string name="private_text_hidden">Private details hidden from the model</string>
+    <string name="private_text_loading">Loading your original message…</string>
+    <string name="private_text_unavailable">Original unavailable. Showing the filtered message.</string>
+    <string name="private_text_retry">Retry loading original</string>
+    <string name="attachment_recovery_cause">The files in this conversation are likely causing this, and every new message sends them again.</string>
+    <string name="attachment_recovery_retry_info">Retry without files sends your message again without its files. Your original message is kept.</string>
+    <string name="attachment_recovery_branch_info">Branch without files copies this conversation into a new chat with no files. Your original conversation is kept.</string>
+    <string name="attachment_recovery_both_info">Retry without files resends only your last message without its files. Branch without files copies the conversation into a new chat with no files at all. Your original conversation is kept.</string>
+    <string name="attachment_recovery_retry">Retry without files</string>
+    <string name="attachment_recovery_branch">Branch without files</string>
+    <string name="notice_tool_decision_not_permitted">The server no longer allows one of these decisions. Choose another for each tool and try again.</string>
+    <string name="notice_content_blocked">The server's content filter blocked this message. Nothing was sent.</string>
     <string name="notice_skills_not_sent">Some skills can't be used in this chat and weren't sent.</string>
     <string name="notice_skills_removed_from_queued">Some skills can't be used in this chat and were removed from the queued message.</string>
     <plurals name="notice_message_limit_retry_minutes">
@@ -817,6 +909,8 @@
         <item quantity="one">Show %1$d line</item>
         <item quantity="other">Show all %1$d lines</item>
     </plurals>
+    <!-- Expands a code run's output the server shortened: its real line count is unknown until it loads -->
+    <string name="show_full_output">Show full output</string>
     <!-- Accessibility label of the copy button on a code run's output -->
     <string name="cd_copy_output">Copy output</string>
     <!-- Second line of a generated file the code sandbox no longer has -->
@@ -848,19 +942,41 @@
     <string name="stt_speak_now">Speak now…</string>
     <string name="stt_recognition_unavailable">Speech recognition is not available on this device</string>
     <string name="artifact_preview_failed">Failed to load preview</string>
-    <string name="cd_mcp_server_enabled">%1$s MCP server enabled</string>
+    <string name="artifact_library_title">Load %1$s?</string>
+    <string name="artifact_library_unmaintained">This artifact uses %1$s, a library that is no longer maintained.</string>
+    <string name="artifact_library_deprecated">This artifact uses %1$s, a library its authors have deprecated.</string>
+    <string name="artifact_library_vulnerable">This artifact uses %1$s, a library with a known security advisory.</string>
+    <string name="artifact_library_sandbox">It runs sandboxed, with no access to your files or account. Like any artifact, it can load images from the web.</string>
+    <string name="artifact_library_remember">Remember for %1$s</string>
+    <string name="artifact_library_load">Load</string>
+    <string name="artifact_library_skip">Don't load</string>
+    <string name="artifact_library_declined">Not loaded: %1$s</string>
+    <string name="artifact_library_allowed">Loaded: %1$s</string>
+    <string name="artifact_library_change">Change</string>
     <string name="cd_code_block">Code block</string>
     <string name="cd_code_block_language">%1$s code block</string>
     <string name="log_output_title">Log Output</string>
     <string name="cd_attached_image">Attached image</string>
     <string name="model_selector_search">Search models…</string>
     <string name="model_selector_my_agents">My Agents</string>
-    <string name="model_selector_spec_only_note">This server only accepts the options listed above.</string>
+    <string name="model_selector_spec_only_top_note">Only the server's model specs can be sent; greyed models are for reference.</string>
     <string name="agent_handoff_to">Agent %1$s</string>
     <string name="agent_handoff_run">Run: %1$s</string>
     <string name="sibling_position">Response %1$d of %2$d</string>
-    <string name="cd_assistant_responding">Assistant is responding: %1$s</string>
+    <string name="cd_assistant_responding">Assistant is responding</string>
     <string name="tool_call_fallback">Tool Call</string>
+    <!-- Live tool call row while the run waits for the user to sign in to an MCP server. %1$s is the server's name -->
+    <string name="mcp_sign_in_needed">%1$s needs you to sign in</string>
+    <!-- The same row when the server's name is unknown -->
+    <string name="mcp_sign_in_needed_unnamed">A tool needs you to sign in</string>
+    <!-- Second line of that row: what happens after signing in -->
+    <string name="mcp_sign_in_resumes">The reply continues once you're signed in.</string>
+    <!-- Button on that row that opens the sign-in page -->
+    <string name="mcp_sign_in_action">Sign in</string>
+    <!-- An MCP row's button for a server owed values from the user (a personal token): opens its variables sheet -->
+    <string name="mcp_set_up_action">Set up</string>
+    <!-- Snackbar when an MCP sign-in from the chat could not start or the server refused it -->
+    <string name="mcp_sign_in_failed">Sign-in didn't complete. Try again.</string>
     <string name="prompt_filter_title">Filter &amp; Sort</string>
     <string name="prompt_sort_recent">Recent</string>
     <string name="prompt_sort_popular">Popular</string>
@@ -940,4 +1056,254 @@
         <item quantity="one">+%1$d file</item>
         <item quantity="other">+%1$d files</item>
     </plurals>
+    <!-- Per-turn thinking (v0.8.9-rc1 reasoningOverride) -->
+    <string name="thinking_title">Thinking</string>
+    <string name="thinking_chip_next_message">%1$s · next message</string>
+    <string name="cd_thinking_chip">Thinking for the next message: %1$s</string>
+    <string name="thinking_next_message_only">For your next message only. Afterwards this chat goes back to its own setting.</string>
+    <string name="thinking_chat_setting">This chat's setting</string>
+    <string name="thinking_change_chat_setting">Change this chat's setting</string>
+    <string name="error_code_workspace_required">Choose an attached workspace before sending.</string>
+    <string name="error_code_workspace_invalid">The workspace selection is invalid. Select an available workspace.</string>
+    <string name="error_code_workspace_worker_unavailable">The machine is unavailable. Reconnect it, or choose another one.</string>
+    <string name="error_code_workspace_unsupported">The machine's worker doesn't support choosing a workspace. Update it and try again.</string>
+    <string name="error_code_workspace_missing">The selected workspace is no longer registered. Restore it on the machine, or start a new chat.</string>
+    <string name="error_code_workspace_locked">This chat already uses a different code environment. Continue with its original one, or start a new chat.</string>
+    <string name="code_machine">Machine</string>
+    <string name="code_machine_choose">Choose machine</string>
+    <string name="code_workspace">Code workspace</string>
+    <string name="code_workspace_saved_on_send">Your next message saves this workspace for the chat.</string>
+    <string name="code_workspace_choose">Choose workspace</string>
+    <string name="code_workspace_loading">Loading workspace…</string>
+    <string name="code_workspace_missing">Workspace missing</string>
+    <string name="code_workspace_unavailable">Workspace unavailable</string>
+    <string name="code_workspace_unsupported">Update worker for workspaces</string>
+    <string name="code_workspace_without">No workspace</string>
+    <string name="code_workspace_without_info">Chat without files or commands</string>
+    <string name="code_workspace_required_for">Choose a workspace for %1$s on %2$s.</string>
+    <string name="code_workspace_agent_status">%1$s needs %2$s: %3$s</string>
+    <string name="code_workspace_graph_requirement">Every coding agent in this chat needs a workspace, including subagents.</string>
+    <plurals name="code_machines_selected">
+        <item quantity="one">%1$d machine</item>
+        <item quantity="other">%1$d machines</item>
+    </plurals>
+    <plurals name="code_workspaces_selected">
+        <item quantity="one">%1$d code workspace</item>
+        <item quantity="other">%1$d code workspaces</item>
+    </plurals>
+    <string name="code_workspace_graph_selection_conflict">The selected machines do not match this agent's workspace requirements. Review the agents listed under each machine and select their required workspaces.</string>
+    <string name="code_workspace_used_by">Used by %1$s</string>
+    <string name="code_workspace_locked_recovery">Reconnect or restore this workspace, or start a new chat.</string>
+    <string name="code_workspace_refresh">Refresh</string>
+    <string name="code_workspace_sent_without">Sent without a workspace. This chat can't use files or commands.</string>
+    <string name="code_workspace_attach">Attach workspace</string>
+    <string name="code_workspace_attach_info">This chat runs without a workspace. Attach one to work with files and commands. Earlier messages stay, and no files are copied.</string>
+    <string name="code_workspace_attach_to">Attach %1$s</string>
+    <string name="code_workspace_detach">Continue without workspace</string>
+    <string name="code_workspace_detach_info">Keep chatting without files or commands on the attached machine.</string>
+    <string name="code_workspace_detach_prompt">This chat's workspace is unavailable. Reconnect the machine, or continue without a workspace.</string>
+    <string name="code_workspace_recover">Recover workspace</string>
+    <string name="code_workspace_recover_info">A workspace saved with this chat is no longer registered. Choose an available workspace for each environment below to continue this chat. Chat history is kept, but previous workspace files are not restored or copied.</string>
+    <string name="code_workspace_move">Move chat</string>
+    <string name="code_workspace_move_to">Move chat to %1$s</string>
+    <string name="code_workspace_move_info">This chat used %1$s, but its agent now uses %2$s. Files from earlier turns stay on the previous machine.</string>
+    <string name="code_workspace_move_info_removed">This chat's agent no longer uses %1$s. Move the chat to continue without it.</string>
+    <string name="code_workspace_move_info_added">This chat's agent now also uses %1$s. Choose a workspace there to continue.</string>
+    <string name="code_workspace_move_stale">This chat's workspace changed elsewhere. Review its current workspace and try again.</string>
+    <string name="code_workspace_move_busy">Wait for the current response to finish before changing this chat's workspace.</string>
+    <string name="code_workspace_move_error">Couldn't update this chat's workspace. Try again.</string>
+    <string name="code_workspace_reconciling">Confirming this chat's workspace decision…</string>
+    <string name="code_workspace_reconcile_failed">Couldn't confirm this chat's workspace decision. Sending stays paused until you retry successfully.</string>
+    <string name="code_workspace_reconcile_retry">Retry workspace check</string>
+    <string name="code_approval_mode">Code approval mode</string>
+    <string name="code_approval_ask">Ask before changes</string>
+    <string name="code_approval_ask_description">Asks before edits and commands</string>
+    <string name="code_approval_accept_edits">Accept edits</string>
+    <string name="code_approval_accept_edits_description">Edits files, asks before commands</string>
+    <string name="code_approval_full_access">Full access</string>
+    <string name="code_approval_full_access_description">Edits and runs commands; sandbox limits apply</string>
+    <string name="notice_copy_tool_content_failed">Couldn't load the full tool output, so nothing was copied.</string>
+    <string name="notice_queue_withdraw_refused">Couldn't withdraw this queued message from the server.</string>
+    <string name="notice_queue_withdraw_busy">Still finishing the previous withdrawal. Try again in a moment.</string>
+    <string name="notice_queue_edit_overtaken">That queued message was already sent, so your edit wasn't applied.</string>
+    <string name="notice_queue_edit_waits_for_uploads">Wait for your attachments to finish, then edit the queued message.</string>
+    <string name="notice_queue_server_holds">The server still holds a queued message. Try again in a moment.</string>
+    <string name="notice_queue_restored_to_composer">Queued messages weren't sent, so they were put back in the message box.</string>
+    <string name="tool_content_loading">Loading the full tool call…</string>
+    <string name="tool_content_error">Couldn't load the full tool call.</string>
+    <string name="code_branch">Branch</string>
+    <string name="code_branch_info">Branch reported by the registered workspace. Branch selection is not supported.</string>
+    <string name="code_linked_worktrees">Linked worktrees</string>
+    <string name="code_linked_worktrees_info">Commands in .worktrees/&lt;name&gt; use that worktree's execution lane. This does not create a worktree.</string>
+    <string name="code_checkout_mode">Checkout mode</string>
+    <string name="code_checkout_auto">Auto</string>
+    <string name="code_checkout_auto_chip">Auto checkout</string>
+    <string name="code_checkout_auto_info">The worker picks how to check out</string>
+    <string name="code_checkout_worktree">Worktree</string>
+    <string name="code_checkout_worktree_info">Own Git worktree; uncommitted changes aren't copied</string>
+    <string name="code_checkout_registered">Registered</string>
+    <string name="code_checkout_registered_chip">Registered checkout</string>
+    <string name="code_checkout_registered_info">The machine's checkout, shared with other chats</string>
+    <string name="cd_code_chip">%1$s: %2$s</string>
+    <string name="cd_code_workspace_folded">Code workspace: %1$s on %2$s</string>
+    <string name="command_finished">Ran command</string>
+    <string name="command_exit_code">exit code %1$d</string>
+    <string name="command_terminated">terminated by %1$s</string>
+    <string name="command_timed_out">timed out</string>
+    <!-- MCP Apps (v0.8.9-rc1). The first 17 mirror upstream's com_ui_mcp_app_* keys verbatim. -->
+    <string name="mcp_app_loading_interactive_view">Loading interactive view…</string>
+    <string name="mcp_app_failed_to_load">Interactive view failed to load.</string>
+    <string name="mcp_app_open">Open app</string>
+    <string name="mcp_app_close">Close app</string>
+    <string name="mcp_app_open_named">Open app: %1$s (%2$d)</string>
+    <string name="mcp_app_close_named">Close app: %1$s (%2$d)</string>
+    <string name="mcp_app_stop">Close app and stop requests</string>
+    <string name="mcp_app_cancel_pauses">Cancel pauses further action requests until you close and reopen this app.</string>
+    <string name="mcp_app_confirm_tool">Run tool from app?</string>
+    <string name="mcp_app_confirm_message">Send message from app?</string>
+    <string name="mcp_app_message_tool_context">Sending this message starts a model response in the current conversation. Its selected agent and tools may be used.</string>
+    <string name="mcp_app_action_warning">Review this request. The app cannot act until you approve it.</string>
+    <string name="mcp_app_run_tool">Run tool</string>
+    <string name="mcp_app_send_message">Send message</string>
+    <string name="mcp_app_load_error">Interactive view could not be loaded.</string>
+    <string name="mcp_app_shared_unavailable">MCP Apps aren't viewable in shared conversations.</string>
+    <string name="mcp_app_tool_line">%1$s / %2$s</string>
+    <string name="mcp_app_binding_stale">This app's server changed. Run the tool again to get a new view.</string>
+    <string name="mcp_app_disabled">MCP apps are turned off on this server.</string>
+    <string name="mcp_app_busy">The app's server is busy. Try again.</string>
+    <string name="mcp_app_reauth">Sign in to %1$s again from MCP servers.</string>
+    <string name="mcp_app_dont_ask_again">Don't ask again for %1$s until I close this app</string>
+    <string name="mcp_app_auto_running">%1$s · Auto-running %2$s</string>
+    <string name="mcp_app_ask_again">Ask again for %1$s</string>
+    <string name="mcp_app_location_title">Allow %1$s to use your approximate location?</string>
+    <string name="mcp_app_location_text">The app %1$s will receive your approximate location. Its server can store it.</string>
+    <string name="mcp_app_location_allow">Allow</string>
+    <string name="mcp_app_location_deny">Don't allow</string>
+    <string name="mcp_app_expand">Expand app</string>
+    <string name="mcp_app_show_full">Show full app</string>
+    <string name="mcp_app_minimize">Back to chat</string>
+    <string name="mcp_app_tap_to_resume">Tap to resume</string>
+    <string name="mcp_app_return">Return to app</string>
+    <string name="mcp_app_in_panel">Open full screen</string>
+    <string name="mcp_app_at_capacity">Close another app before opening this one.</string>
+    <string name="mcp_app_show_apps">Show apps</string>
+    <string name="mcp_app_open_apps">Open apps (%1$d)</string>
+    <string name="mcp_app_waiting_tool">%1$s wants to run a tool</string>
+    <string name="mcp_app_waiting_message">%1$s wants to send a message</string>
+    <string name="mcp_app_show">Show</string>
+    <string name="mcp_app_waiting">Waiting for you</string>
+    <string name="ui_resource_not_found">UI Resource not found (index: %1$s)</string>
+    <string name="user_message_show_more">Show more</string>
+    <string name="user_message_show_less">Show less</string>
+    <string name="tool_approval_review_run_command">Run command</string>
+    <string name="tool_approval_review_create_file">Create %1$s</string>
+    <string name="tool_approval_review_create_file_generic">Create file</string>
+    <string name="tool_approval_review_edit_file">Edit %1$s</string>
+    <string name="tool_approval_review_edit_file_generic">Edit file</string>
+    <string name="tool_approval_proposed_command">Proposed command</string>
+    <string name="tool_approval_proposed_contents">Proposed contents</string>
+    <string name="tool_approval_proposed_replacements">Proposed replacements</string>
+    <string name="tool_approval_no_arguments">No arguments provided</string>
+    <string name="tool_approval_preview_truncated">Preview truncated.</string>
+    <string name="file_tool_reading">Reading %1$s</string>
+    <string name="file_tool_read">Read %1$s</string>
+    <string name="file_tool_creating">Creating %1$s</string>
+    <string name="file_tool_created">Created %1$s</string>
+    <string name="file_tool_editing">Editing %1$s</string>
+    <string name="file_tool_edited">Edited %1$s</string>
+    <string name="file_tool_updated">Updated %1$s</string>
+    <string name="cd_diff_stats">%1$d lines added, %2$d removed</string>
+    <string name="tool_name_code">Code</string>
+    <string name="tool_name_web_search">Web Search</string>
+    <string name="tool_name_image_gen">Image Generation</string>
+    <string name="tool_name_image_edit">Image Edit</string>
+    <string name="tool_name_file_search">File Search</string>
+    <string name="tool_name_code_analysis">Code Analysis</string>
+    <string name="tool_name_ask_user_question">Question</string>
+    <string name="tool_name_create_file">Create File</string>
+    <string name="tool_name_edit_file">Edit File</string>
+    <string name="tool_name_read_file">Read File</string>
+    <string name="tool_name_set_memory">Save Memory</string>
+    <string name="tool_name_delete_memory">Delete Memory</string>
+    <string name="command_timeout_note">Time limit reached. Output may be incomplete.</string>
+    <string name="command_timeout_details">Details</string>
+    <string name="command_timeout_hide">Hide</string>
+    <string name="ptc_trace_title">Tool calls</string>
+    <string name="ptc_trace_running">running</string>
+    <string name="ptc_trace_done">done</string>
+    <string name="ptc_trace_failed">failed</string>
+    <string name="ptc_trace_interrupted">interrupted</string>
+    <plurals name="ptc_trace_earlier">
+        <item quantity="one">+%1$d earlier call</item>
+        <item quantity="other">+%1$d earlier calls</item>
+    </plurals>
+    <string name="cd_upload_route_code">Uploaded to the code environment</string>
+    <string name="run_code">Run</string>
+    <string name="run_code_running">Running</string>
+    <string name="run_code_complete">Complete</string>
+    <string name="run_code_failed">Failed</string>
+    <string name="run_code_output">Output</string>
+    <string name="run_code_result_position">%1$d / %2$d</string>
+    <string name="cd_run_code_previous">Previous run</string>
+    <string name="cd_run_code_next">Next run</string>
+    <string name="notice_run_code_failed">Couldn't run this code.</string>
+    <!-- Composer attachment strip -->
+    <string name="draft_row_uploading">Uploading…</string>
+    <string name="draft_row_failed">Didn't upload · Tap to retry</string>
+    <string name="draft_row_skill">Skill</string>
+    <string name="draft_row_quote">Quote</string>
+    <string name="draft_subtitle_join">%1$s · %2$s</string>
+    <string name="cd_cancel_upload">Cancel upload of %1$s</string>
+    <string name="cd_remove_quote_named">Remove quote: %1$s</string>
+    <string name="cd_retry_upload">Retry upload of %1$s</string>
+    <string name="draft_item_removed">Removed %1$s</string>
+    <string name="setting_chip_set_by">Set by %1$s</string>
+    <!-- After an MCP server's name on its settings chip when it needs the user to sign in; a tap starts the sign-in -->
+    <string name="setting_chip_sign_in">· sign in</string>
+    <string name="setting_chip_connecting_suffix">· connecting</string>
+    <string name="mcp_chip_cancel_sign_in">Cancel sign-in</string>
+    <string name="mcp_chip_start_over">Start over</string>
+    <string name="mcp_cancel_sign_in_failed">Couldn't cancel sign-in. Try again.</string>
+    <string name="cd_mcp_sign_in_menu">Sign-in options</string>
+    <string name="thinking_chip_state_next">Next message only</string>
+    <string name="cd_context_ring">Context used: %1$s</string>
+    <string name="draft_quote_removed">Quote removed</string>
+    <string name="action_undo">Undo</string>
+    <plurals name="cd_draft_stack">
+        <item quantity="one">%1$d item with this message</item>
+        <item quantity="other">%1$d items with this message</item>
+    </plurals>
+    <plurals name="draft_item_attached_announcement">
+        <item quantity="one">%1$s attached, %2$d item</item>
+        <item quantity="other">%1$s attached, %2$d items</item>
+    </plurals>
+    <plurals name="draft_uploads_failed">
+        <item quantity="one">%1$d file didn't upload. Tap it to retry, or remove it.</item>
+        <item quantity="other">%1$d files didn't upload. Tap them to retry, or remove them.</item>
+    </plurals>
+    <string name="attach_code_environment">Upload to code environment</string>
+    <string name="mcp_servers_title">MCP servers</string>
+    <string name="tools_from_agent_title">This agent picks its own tools</string>
+    <string name="tools_from_agent_body">Web search, code and MCP servers come from the agent's settings.</string>
+    <string name="tools_from_spec">This model's tools are set by the server.</string>
+    <string name="tool_state_on">On</string>
+    <string name="tool_state_off">Off</string>
+    <plurals name="section_tools">
+        <item quantity="one">Tools · %1$d on</item>
+        <item quantity="other">Tools · %1$d on</item>
+    </plurals>
+    <plurals name="mcp_servers_on">
+        <item quantity="one">%1$d of %2$d on</item>
+        <item quantity="other">%1$d of %2$d on</item>
+    </plurals>
+    <plurals name="mcp_needs_sign_in">
+        <item quantity="one">%1$d needs sign-in</item>
+        <item quantity="other">%1$d need sign-in</item>
+    </plurals>
+    <string name="web_search_keys_setup">Set up LibreChat search</string>
+    <string name="web_search_keys_fallback">Using %1$s's search until you add keys</string>
+    <string name="web_search_keys_add">Add your search keys</string>
+    <string name="web_search_keys_title">Search keys</string>
+    <string name="prompt_editor_creating">Creating…</string>
+    <string name="prompt_editor_saving">Saving…</string>
 </resources>

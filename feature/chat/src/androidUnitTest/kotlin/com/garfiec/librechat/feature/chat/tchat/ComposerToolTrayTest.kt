@@ -5,6 +5,7 @@ import com.garfiec.librechat.core.model.config.ImageChoice
 import com.garfiec.librechat.core.model.config.ImageChoiceField
 import com.garfiec.librechat.core.model.config.ImageOptions
 import com.garfiec.librechat.core.model.config.ImageSpec
+import com.garfiec.librechat.core.model.mcp.McpDisplayStatus
 import com.garfiec.librechat.feature.chat.model.McpServerDisplayData
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -13,9 +14,9 @@ import kotlin.test.assertTrue
 class ComposerToolTrayTest {
 
     private val webFetch =
-        McpServerDisplayData(name = "fetch", title = "Web fetch", description = null, isConnected = true)
+        McpServerDisplayData(name = "fetch", title = "Web fetch", description = null, status = McpDisplayStatus.CONNECTED)
     private val github =
-        McpServerDisplayData(name = "github", title = null, description = null, isConnected = true)
+        McpServerDisplayData(name = "github", title = null, description = null, status = McpDisplayStatus.CONNECTED)
 
     private fun items(
         enabledTools: Set<String> = emptySet(),
